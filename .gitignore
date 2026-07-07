@@ -1,0 +1,19 @@
+# LDP3 build artifacts
+build-output/
+*.ll
+*.bc
+*.obj
+*.o
+*.exe
+*.pdb
+
+# packages pulled by `ldp3 plug`
+packages/
+
+# editor / OS noise
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
