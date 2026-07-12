@@ -17,7 +17,7 @@ public bundle forge {
             public mutable boolean expanded;
             public mutable boolean loaded;
             public mutable int depth;
-            public mutable ArrayList<FileNode>* children;
+            public mutable ArrayList<FileNode*>* children;
 
             public constructor FileNode(String path, String name, boolean isDir, int depth) {
                 this.path = path;
@@ -26,7 +26,7 @@ public bundle forge {
                 this.expanded = false;
                 this.loaded = false;
                 this.depth = depth;
-                this.children = new ArrayList<FileNode>() on heap;
+                this.children = new ArrayList<FileNode*>() on heap;
             }
         }
 
@@ -70,21 +70,27 @@ public bundle forge {
                     i = i + 1;
                 }
             }
+            // Entries an IDE shouldn't clutter the project view with: VCS/build/dependency directories and
+            // scratch artifacts (Forge's own .ppm/.tmp shots, editor temp files).
             private static method ignored(String name) returns boolean {
                 return name.equals(".git") || name.equals("build-output") || name.equals("node_modules")
-                    || name.equals(".vs") || name.equals("target") || name.equals("dist")
-                    || name.equals("obj") || name.equals("bin");
+                    || name.equals(".vs") || name.equals(".vscode") || name.equals("target")
+                    || name.equals("dist") || name.equals("obj") || name.equals("bin")
+                    || name.equals(".forge") || name.endsWith(".tmp") || name.endsWith(".ppm");
             }
 
-            // Populate a directory node's children (idempotent). Each entry's kind comes from File.isDir.
+            // Populate a directory node's children (idempotent), skipping ignored entries. Each entry's kind
+            // comes from File.isDir.
             private method load(FileNode* node) returns void {
                 if (node.loaded || !node.isDir) { return; }
                 node.loaded = true;
                 ArrayList<String> entries = Files.listDir(node.path);
                 for (mutable int i = 0; i < entries.size(); i++) {
                     String name = entries.get(i);
-                    String full = Paths.join(node.path, name);
-                    node.children.add(new FileNode(full, name, File.isDir(full), node.depth + 1) on heap);
+                    if (!FileTree.ignored(name)) {
+                        String full = Paths.join(node.path, name);
+                        node.children.add(new FileNode(full, name, File.isDir(full), node.depth + 1) on heap);
+                    }
                 }
                 this.sortChildren(node.children);
             }
@@ -98,12 +104,12 @@ public bundle forge {
 
             // The expanded tree as a flat list, depth-first (a directory's children follow it), which is the
             // row order a tree widget renders top to bottom.
-            public method visible() returns ArrayList<FileNode>* {
-                ArrayList<FileNode>* out = new ArrayList<FileNode>() on heap;
+            public method visible() returns ArrayList<FileNode*>* {
+                ArrayList<FileNode*>* out = new ArrayList<FileNode*>() on heap;
                 this.collect(this.rootNode, out);
                 return out;
             }
-            private method collect(FileNode* node, ArrayList<FileNode>* out) returns void {
+            private method collect(FileNode* node, ArrayList<FileNode*>* out) returns void {
                 out.add(node);
                 if (node.isDir && node.expanded) {
                     for (mutable int i = 0; i < node.children.size(); i++) {
@@ -122,7 +128,7 @@ public bundle forge {
             }
 
             // Insertion sort: directories before files, then case-sensitive alphabetical by name.
-            private method sortChildren(ArrayList<FileNode>* xs) returns void {
+            private method sortChildren(ArrayList<FileNode*>* xs) returns void {
                 for (mutable int i = 1; i < xs.size(); i++) {
                     FileNode* key = xs.get(i);
                     mutable int j = i - 1;

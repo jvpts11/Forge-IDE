@@ -53,7 +53,7 @@ public bundle forge {
                 Controller* c = wb.active();
                 out.add(this.tabBar(wb.documents()));
                 ArrayList<String> editorRows = this.text.renderPlain(c);
-                ArrayList<FileNode>* treeRows = tree.visible();
+                ArrayList<FileNode*>* treeRows = tree.visible();
                 for (mutable int r = 0; r < editorRows.size(); r++) {
                     mutable String left = "";
                     if (r < treeRows.size()) { left = tree.rowLabel(treeRows.get(r)); }

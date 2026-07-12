@@ -244,7 +244,7 @@ public bundle forge {
                 }
                 if (mx < screen.treeWidth()) {
                     int ri = screen.treeRowAtY(my);
-                    ArrayList<FileNode>* rows = tree.visible();
+                    ArrayList<FileNode*>* rows = tree.visible();
                     if (ri >= 0 && ri < rows.size()) {
                         FileNode* node = rows.get(ri);
                         if (node.isDir) { tree.toggle(node); } else { wb.openFile(node.path); }

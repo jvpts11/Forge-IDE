@@ -476,7 +476,7 @@ public bundle forge {
             private method drawTree(Batch2D* batch, FileTree* tree, int top, int screenH, int mx, int my)
                     returns void {
                 int ch = this.font.lineHeight();
-                ArrayList<FileNode>* rows = tree.visible();
+                ArrayList<FileNode*>* rows = tree.visible();
                 mutable int i = 0;
                 while (i < rows.size()) {
                     int y = top + 6 + i * ch;
