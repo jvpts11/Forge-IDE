@@ -14,7 +14,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "ldp3 build failed" }
 
     Write-Host "== self-test =="
-    & (Join-Path $here "build-output\Forge.exe")
+    & (Join-Path $here "build-output\Forge.exe") test
     if ($LASTEXITCODE -ne 0) { throw "Forge exited $LASTEXITCODE" }
 } finally {
     Pop-Location

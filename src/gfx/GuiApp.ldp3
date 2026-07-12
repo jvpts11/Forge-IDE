@@ -1,0 +1,87 @@
+import gl.Gl;
+import gl.Wgl;
+import glfw.GlWindow;
+import System.IO.Console;
+import System.IO.File;
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // The graphics front-end: opens a real OpenGL window and runs the frame loop that will drive the
+        // editor on the GPU. run() is the live interactive window; shot() renders one frame and dumps it to
+        // a PPM for offscreen verification. For this slice both just clear to the Forge background colour.
+        public class GuiApp {
+            public static method run() returns void {
+                GlWindow win = new GlWindow() on heap;
+                if (win.open("Forge", 1100, 720, 4, 6) == 0) {
+                    System.IO.Console.printf("Forge: could not open a GL 4.6 window\n");
+                    return;
+                }
+                win.setVSync(1);
+                while (win.isOpen()) {
+                    win.pump();
+                    GuiApp.clear(win);
+                    win.swap();
+                    win.sleep(8);
+                }
+                return;
+            }
+
+            public static method shot(String path) returns void {
+                GlWindow win = new GlWindow() on heap;
+                if (win.open("Forge", 1100, 720, 4, 6) == 0) {
+                    System.IO.Console.printf("Forge: could not open a GL 4.6 window\n");
+                    return;
+                }
+                win.pump();
+                GuiApp.clear(win);
+                Wgl.glFinish();
+                int w = win.width();
+                int h = win.height();
+                byte[] px = win.gl.readPixelsRgb(0, 0, w, h);
+                GuiApp.writePpm(path, px, w, h);
+                win.swap();
+                System.IO.Console.printf("Forge: wrote %s (%dx%d)\n", path, w, h);
+                return;
+            }
+
+            // Clear the framebuffer to the Forge deep-teal ground (#0d1a1d).
+            private static method clear(GlWindow win) returns void {
+                Wgl.glViewport(0, 0, win.width(), win.height());
+                Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);
+                Wgl.glClear(16384);   // GL_COLOR_BUFFER_BIT
+            }
+
+            // Write an RGB byte buffer as an ASCII P3 PPM, flipped in Y (GL's origin is bottom-left).
+            private static method writePpm(String path, byte[] px, int w, int h) returns void {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append("P3\n");
+                sb.appendInt(w);
+                sb.append(" ");
+                sb.appendInt(h);
+                sb.append("\n255\n");
+                mutable int y = h - 1;
+                while (y >= 0) {
+                    mutable int x = 0;
+                    while (x < w) {
+                        int i = (y * w + x) * 3;
+                        sb.appendInt(cast<int>(px[i]) & 255);
+                        sb.append(" ");
+                        sb.appendInt(cast<int>(px[i + 1]) & 255);
+                        sb.append(" ");
+                        sb.appendInt(cast<int>(px[i + 2]) & 255);
+                        sb.append(" ");
+                        x = x + 1;
+                    }
+                    sb.append("\n");
+                    y = y - 1;
+                }
+                File.writeAll(path, sb.toString());
+                return;
+            }
+        }
+    }
+}

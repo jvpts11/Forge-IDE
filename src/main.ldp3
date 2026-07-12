@@ -1,19 +1,20 @@
 import test.CoreTests;
-import app.Demo;
+import gfx.GuiApp;
 
 program Forge;
 
-// Forge -- the LDP3 IDE. Entry point. Until the graphics/UI layer lands, main prints one rendered frame of
-// the editor engine (Demo) and then runs the headless editor-core self-check suite, so every launch both
-// shows the engine working and proves the model still passes. It will become the app launcher (open a
-// window, wire input to the Editor, render via ldp3-opengl) once that layer exists. See docs/DESIGN.md.
+// Forge -- the LDP3 IDE. Entry point. With no arguments it opens the graphical editor window; `shot`
+// renders one frame to frame.ppm for offscreen verification; `test` runs the headless editor-core
+// self-check (the engine's 229 checks). See docs/DESIGN.md.
 public bundle forge {
     public namespace app {
         public class Main {
             public static method main(string[] args) returns void {
-                Demo.run();
-                int failed = CoreTests.run();
-                if (failed == 0) { return; }
+                if (args.length() > 0) {
+                    if (args[0].equals("test")) { CoreTests.run(); return; }
+                    if (args[0].equals("shot")) { GuiApp.shot("frame.ppm"); return; }
+                }
+                GuiApp.run();
                 return;
             }
         }

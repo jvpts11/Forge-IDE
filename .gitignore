@@ -20,3 +20,8 @@ Thumbs.db
 
 # self-test scratch file
 *.tmp
+
+# offscreen render artifacts (shot mode)
+*.ppm
+*.png
+frame.*
