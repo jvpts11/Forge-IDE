@@ -249,6 +249,33 @@ public bundle forge {
                 vp3.scrollToCaret(4, 0, 0);
                 a.eqInt(vp3.firstLine(), 0, "vp.clamp-small");
 
+                // --- navigation: smart home/end, doc start/end, delete-forward, select-all ---
+                Editor en = new Editor(new TextBuffer() on heap) on heap;
+                en.document().loadText("    hello\nworld");
+                en.moveLineEnd();   a.eqInt(en.cursorCol(), 9, "nav.end");
+                en.moveLineStart(); a.eqInt(en.cursorCol(), 4, "nav.home-nonblank");
+                en.moveLineStart(); a.eqInt(en.cursorCol(), 0, "nav.home-zero");
+                en.moveDocEnd();
+                a.eqInt(en.cursorRow(), 1, "nav.docend-row");
+                a.eqInt(en.cursorCol(), 5, "nav.docend-col");
+                en.moveDocStart();
+                a.eqInt(en.cursorRow(), 0, "nav.docstart-row");
+                a.eqInt(en.cursorCol(), 0, "nav.docstart-col");
+                en.deleteForward();
+                a.eqStr(en.document().line(0), "   hello", "nav.del-fwd");
+
+                Editor en2 = new Editor(new TextBuffer() on heap) on heap;
+                en2.document().loadText("ab\ncd");
+                en2.moveLineEnd();
+                en2.deleteForward();                            // join next line
+                a.eqStr(en2.document().line(0), "abcd", "nav.del-fwd-join");
+                a.eqInt(en2.document().lineCount(), 1, "nav.del-fwd-join-count");
+
+                Editor en3 = new Editor(new TextBuffer() on heap) on heap;
+                en3.document().loadText("xy\nz");
+                en3.selectAll();
+                a.eqStr(en3.selectionText(), "xy\nz", "nav.select-all");
+
                 a.summary("editor tests");
                 return a.failCount();
             }
