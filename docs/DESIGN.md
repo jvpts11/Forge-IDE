@@ -102,3 +102,24 @@ These tool windows exist because no other language has the features behind them:
 Remote development, a plugin marketplace, multi-language support, a visual designer, and
 `ldp3-vulkan`. Forge v1 is a fast, native, single-language editor that makes LDP3 a joy to
 write — and proves the language can build a real GUI application.
+
+## Progress
+
+**Editor core — built and headless-tested (LDP3 `src/forge.ldp3`).** The heart of the IDE
+was built first, decoupled from graphics so it is unit-testable without a window:
+
+- **`editor.TextBuffer`** — a line-based text model (one String per line): insertChar,
+  splitLine (Enter), backspace (delete-left, or join lines at a line start), load/serialize.
+- **`editor.Editor`** — a caret over a TextBuffer: type/enter/backspace, arrow moves with
+  column clamping and line-wrap, and **snapshot-based undo/redo**.
+- **`syntax.Highlighter`** — a small LDP3 tokenizer that tiles a line into coloured Spans
+  (keyword/ident/number/string/char/comment/punct), the language-aware highlighting.
+- **`io.Document`** — open/save a file from disk (Files.readLines/writeLines) with a
+  modified flag.
+- **`harness.Asserts`** — a tiny self-test harness; `build.ps1` compiles and runs the suite
+  (currently "editor tests: OK (36 checks)").
+
+Found and fixed one stdlib gap on the way: `ArrayList.insertAt` (LDP3 repo).
+
+**Next:** the graphics/UI layer (windowing + `ldp3-opengl` text rendering), which needs
+visual verification. The editor core above is the model it renders and drives.
