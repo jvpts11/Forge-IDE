@@ -85,6 +85,8 @@ public bundle forge {
                 mutable int lastClickFrame = 0 - 100;
                 mutable int lastClickX = 0;
                 mutable int lastClickY = 0;
+                mutable int fontPx = 18;
+                mutable boolean prevZoom = false;
                 while (win.isOpen()) {
                     frames = frames + 1;
                     win.pump();
@@ -151,6 +153,18 @@ public bundle forge {
                     // mouse wheel -> scroll the view (3 lines per notch)
                     int scroll = win.takeScroll();
                     if (scroll != 0) { wb.active().scrollLines(0 - (scroll / 120) * 3); }
+                    // Ctrl+= / Ctrl+- zoom the editor font in and out (reloads the glyph atlas at the new
+                    // size, then re-fits the viewport to the new metrics). Edge-triggered so one press = one step.
+                    boolean zplus = win.modCtrl() && win.keyDown(187);   // VK_OEM_PLUS (the '=' key)
+                    boolean zminus = win.modCtrl() && win.keyDown(189);  // VK_OEM_MINUS (the '-' key)
+                    if ((zplus || zminus) && !prevZoom) {
+                        if (zplus && fontPx < 32) { fontPx = fontPx + 2; }
+                        if (zminus && fontPx > 10) { fontPx = fontPx - 2; }
+                        screen.setFont(GuiApp.loadFont(win, fontPx));
+                        wb.active().resizeViewport(screen.paneRowsFor(win.height()),
+                                                   screen.paneColsFor(win.width()));
+                    }
+                    prevZoom = zplus || zminus;
                     // window resize -> re-fit the viewport
                     int w2 = win.width();
                     int h2 = win.height();

@@ -49,6 +49,8 @@ public bundle forge {
             public method setCaretOn(boolean visible) returns void { this.caretOn = visible; }
 
             public method fontTexture() returns int { return this.font.texture(); }
+            // Swap the glyph atlas -- used by zoom to change the font size.
+            public method setFont(Font* f) returns void { this.font = f; }
             public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
             public method menuH() returns int { return this.font.lineHeight() + 8; }
             public method tabH() returns int { return this.font.lineHeight() + 12; }
