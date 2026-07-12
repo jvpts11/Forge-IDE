@@ -1,0 +1,16 @@
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // The cut/copy buffer. In-app for now (each Editor owns one); a shared instance -- and eventually
+        // the OS clipboard via FFI -- comes with the UI layer.
+        public class Clipboard {
+            private mutable String content;
+            public constructor Clipboard() { this.content = ""; }
+            public method set(String s) returns void { this.content = s; }
+            public method get() returns String { return this.content; }
+            public method isEmpty() returns boolean { return this.content.length() == 0; }
+        }
+    }
+}

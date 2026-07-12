@@ -107,6 +107,37 @@ public bundle forge {
                 a.eqInt(es2.cursorRow(), 0, "sel.caret-row");
                 a.eqInt(es2.cursorCol(), 1, "sel.caret-col");
 
+                // --- clipboard: copy/paste, cut, multi-line paste ---
+                Editor ec = new Editor(new TextBuffer() on heap) on heap;
+                ec.document().loadText("abc");
+                ec.selectRight(); ec.selectRight(); ec.selectRight();   // select "abc"
+                ec.copy();
+                a.eqStr(ec.clipboardText(), "abc", "clip.copy");
+                ec.moveRight();                                 // clear selection, caret at end (0,3)
+                ec.paste();                                     // -> "abcabc"
+                a.eqStr(ec.document().line(0), "abcabc", "clip.paste");
+                a.eqInt(ec.cursorCol(), 6, "clip.paste-caret");
+
+                Editor ec2 = new Editor(new TextBuffer() on heap) on heap;
+                ec2.document().loadText("xy");
+                ec2.selectRight();                              // select "x"
+                ec2.cut();
+                a.eqStr(ec2.clipboardText(), "x", "clip.cut-content");
+                a.eqStr(ec2.document().line(0), "y", "clip.cut-removed");
+                a.eqInt(ec2.cursorCol(), 0, "clip.cut-caret");
+
+                Editor ec3 = new Editor(new TextBuffer() on heap) on heap;
+                ec3.document().loadText("ab\ncd");
+                ec3.selectRight(); ec3.selectRight(); ec3.selectDown();   // select "ab\ncd"
+                ec3.copy();
+                a.eqStr(ec3.clipboardText(), "ab\ncd", "clip.ml-copy");
+                ec3.moveRight();                                // clear selection, caret at (1,2)
+                ec3.paste();                                    // insert "ab\ncd" -> 3 lines
+                a.eqInt(ec3.document().lineCount(), 3, "clip.ml-count");
+                a.eqStr(ec3.document().line(1), "cdab", "clip.ml-l1");
+                a.eqStr(ec3.document().line(2), "cd", "clip.ml-l2");
+                a.eqInt(ec3.cursorRow(), 2, "clip.ml-caret-row");
+
                 a.summary("editor tests");
                 return a.failCount();
             }

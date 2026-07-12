@@ -1,4 +1,5 @@
 import System.Collections.ArrayList;
+import System.Text.Strings;
 
 program Forge;
 
@@ -15,6 +16,7 @@ public bundle forge {
             private mutable int selRow;             // selection anchor; the caret (row,col) is the active end
             private mutable int selCol;
             private mutable boolean hasSel;
+            private mutable Clipboard* clip;
             private mutable ArrayList<Snapshot>* undoStack;
             private mutable ArrayList<Snapshot>* redoStack;
 
@@ -25,9 +27,36 @@ public bundle forge {
                 this.selRow = 0;
                 this.selCol = 0;
                 this.hasSel = false;
+                this.clip = new Clipboard() on heap;
                 this.undoStack = new ArrayList<Snapshot>() on heap;
                 this.redoStack = new ArrayList<Snapshot>() on heap;
             }
+
+            // --- clipboard: copy/cut the selection, paste at the caret (replacing any selection) ---
+            public method copy() returns void {
+                if (this.hasSelection()) { this.clip.set(this.selectionText()); }
+            }
+            public method cut() returns void {
+                if (!this.hasSelection()) { return; }
+                this.clip.set(this.selectionText());
+                this.saveUndo();
+                this.deleteSelection();
+            }
+            public method paste() returns void {
+                String text = this.clip.get();
+                if (text.length() == 0) { return; }
+                this.saveUndo();
+                if (this.hasSelection()) { this.deleteSelection(); }
+                int addedRows = this.buf.insertText(this.row, this.col, text);
+                if (addedRows == 0) {
+                    this.col = this.col + text.length();
+                } else {
+                    ArrayList<String> parts = Strings.split(text, "\n");
+                    this.row = this.row + addedRows;
+                    this.col = parts.get(parts.size() - 1).length();
+                }
+            }
+            public method clipboardText() returns String { return this.clip.get(); }
 
             // --- selection ---
             private method anchorSelection() returns void {
