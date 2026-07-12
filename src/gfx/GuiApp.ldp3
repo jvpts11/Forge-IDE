@@ -878,11 +878,13 @@ public bundle forge {
                 Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);   // #0d1a1d
                 Wgl.glClear(16384);   // GL_COLOR_BUFFER_BIT
 
+                int mx = win.cursorX();
+                int my = win.cursorY();
                 batch.begin(w, h, screen.fontTexture());
-                screen.drawWorkbench(batch, wb, tree, ov, w, h);
+                screen.drawWorkbench(batch, wb, tree, ov, mx, my, w, h);
                 if (comp.active) { screen.drawCompletion(batch, comp, wb, w, h); }
                 screen.drawMenuBar(batch, menu, w);
-                screen.drawMenuDropdown(batch, menu);
+                screen.drawMenuDropdown(batch, menu, mx, my);
                 if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
                 batch.flush();
                 return;
@@ -897,7 +899,7 @@ public bundle forge {
                 Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);
                 Wgl.glClear(16384);
                 batch.begin(w, h, screen.fontTexture());
-                screen.drawWelcome(batch, recent, w, h);
+                screen.drawWelcome(batch, recent, win.cursorX(), win.cursorY(), w, h);
                 batch.flush();
                 return;
             }
