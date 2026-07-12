@@ -308,10 +308,22 @@ public bundle forge {
             }
 
             private static method serveKey(Workbench* wb, Overlay* ov, Completion* comp, String name) returns void {
-                int vk = GuiApp.vkForName(name);
+                // parse optional modifier prefixes: e.g. "ctrl+slash", "shift+enter", "ctrl+shift+p"
+                mutable boolean ctrl = false;
+                mutable boolean shift = false;
+                mutable boolean alt = false;
+                mutable String n = name;
+                mutable boolean more = true;
+                while (more) {
+                    if (n.startsWith("ctrl+")) { ctrl = true; n = n.substring(5, n.length()); }
+                    else if (n.startsWith("shift+")) { shift = true; n = n.substring(6, n.length()); }
+                    else if (n.startsWith("alt+")) { alt = true; n = n.substring(4, n.length()); }
+                    else { more = false; }
+                }
+                int vk = GuiApp.vkForName(n);
                 if (ov.isOpen()) {
                     if (vk == 27) { ov.close(); }
-                    else if (ov.mode == 2) { GuiApp.findKey(ov, wb, vk, false, false); }
+                    else if (ov.mode == 2) { GuiApp.findKey(ov, wb, vk, ctrl, shift); }
                     else if (vk == 8) { ov.backspace(); }
                     else if (vk == 40) { ov.moveSel(1); }
                     else if (vk == 38) { ov.moveSel(0 - 1); }
@@ -324,7 +336,7 @@ public bundle forge {
                 } else if (comp.active && GuiApp.completionKey(comp, wb, vk)) {
                     return;
                 } else {
-                    GuiApp.dispatchKey(wb, vk, false, false, false);
+                    GuiApp.dispatchKey(wb, vk, ctrl, shift, alt);
                     if (vk == 8) { comp.update(wb.active()); } else { comp.dismiss(); }
                 }
                 return;
@@ -369,6 +381,13 @@ public bundle forge {
                 if (name.equals("end")) { return 35; }
                 if (name.equals("pageup")) { return 33; }
                 if (name.equals("pagedown")) { return 34; }
+                if (name.equals("slash")) { return 191; }
+                if (name.length() == 1) {
+                    char c = name.charAt(0);
+                    if (c >= 'a' && c <= 'z') { return cast<int>(c) - 32; }   // 'a' -> VK 65
+                    if (c >= 'A' && c <= 'Z') { return cast<int>(c); }
+                    if (c >= '0' && c <= '9') { return cast<int>(c); }
+                }
                 return 0;
             }
 
@@ -539,6 +558,7 @@ public bundle forge {
             private static method dispatchKey(Workbench* wb, int vk, boolean ctrl, boolean shift, boolean alt)
                     returns void {
                 if (ctrl && vk >= 65 && vk <= 90) { wb.handleKey(Key.ctrlCh(cast<char>(vk + 32))); return; }
+                if (ctrl && vk == 191) { wb.handleKey(Key.ctrlCh('/')); return; }   // Ctrl+/ -> toggle comment
                 if (vk == 0x25) { wb.handleKey(new Key(KeyCode.LEFT, ' ', ctrl, shift, alt) on heap); return; }
                 if (vk == 0x27) { wb.handleKey(new Key(KeyCode.RIGHT, ' ', ctrl, shift, alt) on heap); return; }
                 if (vk == 0x26) { wb.handleKey(new Key(KeyCode.UP, ' ', ctrl, shift, alt) on heap); return; }
