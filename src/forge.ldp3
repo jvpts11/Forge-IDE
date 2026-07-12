@@ -3,18 +3,18 @@ import System.Collections.ArrayList;
 import System.Text.Strings;
 import System.Text.StringBuilder;
 import editor.TextBuffer;
+import editor.Editor;
+import harness.Asserts;
 
 program Forge;
 
-// Forge -- the LDP3 IDE. This is the editor core: a line-based text model (one String per line) with the
-// primitive edits an editor needs -- insert a character, split a line (Enter), and backspace (delete a
-// character, joining lines at a line start). Pure LDP3, headless and testable; the graphics/UI layer wires
-// onto this model later. See docs/DESIGN.md for the full build chain.
+// Forge -- the LDP3 IDE. Editor core (headless, pure LDP3): a line-based text model plus a cursor-driven
+// Editor over it. The graphics/UI layer wires onto this later (docs/DESIGN.md). Runs a self-check suite.
 public bundle forge {
     public namespace editor {
 
-        // The text of one open document, addressed by (row, col). Rows and columns are 0-based; col == the
-        // number of characters to the left of the caret, so it ranges 0..line.length().
+        // The text of one open document, addressed by (row, col), 0-based; col is the number of characters
+        // to the left of the caret, 0..line.length().
         public class TextBuffer {
             private mutable ArrayList<String> lines;
 
@@ -26,16 +26,13 @@ public bundle forge {
             public method lineCount() returns int { return this.lines.size(); }
             public method line(int row) returns String { return this.lines.get(row); }
 
-            // Replace the whole document with `text`, split on newlines. Empty input is one empty line.
             public method loadText(String text) returns void {
                 this.lines = Strings.split(text, "\n");
                 if (this.lines.size() == 0) { this.lines.add(""); }
             }
 
-            // Serialize the document back to a single String with '\n' between lines.
             public method text() returns String { return Strings.join(this.lines, "\n"); }
 
-            // Insert character `c` at (row, col): everything from col on shifts right.
             public method insertChar(int row, int col, char c) returns void {
                 String cur = this.lines.get(row);
                 StringBuilder sb = new StringBuilder() on heap;
@@ -45,16 +42,14 @@ public bundle forge {
                 this.lines.set(row, sb.toString());
             }
 
-            // Split the line at (row, col) -- the Enter key: the text at and after col becomes a new line.
             public method splitLine(int row, int col) returns void {
                 String cur = this.lines.get(row);
                 this.lines.set(row, cur.substring(0, col));
                 this.lines.insertAt(row + 1, cur.substring(col, cur.length()));
             }
 
-            // Backspace at (row, col). Within a line (col > 0) it deletes the char to the left; at a line
-            // start (col == 0, row > 0) it joins this line onto the previous one. Returns the caret's new
-            // column so the caller can move the cursor.
+            // Backspace at (row, col): within a line it deletes the char to the left; at a line start it
+            // joins this line onto the previous one. Returns the caret's new column.
             public method backspace(int row, int col) returns int {
                 if (col > 0) {
                     String cur = this.lines.get(row);
@@ -74,18 +69,152 @@ public bundle forge {
                 return 0;                                // top-left backspace is a no-op
             }
         }
+
+        // A caret over a TextBuffer: turns key events (type/enter/backspace) and arrow moves into buffer
+        // edits, keeping (row, col) valid. This is the model an input layer will drive.
+        public class Editor {
+            private mutable TextBuffer* buf;
+            private mutable int row;
+            private mutable int col;
+
+            public constructor Editor(TextBuffer* doc) {
+                this.buf = doc;
+                this.row = 0;
+                this.col = 0;
+            }
+
+            public method cursorRow() returns int { return this.row; }
+            public method cursorCol() returns int { return this.col; }
+            public method document() returns TextBuffer* { return this.buf; }
+
+            public method type(char c) returns void {
+                this.buf.insertChar(this.row, this.col, c);
+                this.col = this.col + 1;
+            }
+
+            public method enter() returns void {
+                this.buf.splitLine(this.row, this.col);
+                this.row = this.row + 1;
+                this.col = 0;
+            }
+
+            public method backspace() returns void {
+                if (this.col == 0 && this.row == 0) { return; }
+                boolean joining = this.col == 0;
+                int newCol = this.buf.backspace(this.row, this.col);
+                if (joining) { this.row = this.row - 1; }
+                this.col = newCol;
+            }
+
+            public method moveLeft() returns void {
+                if (this.col > 0) { this.col = this.col - 1; }
+                else if (this.row > 0) {
+                    this.row = this.row - 1;
+                    this.col = this.buf.line(this.row).length();
+                }
+            }
+
+            public method moveRight() returns void {
+                if (this.col < this.buf.line(this.row).length()) { this.col = this.col + 1; }
+                else if (this.row < this.buf.lineCount() - 1) {
+                    this.row = this.row + 1;
+                    this.col = 0;
+                }
+            }
+
+            public method moveUp() returns void {
+                if (this.row > 0) {
+                    this.row = this.row - 1;
+                    this.clampCol();
+                }
+            }
+
+            public method moveDown() returns void {
+                if (this.row < this.buf.lineCount() - 1) {
+                    this.row = this.row + 1;
+                    this.clampCol();
+                }
+            }
+
+            private method clampCol() returns void {
+                int len = this.buf.line(this.row).length();
+                if (this.col > len) { this.col = len; }
+            }
+        }
+    }
+
+    public namespace harness {
+        // A tiny assert harness: counts pass/fail, prints each failure, and a one-line summary that reads
+        // "<suite>: OK" only when everything passed -- so a build can gate on that string.
+        public class Asserts {
+            private mutable int passed;
+            private mutable int failed;
+            public constructor Asserts() { this.passed = 0; this.failed = 0; }
+
+            public method eqStr(String actual, String expected, String name) returns void {
+                if (actual.equals(expected)) { this.passed = this.passed + 1; }
+                else {
+                    this.failed = this.failed + 1;
+                    System.IO.Console.printf("FAIL %s: [%s] != [%s]\n", name, actual, expected);
+                }
+            }
+            public method eqInt(int actual, int expected, String name) returns void {
+                if (actual == expected) { this.passed = this.passed + 1; }
+                else {
+                    this.failed = this.failed + 1;
+                    System.IO.Console.printf("FAIL %s: %d != %d\n", name, actual, expected);
+                }
+            }
+            public method summary(String suite) returns void {
+                if (this.failed == 0) {
+                    System.IO.Console.printf("%s: OK (%d checks)\n", suite, this.passed);
+                } else {
+                    System.IO.Console.printf("%s: %d FAILED of %d\n", suite, this.failed,
+                                             this.passed + this.failed);
+                }
+            }
+        }
     }
 
     public namespace app {
         public class Main {
             public static method main(string[] args) returns void {
+                Asserts a = new Asserts() on heap;
+
+                // --- TextBuffer edits ---
                 TextBuffer buf = new TextBuffer() on heap;
-                buf.loadText("ab\ncd");                  // ["ab", "cd"]
-                buf.insertChar(0, 1, 'X');               // ["aXb", "cd"]
-                buf.splitLine(0, 2);                      // ["aX", "b", "cd"]
-                int col = buf.backspace(2, 0);            // join "cd" onto "b" -> ["aX", "bcd"], caret col 1
-                System.IO.Console.printf("text=[%s]\n", buf.text());   // aX\nbcd
-                System.IO.Console.printf("lines=%d joincol=%d\n", buf.lineCount(), col);
+                buf.loadText("ab\ncd");
+                buf.insertChar(0, 1, 'X');               // "aXb"
+                buf.splitLine(0, 2);                       // "aX" / "b"
+                buf.backspace(2, 0);                       // join "cd" onto "b" -> "bcd"
+                a.eqInt(buf.lineCount(), 2, "buf.lineCount");
+                a.eqStr(buf.line(0), "aX", "buf.line0");
+                a.eqStr(buf.line(1), "bcd", "buf.line1");
+
+                // --- Editor: type, Enter, backspace within a line, backspace-join ---
+                Editor ed = new Editor(new TextBuffer() on heap) on heap;
+                ed.type('h'); ed.type('i'); ed.enter(); ed.type('y'); ed.type('o');   // "hi" / "yo"
+                a.eqInt(ed.document().lineCount(), 2, "ed.lineCount");
+                a.eqStr(ed.document().line(0), "hi", "ed.line0");
+                a.eqStr(ed.document().line(1), "yo", "ed.line1");
+                a.eqInt(ed.cursorRow(), 1, "ed.row");
+                a.eqInt(ed.cursorCol(), 2, "ed.col");
+
+                ed.backspace(); ed.backspace();           // remove "yo" -> "hi" / ""
+                a.eqStr(ed.document().line(1), "", "ed.after-bs-line1");
+                a.eqInt(ed.cursorCol(), 0, "ed.col-after-bs");
+
+                ed.backspace();                            // line-start backspace joins -> "hi"
+                a.eqInt(ed.document().lineCount(), 1, "ed.after-join-count");
+                a.eqStr(ed.document().line(0), "hi", "ed.after-join");
+                a.eqInt(ed.cursorRow(), 0, "ed.row-after-join");
+                a.eqInt(ed.cursorCol(), 2, "ed.col-after-join");
+
+                // --- cursor movement with clamping / line wrap ---
+                ed.moveLeft();  a.eqInt(ed.cursorCol(), 1, "moveLeft");
+                ed.moveRight(); ed.moveRight();  a.eqInt(ed.cursorCol(), 2, "moveRight-clamp");
+
+                a.summary("editor tests");
                 return;
             }
         }
