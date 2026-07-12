@@ -53,6 +53,13 @@ public bundle forge {
                 this.sel = 0;
                 this.items = paths;
             }
+            // Open the find-in-files box (mode 6): items carries the project file list to grep on Enter.
+            public method openSearch(ArrayList<String>* paths) returns void {
+                this.mode = 6;
+                this.query = "";
+                this.sel = 0;
+                this.items = paths;
+            }
 
             // Indices of items whose label contains the query (case-insensitive), in order. When the query is
             // empty, every item matches.

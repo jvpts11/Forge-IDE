@@ -572,6 +572,13 @@ public bundle forge {
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     wb.active().find(arg);
                     System.IO.Console.println("ok " + wb.active().matchCount(arg).toString() + " matches");
+                } else if (cmd.equals("findinfiles")) {
+                    ov.openSearch(tree.allFiles());
+                    mutable int i = 0;
+                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    GuiApp.runGlobalSearch(ov, wb);
+                    ov.close();
+                    System.IO.Console.println("ok " + wb.output().lineCount().toString() + " result lines");
                 } else if (cmd.equals("replaceall")) {
                     // replaceall <query>::<replacement>
                     int sep = arg.indexOf("::");
@@ -709,6 +716,7 @@ public bundle forge {
                         else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
                         else if (ov.mode == 4) { GuiApp.runQuickOpen(ov, wb); }
                         else if (ov.mode == 5) { GuiApp.runGoToLine(ov, wb); }
+                        else if (ov.mode == 6) { GuiApp.runGlobalSearch(ov, wb); }
                         else { wb.active().find(ov.query); }
                         ov.close();
                     }
@@ -850,7 +858,9 @@ public bundle forge {
                         GuiApp.openSymbols(ov, wb);
                     } else if (e.isKey() && ctrl && shift && e.vk == 219) {  // Ctrl+Shift+[ -> fold at caret
                         wb.active().toggleFoldAtCaret();
-                    } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
+                    } else if (e.isKey() && ctrl && shift && e.vk == 70) {   // Ctrl+Shift+F -> find in files
+                        ov.openSearch(tree.allFiles());
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 70) {  // Ctrl+F -> find
                         ov.open(2);
                     } else if (e.isKey() && ctrl && e.vk == 87) {            // Ctrl+W -> close tab
                         wb.closeActiveTab();
@@ -925,6 +935,7 @@ public bundle forge {
                         else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
                         else if (ov.mode == 4) { GuiApp.runQuickOpen(ov, wb); }
                         else if (ov.mode == 5) { GuiApp.runGoToLine(ov, wb); }
+                        else if (ov.mode == 6) { GuiApp.runGlobalSearch(ov, wb); }
                         else { wb.active().find(ov.query); }
                         ov.close();
                     }
@@ -998,6 +1009,40 @@ public bundle forge {
                     wb.active().placeCaret(ln - 1, 0);
                 }
                 return;
+            }
+
+            // Grep every project text file (captured in ov.items) for ov.query and list the matches, as
+            // `file:line: text`, in the output panel. Bounded so a huge project can't stall the search.
+            private static method runGlobalSearch(Overlay* ov, Workbench* wb) returns void {
+                String q = ov.query;
+                if (q.length() == 0) { return; }
+                ArrayList<String>* results = new ArrayList<String>() on heap;
+                mutable int fi = 0;
+                mutable int hits = 0;
+                while (fi < ov.items.size() && results.size() < 800) {
+                    String path = ov.items.get(fi);
+                    if (GuiApp.isSearchable(path)) {
+                        ArrayList<String> lines = Files.readLines(path);
+                        String base = Paths.basename(path);
+                        mutable int li = 0;
+                        while (li < lines.size()) {
+                            if (lines.get(li).indexOf(q) >= 0) {
+                                hits = hits + 1;
+                                results.add(base + ":" + (li + 1).toString() + ":  " + lines.get(li).trim());
+                            }
+                            li = li + 1;
+                        }
+                    }
+                    fi = fi + 1;
+                }
+                wb.output().showLines(hits.toString() + " matches for '" + q + "'", results);
+                return;
+            }
+            // Only grep text-ish files (skip binaries/images the tree may include).
+            private static method isSearchable(String path) returns boolean {
+                return path.endsWith(".ldp3") || path.endsWith(".toml") || path.endsWith(".md")
+                    || path.endsWith(".txt") || path.endsWith(".json") || path.endsWith(".ps1")
+                    || path.endsWith(".cpp") || path.endsWith(".h");
             }
 
             // Map a Win32 virtual-key to a Key and dispatch it, carrying the modifier state.

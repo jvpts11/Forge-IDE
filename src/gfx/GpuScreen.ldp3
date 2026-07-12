@@ -938,6 +938,23 @@ public bundle forge {
                 else if (ov.mode == 3) { this.drawSymbols(batch, ov, screenW, screenH); }
                 else if (ov.mode == 4) { this.drawQuickOpen(batch, ov, screenW, screenH); }
                 else if (ov.mode == 5) { this.drawGoToLine(batch, ov, screenW); }
+                else if (ov.mode == 6) { this.drawFindInFiles(batch, ov, screenW); }
+            }
+
+            // Find-in-files box (Ctrl+Shift+F): a centered input; Enter greps the project into the output panel.
+            private method drawFindInFiles(Batch2D* batch, Overlay* ov, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 460;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                int bh = ch + 14;
+                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
+                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "find in files: ", 0.502, 0.588, 0.584, 1.0);
+                int lx = bx + 12 + 15 * cw;
+                this.font.drawText(batch, lx, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
             }
 
             // Go-to-line box (Ctrl+G): a small centered input for a line number.
