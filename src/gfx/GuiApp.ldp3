@@ -6,8 +6,10 @@ import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
 import io.FileTree;
+import io.FileNode;
 import input.Key;
 import input.KeyCode;
+import System.Collections.ArrayList;
 import System.IO.Console;
 import System.IO.File;
 import System.Text.StringBuilder;
@@ -48,7 +50,7 @@ public bundle forge {
                     GuiApp.processInput(win, wb);
                     // left click -> place the caret (edge-triggered)
                     boolean down = win.keyDown(1);   // VK_LBUTTON
-                    if (down && !prevDown) { GuiApp.handleClick(win, screen, wb); }
+                    if (down && !prevDown) { GuiApp.handleClick(win, screen, wb, tree); }
                     prevDown = down;
                     // mouse wheel -> scroll the view (3 lines per notch)
                     int scroll = win.takeScroll();
@@ -68,13 +70,31 @@ public bundle forge {
                 return;
             }
 
-            // Convert a left-click at the cursor into a caret placement in the editor pane (clicks in the
-            // tab bar / tree are left for a later slice).
-            private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb) returns void {
-                int mx = win.cursorX();
-                int my = win.cursorY();
-                if (mx < screen.treeWidth()) { return; }
-                if (my < screen.tabH()) { return; }
+            private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree)
+                    returns void {
+                GuiApp.clickAt(screen, wb, tree, win.cursorX(), win.cursorY());
+                return;
+            }
+
+            // Route a click at pixel (mx, my): a tab activates it, a tree directory expands/collapses, a
+            // tree file opens in a tab, and the editor pane places the caret. Split out from cursor reading
+            // so it can be verified with synthetic coordinates.
+            private static method clickAt(GpuScreen* screen, Workbench* wb, FileTree* tree, int mx, int my)
+                    returns void {
+                if (my < screen.tabH()) {
+                    int ti = screen.tabAtX(wb.documents(), mx);
+                    if (ti >= 0) { wb.documents().setActive(ti); }
+                    return;
+                }
+                if (mx < screen.treeWidth()) {
+                    int ri = screen.treeRowAtY(my);
+                    ArrayList<FileNode>* rows = tree.visible();
+                    if (ri >= 0 && ri < rows.size()) {
+                        FileNode* node = rows.get(ri);
+                        if (node.isDir) { tree.toggle(node); } else { wb.openFile(node.path); }
+                    }
+                    return;
+                }
                 int screenRow = (my - screen.textOy()) / screen.lineH();
                 if (screenRow < 0) { return; }
                 mutable int col = (mx - screen.textOx()) / screen.charW();
@@ -110,6 +130,9 @@ public bundle forge {
 
                 win.pump();                   // decode posted messages into the event queue
                 GuiApp.processInput(win, wb); // drain through the real handleKey path
+
+                // verify a tree file-open click (row 9 of the src listing is main.ldp3)
+                GuiApp.clickAt(screen, wb, tree, 30, screen.tabH() + 6 + 9 * screen.lineH());
 
                 GuiApp.drawFrame(win, batch, screen, wb, tree);
                 Wgl.glFinish();

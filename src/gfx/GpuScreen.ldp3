@@ -41,6 +41,23 @@ public bundle forge {
             // Pixel origin of the code text (for mouse hit-testing).
             public method textOx() returns int { return this.treeW + this.gutterPx() + 6; }
             public method textOy() returns int { return this.tabH() + this.topPad; }
+            // Which tab index is under pixel x in the tab bar (-1 if none) -- mirrors drawTabBar's layout.
+            public method tabAtX(DocumentManager* docs, int mx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    int tw = (docs.title(i).length() + 3) * cw;
+                    if (mx >= x && mx < x + tw) { return i; }
+                    x = x + tw;
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Which tree row is under pixel y (may be out of range; the caller checks against visible()).
+            public method treeRowAtY(int my) returns int {
+                return (my - (this.tabH() + 6)) / this.font.lineHeight();
+            }
             // Viewport rows/cols that fit the editor pane of a pixel window (window minus chrome).
             public method paneRowsFor(int screenH) returns int {
                 return (screenH - this.tabH() - this.statusH() - this.topPad) / this.font.lineHeight();

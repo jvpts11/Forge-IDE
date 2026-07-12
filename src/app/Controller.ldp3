@@ -163,7 +163,10 @@ public bundle forge {
                 this.ed.moveDocStart();
                 this.moved();
             }
-            public method save() returns void { this.doc.save(); }
+            // Save to disk (a no-op for an untitled buffer -- a Save As prompt is the shell's job).
+            public method save() returns void {
+                if (this.doc.path().length() > 0) { this.doc.save(); }
+            }
             public method saveAs(String path) returns void { this.doc.saveAs(path); }
 
             // --- render queries (the UI reads these to paint one frame) ---
