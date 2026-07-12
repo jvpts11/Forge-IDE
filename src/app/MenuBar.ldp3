@@ -53,6 +53,7 @@ public bundle forge {
                 file.add("New File", "file.new");
                 file.add("Open Folder...", "file.openFolder");
                 file.add("Save", "file.save");
+                file.add("Save As...", "file.saveAs");
                 file.sep();
                 file.add("Close Tab", "file.close");
                 file.add("Exit", "app.quit");

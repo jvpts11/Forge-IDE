@@ -14,6 +14,9 @@ public bundle forge {
             public extern stdcall static method CoInitialize(long reserved) returns int;
             public extern stdcall static method CoTaskMemFree(long p) returns void;
         }
+        public class Comdlg {
+            public extern stdcall static method GetSaveFileNameA(long ofn) returns int;
+        }
 
         // A native "choose a folder" dialog, so the user opens a project with the OS picker they know. Returns
         // the chosen directory, or "" if cancelled. Marshals a BROWSEINFOA (64 bytes on x64) by hand.
@@ -53,6 +56,73 @@ public bundle forge {
                 Memory.free(nameBuf);
                 Memory.free(titleBuf);
                 return result;
+            }
+
+            // A native "Save As" dialog (comdlg32 GetSaveFileNameA). `suggested` pre-fills the file name box.
+            // Returns the chosen full path, or "" if the user cancelled. Marshals an OPENFILENAMEA (152 bytes
+            // on x64) and a double-null-terminated filter list by hand.
+            public static method saveFile(long hwnd, String suggested) returns String {
+                int ofnSize = 152;
+                address ofn = Memory.alloc(cast<long>(ofnSize));
+                mutable int k = 0;
+                while (k < ofnSize) {
+                    Memory.write<byte>(ofn + cast<address>(k), cast<byte>(0));
+                    k = k + 1;
+                }
+                // lpstrFile is both input (the suggested name) and output (the chosen path).
+                address fileBuf = Memory.alloc(520);
+                mutable int f = 0;
+                while (f < 520) {
+                    Memory.write<byte>(fileBuf + cast<address>(f), cast<byte>(0));
+                    f = f + 1;
+                }
+                if (suggested.length() > 0) { Memory.writeString(fileBuf, suggested); }
+                // filter pairs "label\0pattern\0...\0\0"
+                address filter = Memory.alloc(64);
+                mutable int fp = 0;
+                fp = NativeDialog.putz(filter, fp, "LDP3 (*.ldp3)");
+                fp = NativeDialog.putz(filter, fp, "*.ldp3");
+                fp = NativeDialog.putz(filter, fp, "All Files (*.*)");
+                fp = NativeDialog.putz(filter, fp, "*.*");
+                Memory.write<byte>(filter + cast<address>(fp), cast<byte>(0));   // extra terminating null
+                address defext = Memory.alloc(8);
+                Memory.writeString(defext, "ldp3");
+
+                Memory.write<int>(ofn + cast<address>(0), ofnSize);              // lStructSize
+                Memory.write<long>(ofn + cast<address>(8), hwnd);               // hwndOwner
+                Memory.write<long>(ofn + cast<address>(24), cast<long>(filter)); // lpstrFilter
+                Memory.write<int>(ofn + cast<address>(44), 1);                  // nFilterIndex
+                Memory.write<long>(ofn + cast<address>(48), cast<long>(fileBuf)); // lpstrFile
+                Memory.write<int>(ofn + cast<address>(56), 520);               // nMaxFile
+                // OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_NOCHANGEDIR
+                Memory.write<int>(ofn + cast<address>(96), 0x0E);              // Flags
+                Memory.write<long>(ofn + cast<address>(104), cast<long>(defext)); // lpstrDefExt
+
+                int ok = Comdlg.GetSaveFileNameA(cast<long>(ofn));
+                mutable String result = "";
+                if (ok != 0) {
+                    mutable int slen = 0;
+                    while (slen < 520 && Memory.read<byte>(fileBuf + cast<address>(slen)) != cast<byte>(0)) {
+                        slen = slen + 1;
+                    }
+                    result = Memory.readString(fileBuf, slen);
+                }
+                Memory.free(ofn);
+                Memory.free(fileBuf);
+                Memory.free(filter);
+                Memory.free(defext);
+                return result;
+            }
+
+            // Write `s` then a trailing null byte into `buf` at offset `off`; return the offset past the null.
+            private static method putz(address buf, int off, String s) returns int {
+                mutable int i = 0;
+                while (i < s.length()) {
+                    Memory.write<byte>(buf + cast<address>(off + i), cast<byte>(cast<int>(s.charAt(i))));
+                    i = i + 1;
+                }
+                Memory.write<byte>(buf + cast<address>(off + s.length()), cast<byte>(0));
+                return off + s.length() + 1;
             }
         }
     }

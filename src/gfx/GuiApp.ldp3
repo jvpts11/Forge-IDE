@@ -321,6 +321,8 @@ public bundle forge {
                     }
                     return;
                 }
+                if (id.equals("file.save")) { wb.active().save(); return; }
+                if (id.equals("file.saveAs")) { GuiApp.runSaveAs(win, wb); return; }
                 if (id.equals("edit.find")) { ov.open(2); return; }
                 if (id.equals("view.palette")) { ov.open(1); return; }
                 if (id.equals("view.fold")) { wb.active().toggleFoldAtCaret(); return; }
@@ -335,6 +337,19 @@ public bundle forge {
                     return;
                 }
                 wb.runCommand(id);
+                return;
+            }
+
+            // Save the active document under a new path chosen from the native "Save As" dialog. Pre-fills the
+            // current file name (or "untitled.ldp3" for a fresh buffer); the tab title follows the new path.
+            private static method runSaveAs(GlWindow* win, Workbench* wb) returns void {
+                Controller* c = wb.active();
+                mutable String suggested = Paths.basename(c.document().path());
+                if (suggested.length() == 0) { suggested = "untitled.ldp3"; }
+                String path = NativeDialog.saveFile(win.hwnd, suggested);
+                if (path.length() > 0) {
+                    c.saveAs(path);
+                }
                 return;
             }
 
@@ -437,6 +452,9 @@ public bundle forge {
                 } else if (cmd.equals("save")) {
                     wb.active().save();
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("saveas")) {
+                    wb.active().saveAs(arg);
+                    System.IO.Console.println("ok " + Paths.basename(wb.active().document().path()));
                 } else if (cmd.equals("palette")) {
                     ov.open(1);
                     mutable int i = 0;
@@ -713,6 +731,8 @@ public bundle forge {
                         menu.close();
                     } else if (comp.active && e.isKey() && GuiApp.completionKey(comp, wb, e.vk)) {
                         // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
+                    } else if (e.isKey() && ctrl && shift && e.vk == 83) {   // Ctrl+Shift+S -> save as
+                        GuiApp.runSaveAs(win, wb);
                     } else if (e.isKey() && ctrl && shift && e.vk == 80) {   // Ctrl+Shift+P -> palette
                         ov.open(1);
                     } else if (e.isKey() && ctrl && !shift && e.vk == 80) {  // Ctrl+P -> quick open file
