@@ -397,8 +397,14 @@ public bundle forge {
                     }
                     String num = (c.lineNumberAt(r) + 1).toString();
                     int nx = ox + gpx - 8 - num.length() * cw;
-                    this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);
+                    // the caret's line number is brighter (amber), the rest dim
+                    if (r == caretRow) {
+                        this.font.drawText(batch, nx, y, num, 0.804, 0.639, 0.408, 1.0);
+                    } else {
+                        this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);
+                    }
                     String line = c.renderLine(r);
+                    this.drawIndentGuides(batch, line, textX, y, cw, ch);
                     ArrayList<Span> spans = c.renderSpans(r);
                     mutable int si = 0;
                     while (si < spans.size()) {
@@ -713,6 +719,19 @@ public bundle forge {
                 if (focused) {
                     int qx = bx + 12 + (5 + text.length()) * cw;
                     batch.rect(qx, y, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                }
+            }
+
+            // Faint vertical guides at each indent level of a line -- the "where does this block sit" cue.
+            private method drawIndentGuides(Batch2D* batch, String line, int textX, int y, int cw, int ch)
+                    returns void {
+                int n = line.length();
+                mutable int lead = 0;
+                while (lead < n && line.charAt(lead) == ' ') { lead = lead + 1; }
+                mutable int col = 4;
+                while (col < lead) {
+                    batch.rect(textX + col * cw, y, 1, ch, 0.239, 0.353, 0.373, 0.5);
+                    col = col + 4;
                 }
             }
 
