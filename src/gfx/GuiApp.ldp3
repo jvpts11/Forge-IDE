@@ -181,6 +181,11 @@ public bundle forge {
                     return;
                 }
                 if (my < screen.contentTop()) {
+                    int ci = screen.tabCloseAtX(wb.documents(), mx);
+                    if (ci >= 0) {
+                        wb.closeTab(ci);
+                        return;
+                    }
                     int ti = screen.tabAtX(wb.documents(), mx);
                     if (ti >= 0) { wb.documents().setActive(ti); }
                     return;
@@ -239,7 +244,7 @@ public bundle forge {
                 if (id.equals("view.fold")) { wb.active().toggleFoldAtCaret(); return; }
                 if (id.equals("view.unfoldAll")) { wb.active().unfoldAll(); return; }
                 if (id.equals("file.close")) {
-                    if (wb.documents().count() > 1) { wb.documents().close(wb.documents().activeIndex()); }
+                    wb.closeActiveTab();
                     return;
                 }
                 if (id.equals("app.quit")) { Win32.PostMessageA(win.hwnd, 16, 0, 0); return; }   // WM_CLOSE
@@ -476,6 +481,9 @@ public bundle forge {
                     return;
                 } else if (GuiApp.caretHotkey(wb, vk, ctrl, shift, alt)) {
                     return;
+                } else if (ctrl && vk == 87) {
+                    wb.closeActiveTab();
+                    return;
                 } else {
                     GuiApp.dispatchKey(wb, vk, ctrl, shift, alt);
                     if (vk == 8) { comp.update(wb.active()); } else { comp.dismiss(); }
@@ -602,6 +610,8 @@ public bundle forge {
                         wb.active().toggleFoldAtCaret();
                     } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
                         ov.open(2);
+                    } else if (e.isKey() && ctrl && e.vk == 87) {            // Ctrl+W -> close tab
+                        wb.closeActiveTab();
                     } else if (e.isKey() && e.vk == 123) {                   // F12 -> go to definition
                         wb.active().goToDefinition();
                     } else if (e.isKey() && GuiApp.caretHotkey(wb, e.vk, ctrl, shift, alt)) {

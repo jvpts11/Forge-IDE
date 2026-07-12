@@ -87,6 +87,16 @@ public bundle forge {
             public method registry() returns CommandRegistry* { return this.commands; }
             public method active() returns Controller* { return this.docs.active(); }
             public method openFile(String path) returns Controller* { return this.docs.openFile(path); }
+            // Close tab `i`; never leave the window with no document -- open a fresh one if that was the last.
+            public method closeTab(int i) returns void {
+                this.docs.close(i);
+                if (this.docs.count() == 0) {
+                    this.docs.openNew();
+                }
+            }
+            public method closeActiveTab() returns void {
+                this.closeTab(this.docs.activeIndex());
+            }
             public method output() returns OutputPanel* { return this.out; }
             // Run a shell command on the project and show its output in the bottom panel.
             public method runShell(String caption, String cmd) returns void { this.out.run(caption, cmd); }

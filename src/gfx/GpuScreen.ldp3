@@ -70,8 +70,26 @@ public bundle forge {
                 mutable int x = 6;
                 mutable int i = 0;
                 while (i < docs.count()) {
-                    int tw = (docs.title(i).length() + 3) * cw;
-                    if (mx >= x && mx < x + tw) { return i; }
+                    int tw = (docs.title(i).length() + 4) * cw;
+                    if (mx >= x && mx < x + tw) {
+                        return i;
+                    }
+                    x = x + tw;
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Which tab's close (x) control is under pixel x (-1 if none) -- mirrors drawTabBar's layout.
+            public method tabCloseAtX(DocumentManager* docs, int mx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    int tw = (docs.title(i).length() + 4) * cw;
+                    int xx = x + tw - 2 * cw;
+                    if (mx >= xx && mx < xx + 2 * cw) {
+                        return i;
+                    }
                     x = x + tw;
                     i = i + 1;
                 }
@@ -400,7 +418,7 @@ public bundle forge {
                 mutable int i = 0;
                 while (i < docs.count()) {
                     String title = docs.title(i);
-                    int tw = (title.length() + 3) * cw;
+                    int tw = (title.length() + 4) * cw;
                     boolean active = i == docs.activeIndex();
                     mutable float r = 0.502;
                     mutable float g = 0.588;
@@ -411,6 +429,16 @@ public bundle forge {
                         r = 0.804; g = 0.851; b = 0.843;
                     }
                     this.font.drawText(batch, x + cw, ty, title, r, g, b, 1.0);
+                    // close control (x) at the right of the tab, brighter on the active tab
+                    mutable float xr = 0.376;
+                    mutable float xg = 0.478;
+                    mutable float xb = 0.475;
+                    if (active) {
+                        xr = 0.702;
+                        xg = 0.549;
+                        xb = 0.353;
+                    }
+                    this.font.drawText(batch, x + tw - 2 * cw, ty, "x", xr, xg, xb, 1.0);
                     x = x + tw;
                     i = i + 1;
                 }
