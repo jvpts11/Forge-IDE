@@ -392,16 +392,21 @@ public bundle forge {
                 mutable int r = 0;
                 while (r < visible) {
                     int y = oy + this.topPad + r * ch;
+                    int docLine = c.lineNumberAt(r);
                     if (r == caretRow) {
                         batch.rect(ox + gpx, y, pw - gpx, ch, 1.0, 1.0, 1.0, 0.035);
                     }
-                    String num = (c.lineNumberAt(r) + 1).toString();
+                    String num = (docLine + 1).toString();
                     int nx = ox + gpx - 8 - num.length() * cw;
                     // the caret's line number is brighter (amber), the rest dim
                     if (r == caretRow) {
                         this.font.drawText(batch, nx, y, num, 0.804, 0.639, 0.408, 1.0);
                     } else {
                         this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);
+                    }
+                    // fold marker in the gutter/text gap for foldable header lines
+                    if (c.isFoldable(docLine)) {
+                        this.drawFoldMarker(batch, ox + gpx - 3, y + ch / 2, c.isFolded(docLine));
                     }
                     String line = c.renderLine(r);
                     this.drawIndentGuides(batch, line, textX, y, cw, ch);
@@ -411,16 +416,24 @@ public bundle forge {
                         this.drawSpan(batch, textX, y, cw, line, spans.get(si));
                         si = si + 1;
                     }
+                    // a "..." badge after a collapsed header shows the block is folded
+                    if (c.isFolded(docLine)) {
+                        int bx2 = textX + (line.length() + 1) * cw;
+                        batch.rect(bx2, y + 2, 3 * cw + 4, ch - 4, 0.239, 0.353, 0.373, 0.4);
+                        this.font.drawText(batch, bx2 + 2, y, "...", 0.6, 0.68, 0.67, 1.0);
+                    }
                     r = r + 1;
                 }
 
                 // matching-bracket highlight (both the bracket at the caret and its partner)
                 Match* bm = c.editor().matchingBracket();
                 if (bm.valid()) {
-                    this.drawBracketCell(batch, bm.row, bm.col, textX, oy, cw, ch, visible, firstLine);
+                    this.drawBracketCell(batch, c.screenRowForDocLine(bm.row), bm.col, textX, oy, cw, ch, visible);
                     int cr = c.editor().cursorRow();
                     int bcol = this.caretBracketCol(c, cr, c.editor().cursorCol());
-                    if (bcol >= 0) { this.drawBracketCell(batch, cr, bcol, textX, oy, cw, ch, visible, firstLine); }
+                    if (bcol >= 0) {
+                        this.drawBracketCell(batch, c.screenRowForDocLine(cr), bcol, textX, oy, cw, ch, visible);
+                    }
                 }
 
                 int ccr = c.caretScreenRow();
@@ -436,7 +449,7 @@ public bundle forge {
                     mutable int di = 0;
                     while (di < ds.size()) {
                         Diagnostic* d = ds.get(di);
-                        int sr = (d.line - 1) - firstLine;
+                        int sr = c.screenRowForDocLine(d.line - 1);
                         if (d.file.equals(base) && sr >= 0 && sr < visible) {
                             int y = oy + this.topPad + sr * ch;
                             mutable float dr = 0.902;
@@ -502,7 +515,7 @@ public bundle forge {
                 int ec = c.editor().selEndCol();
                 mutable int row = sr;
                 while (row <= er) {
-                    int screenRow = row - firstLine;
+                    int screenRow = c.screenRowForDocLine(row);
                     if (screenRow >= 0 && screenRow < visible) {
                         mutable int startCol = 0;
                         if (row == sr) { startCol = sc; }
@@ -525,7 +538,7 @@ public bundle forge {
                 int total = c.lineCount();
                 mutable int r = 0;
                 while (r < visible) {
-                    int docRow = firstLine + r;
+                    int docRow = c.lineNumberAt(r);
                     if (docRow < total) {
                         String line = c.editor().document().line(docRow);
                         int n = line.length();
@@ -543,10 +556,9 @@ public bundle forge {
                     r = r + 1;
                 }
             }
-            // Draw a subtle boxed cell around a matched bracket at document (row, col).
-            private method drawBracketCell(Batch2D* batch, int row, int col, int textX, int oy, int cw, int ch,
-                                           int visible, int firstLine) returns void {
-                int sr = row - firstLine;
+            // Draw a subtle boxed cell around a matched bracket at screen row `sr`, column `col`.
+            private method drawBracketCell(Batch2D* batch, int sr, int col, int textX, int oy, int cw, int ch,
+                                           int visible) returns void {
                 if (sr < 0 || sr >= visible) { return; }
                 int x = textX + col * cw;
                 int y = oy + this.topPad + sr * ch;
@@ -719,6 +731,23 @@ public bundle forge {
                 if (focused) {
                     int qx = bx + 12 + (5 + text.length()) * cw;
                     batch.rect(qx, y, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                }
+            }
+
+            // A small chevron in the gutter for a foldable line: right-pointing when the block is collapsed,
+            // down-pointing (dimmer) when it's expanded. Drawn from rects since the atlas has no glyph for it.
+            private method drawFoldMarker(Batch2D* batch, int cx, int cy, boolean folded) returns void {
+                mutable int k = 0;
+                if (folded) {
+                    while (k < 4) {
+                        batch.rect(cx + k, cy - (4 - k), 1, (4 - k) * 2, 0.804, 0.639, 0.408, 0.95);
+                        k = k + 1;
+                    }
+                } else {
+                    while (k < 4) {
+                        batch.rect(cx - (4 - k) - 1, cy - 2 + k, (4 - k) * 2, 1, 0.42, 0.53, 0.52, 0.7);
+                        k = k + 1;
+                    }
                 }
             }
 

@@ -1,0 +1,168 @@
+import editor.TextBuffer;
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // Tracks which line ranges can be folded (a brace block that spans more than one line) and which are
+        // currently collapsed. A fold's header is the line with the opening brace; folding it hides the lines
+        // between the header and the matching close. recompute() rescans the buffer after every edit. A
+        // best-effort brace scan (strips // comments), which is all folding needs.
+        public class FoldState {
+            private mutable ArrayList<int>* openLines;    // foldable range headers (deduped, widest per line)
+            private mutable ArrayList<int>* closeLines;   // matching close line, parallel to openLines
+            private mutable ArrayList<int>* foldedHeads;  // headers currently collapsed
+
+            public constructor FoldState() {
+                this.openLines = new ArrayList<int>() on heap;
+                this.closeLines = new ArrayList<int>() on heap;
+                this.foldedHeads = new ArrayList<int>() on heap;
+            }
+
+            // Rescan the buffer for foldable brace blocks. Keeps only the widest block that starts on each
+            // header line, and drops any collapsed head that is no longer foldable.
+            public method recompute(TextBuffer* buf) returns void {
+                ArrayList<int>* opens = new ArrayList<int>() on heap;
+                ArrayList<int>* closes = new ArrayList<int>() on heap;
+                ArrayList<int>* stack = new ArrayList<int>() on heap;
+                int n = buf.lineCount();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = FoldState.stripComment(buf.line(row));
+                    int len = line.length();
+                    mutable int i = 0;
+                    while (i < len) {
+                        char ch = line.charAt(i);
+                        if (ch == '{') { stack.add(row); }
+                        else if (ch == '}') {
+                            if (stack.size() > 0) {
+                                int openRow = stack.get(stack.size() - 1);
+                                stack.removeAt(stack.size() - 1);
+                                if (row > openRow) { opens.add(openRow); closes.add(row); }
+                            }
+                        }
+                        i = i + 1;
+                    }
+                    row = row + 1;
+                }
+                // dedupe by header, keeping the widest (max close) block per header line
+                this.openLines = new ArrayList<int>() on heap;
+                this.closeLines = new ArrayList<int>() on heap;
+                mutable int k = 0;
+                while (k < opens.size()) {
+                    int o = opens.get(k);
+                    int c = closes.get(k);
+                    int idx = this.indexOfOpen(o);
+                    if (idx < 0) { this.openLines.add(o); this.closeLines.add(c); }
+                    else if (c > this.closeLines.get(idx)) { this.closeLines.set(idx, c); }
+                    k = k + 1;
+                }
+                // prune collapsed heads that are no longer foldable
+                ArrayList<int>* keep = new ArrayList<int>() on heap;
+                mutable int f = 0;
+                while (f < this.foldedHeads.size()) {
+                    int h = this.foldedHeads.get(f);
+                    if (this.indexOfOpen(h) >= 0) { keep.add(h); }
+                    f = f + 1;
+                }
+                this.foldedHeads = keep;
+            }
+
+            private method indexOfOpen(int line) returns int {
+                mutable int i = 0;
+                while (i < this.openLines.size()) {
+                    if (this.openLines.get(i) == line) { return i; }
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+
+            public method foldableCount() returns int { return this.openLines.size(); }
+            public method isFoldable(int line) returns boolean { return this.indexOfOpen(line) >= 0; }
+            public method endOf(int line) returns int {
+                int idx = this.indexOfOpen(line);
+                if (idx < 0) { return 0 - 1; }
+                return this.closeLines.get(idx);
+            }
+            public method isFolded(int line) returns boolean {
+                mutable int i = 0;
+                while (i < this.foldedHeads.size()) {
+                    if (this.foldedHeads.get(i) == line) { return true; }
+                    i = i + 1;
+                }
+                return false;
+            }
+            public method anyFolded() returns boolean { return this.foldedHeads.size() > 0; }
+
+            // Toggle the fold whose header is `line` (no-op if the line isn't foldable).
+            public method toggle(int line) returns void {
+                if (!this.isFoldable(line)) { return; }
+                mutable int i = 0;
+                while (i < this.foldedHeads.size()) {
+                    if (this.foldedHeads.get(i) == line) { this.foldedHeads.removeAt(i); return; }
+                    i = i + 1;
+                }
+                this.foldedHeads.add(line);
+            }
+            public method unfoldAll() returns void { this.foldedHeads = new ArrayList<int>() on heap; }
+
+            // A line is hidden when it lies strictly inside any collapsed range (header excluded).
+            public method isHidden(int line) returns boolean {
+                mutable int i = 0;
+                while (i < this.foldedHeads.size()) {
+                    int h = this.foldedHeads.get(i);
+                    if (h < line && line <= this.endOf(h)) { return true; }
+                    i = i + 1;
+                }
+                return false;
+            }
+            // The nearest visible line at or after `line` (skips hidden lines).
+            public method firstVisibleFrom(int line, int lineCount) returns int {
+                mutable int v = line;
+                while (v < lineCount && this.isHidden(v)) { v = v + 1; }
+                return v;
+            }
+            // The fold header that hides `line`, or -1 if the line is visible.
+            public method headerHiding(int line) returns int {
+                mutable int i = 0;
+                mutable int best = 0 - 1;
+                while (i < this.foldedHeads.size()) {
+                    int h = this.foldedHeads.get(i);
+                    if (h < line && line <= this.endOf(h)) {
+                        if (best < 0 || h > best) { best = h; }
+                    }
+                    i = i + 1;
+                }
+                return best;
+            }
+
+            // The header of the innermost foldable range that contains `line` (header..close inclusive), or
+            // -1. Used to fold the block around the caret when the caret line isn't itself a header.
+            public method enclosing(int line) returns int {
+                mutable int best = 0 - 1;
+                mutable int i = 0;
+                while (i < this.openLines.size()) {
+                    int o = this.openLines.get(i);
+                    int c = this.closeLines.get(i);
+                    if (o <= line && line <= c) {
+                        if (best < 0 || o > best) { best = o; }
+                    }
+                    i = i + 1;
+                }
+                return best;
+            }
+
+            private static method stripComment(String line) returns String {
+                int n = line.length();
+                mutable int i = 0;
+                while (i + 1 < n) {
+                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') { return line.substring(0, i); }
+                    i = i + 1;
+                }
+                return line;
+            }
+        }
+    }
+}

@@ -69,6 +69,9 @@ public bundle forge {
                 Menu* view = new Menu("View") on heap;
                 view.add("Command Palette", "view.palette");
                 view.add("Toggle Output", "view.output");
+                view.sep();
+                view.add("Fold at Cursor", "view.fold");
+                view.add("Unfold All", "view.unfoldAll");
                 this.menus.add(view);
 
                 Menu* run = new Menu("Run") on heap;

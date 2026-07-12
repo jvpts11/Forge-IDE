@@ -151,10 +151,16 @@ public bundle forge {
                 }
                 int screenRow = (my - screen.textOy()) / screen.lineH();
                 if (screenRow < 0) { return; }
+                Controller* c = wb.active();
+                // a click in the gutter (left of the code) toggles the fold on a foldable line
+                if (mx < screen.textOx()) {
+                    int docLine = c.lineNumberAt(screenRow);
+                    if (c.isFoldable(docLine)) { c.toggleFold(docLine); }
+                    return;
+                }
                 mutable int col = (mx - screen.textOx()) / screen.charW();
                 if (col < 0) { col = 0; }
-                Controller* c = wb.active();
-                c.beginSelect(c.firstLine() + screenRow, c.firstColumn() + col);   // anchor a drag selection
+                c.beginSelect(c.lineNumberAt(screenRow), c.firstColumn() + col);   // anchor a drag selection
                 return;
             }
 
@@ -170,7 +176,7 @@ public bundle forge {
                 mutable int col = (mx - screen.textOx()) / screen.charW();
                 if (col < 0) { col = 0; }
                 Controller* c = wb.active();
-                c.extendSelectTo(c.firstLine() + sr, c.firstColumn() + col);
+                c.extendSelectTo(c.lineNumberAt(sr), c.firstColumn() + col);
                 return;
             }
 
@@ -181,6 +187,8 @@ public bundle forge {
                     returns void {
                 if (id.equals("edit.find")) { ov.open(2); return; }
                 if (id.equals("view.palette")) { ov.open(1); return; }
+                if (id.equals("view.fold")) { wb.active().toggleFoldAtCaret(); return; }
+                if (id.equals("view.unfoldAll")) { wb.active().unfoldAll(); return; }
                 if (id.equals("file.close")) {
                     if (wb.documents().count() > 1) { wb.documents().close(wb.documents().activeIndex()); }
                     return;
@@ -308,6 +316,20 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
+                } else if (cmd.equals("fold")) {
+                    // fold <line> toggles the fold whose header is that 1-based line
+                    int docLine = arg.toInt() - 1;
+                    if (wb.active().isFoldable(docLine)) {
+                        wb.active().toggleFold(docLine);
+                        mutable String st = "expanded";
+                        if (wb.active().isFolded(docLine)) { st = "folded"; }
+                        System.IO.Console.println("ok " + st);
+                    } else {
+                        System.IO.Console.println("ok not-foldable");
+                    }
+                } else if (cmd.equals("unfoldall")) {
+                    wb.active().unfoldAll();
+                    System.IO.Console.println("ok");
                 } else if (cmd.equals("esc")) {
                     ov.close();
                     System.IO.Console.println("ok");
@@ -484,6 +506,8 @@ public bundle forge {
                         ov.open(1);
                     } else if (e.isKey() && ctrl && shift && e.vk == 79) {   // Ctrl+Shift+O -> go-to-symbol
                         GuiApp.openSymbols(ov, wb);
+                    } else if (e.isKey() && ctrl && shift && e.vk == 219) {  // Ctrl+Shift+[ -> fold at caret
+                        wb.active().toggleFoldAtCaret();
                     } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
                         ov.open(2);
                     } else if (e.isChar()) {
