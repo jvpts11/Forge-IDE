@@ -229,6 +229,7 @@ public bundle forge {
             // Mouse press then drag: anchor a selection, then extend it to the dragged position.
             public method beginSelect(int row, int col) returns void { this.ed.beginSelect(row, col); this.moved(); }
             public method extendSelectTo(int row, int col) returns void { this.ed.extendSelectTo(row, col); this.moved(); }
+            public method selectWordAt(int row, int col) returns void { this.ed.selectWordAt(row, col); this.moved(); }
 
             // --- multi-cursor ---
             public method addCaretBelow() returns void {

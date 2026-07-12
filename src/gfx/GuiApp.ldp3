@@ -81,7 +81,12 @@ public bundle forge {
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
                 mutable int blink = 0;
+                mutable int frames = 0;
+                mutable int lastClickFrame = 0 - 100;
+                mutable int lastClickX = 0;
+                mutable int lastClickY = 0;
                 while (win.isOpen()) {
+                    frames = frames + 1;
                     win.pump();
                     if (!workspaceOpen) {
                         boolean wdown = win.keyDown(1);
@@ -116,10 +121,22 @@ public bundle forge {
                     // is open, but menu clicks still work because the menu isn't a modal overlay
                     boolean down = win.keyDown(1);   // VK_LBUTTON
                     if (down && !prevDown && !ov.isOpen()) {
-                        GuiApp.handleClick(win, screen, wb, tree, ov, menu, req, win.modAlt());
-                        // start a drag-select only over the text (not the gutter, where a click folds)
-                        dragging = GuiApp.overEditor(screen, win, ov, win.height()) && !win.modAlt()
-                            && win.cursorX() >= screen.textOx();
+                        int cxNow = win.cursorX();
+                        int cyNow = win.cursorY();
+                        boolean dbl = frames - lastClickFrame < 22
+                            && GuiApp.absDiff(cxNow, lastClickX) < 5 && GuiApp.absDiff(cyNow, lastClickY) < 5;
+                        if (dbl && cxNow >= screen.textOx() && GuiApp.overEditor(screen, win, ov, win.height())) {
+                            GuiApp.selectWordAtMouse(screen, wb, win);       // double-click selects the word
+                            dragging = false;
+                        } else {
+                            GuiApp.handleClick(win, screen, wb, tree, ov, menu, req, win.modAlt());
+                            // start a drag-select only over the text (not the gutter, where a click folds)
+                            dragging = GuiApp.overEditor(screen, win, ov, win.height()) && !win.modAlt()
+                                && cxNow >= screen.textOx();
+                        }
+                        lastClickFrame = frames;
+                        lastClickX = cxNow;
+                        lastClickY = cyNow;
                     } else if (down && prevDown && dragging && !ov.isOpen()) {
                         GuiApp.dragExtend(screen, wb, win);                   // extend the selection
                     }
@@ -242,6 +259,31 @@ public bundle forge {
                 GuiApp.dragExtendAt(screen, wb, win.cursorX(), win.cursorY());
                 return;
             }
+            private static method absDiff(int a, int b) returns int {
+                if (a > b) {
+                    return a - b;
+                }
+                return b - a;
+            }
+            // Double-click in the text: select the word under the mouse.
+            private static method selectWordAtMouse(GpuScreen* screen, Workbench* wb, GlWindow* win) returns void {
+                GuiApp.selectWordAtCoords(screen, wb, win.cursorX(), win.cursorY());
+                return;
+            }
+            private static method selectWordAtCoords(GpuScreen* screen, Workbench* wb, int mx, int my)
+                    returns void {
+                mutable int sr = (my - screen.textOy()) / screen.lineH();
+                if (sr < 0) {
+                    sr = 0;
+                }
+                mutable int col = (mx - screen.textOx()) / screen.charW();
+                if (col < 0) {
+                    col = 0;
+                }
+                Controller* c = wb.active();
+                c.selectWordAt(c.lineNumberAt(sr), c.firstColumn() + col);
+                return;
+            }
             // Extend the selection to a pixel (mx, my) -- shared by the live drag and the serve `dragto` command.
             private static method dragExtendAt(GpuScreen* screen, Workbench* wb, int mx, int my) returns void {
                 mutable int sr = (my - screen.textOy()) / screen.lineH();
@@ -351,6 +393,11 @@ public bundle forge {
                     String ry = GuiApp.rest(arg);
                     GuiApp.dragExtendAt(screen, wb, rx.toInt(), ry.toInt());
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("selword")) {
+                    String rx = GuiApp.firstWord(arg);
+                    String ry = GuiApp.rest(arg);
+                    GuiApp.selectWordAtCoords(screen, wb, rx.toInt(), ry.toInt());
+                    System.IO.Console.println("ok sel='" + wb.active().editor().selectionText() + "'");
                 } else if (cmd.equals("menu")) {
                     // menu <i> opens/toggles menu i; menu -1 closes any open menu
                     int mi = arg.toInt();
