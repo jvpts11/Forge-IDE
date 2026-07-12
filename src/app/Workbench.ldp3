@@ -104,13 +104,32 @@ public bundle forge {
             public method diagnose() returns void {
                 this.runShell("Build", "ldp3 build 2>&1");
                 ArrayList<Diagnostic>* ds = new ArrayList<Diagnostic>() on heap;
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
                 mutable int i = 0;
                 while (i < this.out.lineCount()) {
-                    Diagnostic* d = Workbench.parseLine(this.out.line(i));
-                    if (d.line > 0) { ds.add(d); }
+                    String raw = this.out.line(i);
+                    Diagnostic* d = Workbench.parseLine(raw);
+                    if (d.line > 0) {
+                        ds.add(d);
+                        int m = raw.indexOf(".ldp3:");
+                        String rel = raw.substring(0, m + 5);
+                        mutable String sev = "error";
+                        if (d.severity == 1) { sev = "warning"; }
+                        body.add(d.file + ":" + d.line.toString() + ":" + d.col.toString() + "  "
+                                 + sev + ": " + d.message);
+                        navFiles.add(Paths.join(this.projectDir, rel));
+                        navLines.add(d.line - 1);
+                    }
                     i = i + 1;
                 }
                 this.diags = ds;
+                // When the build reported problems, replace the raw log with a clickable Problems list;
+                // clicking a row jumps to that file and line. A clean build keeps the raw success output.
+                if (ds.size() > 0) {
+                    this.out.showNavigable(ds.size().toString() + " problems", body, navFiles, navLines);
+                }
             }
             // Parse `path.ldp3:LINE:COL: severity: message`; returns a sentinel (line < 0) if it doesn't match.
             private static method parseLine(String s) returns Diagnostic* {
@@ -235,6 +254,7 @@ public bundle forge {
                 if (id.equals("edit.duplicateLine")) { c.duplicateLine(); return true; }
                 if (id.equals("run.build")) { this.diagnose(); return true; }
                 if (id.equals("run.program")) { this.runShell("Run", "ldp3 run"); return true; }
+                if (id.equals("run.test")) { this.runShell("Tests", "ldp3 test"); return true; }
                 if (id.equals("view.output")) { this.out.toggle(); return true; }
                 return false;
             }

@@ -79,6 +79,7 @@ public bundle forge {
                 Menu* run = new Menu("Run") on heap;
                 run.add("Build", "run.build");
                 run.add("Run", "run.program");
+                run.add("Run Tests", "run.test");
                 this.menus.add(run);
 
                 Menu* help = new Menu("Help") on heap;
