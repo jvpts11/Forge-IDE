@@ -7,11 +7,13 @@ import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
 import app.OutputPanel;
+import app.Diagnostic;
 import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
 import syntax.Span;
 import System.Collections.ArrayList;
+import System.IO.Paths;
 
 program Forge;
 
@@ -84,7 +86,7 @@ public bundle forge {
                 if (wb.output().visible) { panelH = 220; }
                 this.drawTabBar(batch, wb.documents(), tabh);
                 this.drawTree(batch, tree, tabh, screenH - sh);
-                this.drawEditor(batch, wb.active(), tw, tabh, screenW - tw, screenH - tabh - sh - panelH);
+                this.drawEditor(batch, wb, tw, tabh, screenW - tw, screenH - tabh - sh - panelH);
                 if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH);
                 }
@@ -131,6 +133,18 @@ public bundle forge {
                 if (name.length() == 0) { name = "untitled"; }
                 if (c.document().isModified()) { name = name + " *"; }
                 this.font.drawText(batch, chipW + cw, ty, name, 0.804, 0.851, 0.843, 1.0);
+                // diagnostics count (errors red, warnings amber)
+                int errs = wb.errorCount();
+                int warns = wb.warningCount();
+                if (errs > 0 || warns > 0) {
+                    int dx = chipW + cw + (name.length() + 3) * cw;
+                    String ecnt = "x" + errs.toString();
+                    mutable float er = 0.902;
+                    if (errs == 0) { er = 0.4; }
+                    this.font.drawText(batch, dx, ty, ecnt, er, 0.318, 0.263, 1.0);
+                    String wcnt = "!" + warns.toString();
+                    this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, 0.902, 0.706, 0.318, 1.0);
+                }
                 // caret position, right side
                 String pos = "Ln " + (c.editor().cursorRow() + 1).toString()
                            + ", Col " + (c.editor().cursorCol() + 1).toString()
@@ -180,8 +194,9 @@ public bundle forge {
             }
 
             // The editor pane at (ox, oy), size (pw, ph).
-            private method drawEditor(Batch2D* batch, Controller* c, int ox, int oy, int pw, int ph)
+            private method drawEditor(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph)
                     returns void {
+                Controller* c = wb.active();
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 int gpx = this.gutterPx();
@@ -219,6 +234,32 @@ public bundle forge {
                 if (ccr >= 0 && ccr < visible) {
                     int cx = textX + c.caretScreenCol() * cw;
                     batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                }
+
+                // diagnostics (from the last build) for this file: a gutter marker + an underline
+                String base = Paths.basename(c.document().path());
+                if (base.length() > 0) {
+                    ArrayList<Diagnostic>* ds = wb.diagnostics();
+                    mutable int di = 0;
+                    while (di < ds.size()) {
+                        Diagnostic* d = ds.get(di);
+                        int sr = (d.line - 1) - firstLine;
+                        if (d.file.equals(base) && sr >= 0 && sr < visible) {
+                            int y = oy + this.topPad + sr * ch;
+                            mutable float dr = 0.902;
+                            mutable float dg = 0.318;
+                            mutable float db = 0.263;
+                            if (d.severity != 0) { dg = 0.706; db = 0.318; }
+                            batch.rect(ox + 3, y + ch / 2 - 3, 6, 6, dr, dg, db, 1.0);
+                            String txt = c.editor().document().line(d.line - 1);
+                            mutable int startCol = d.col - 1;
+                            if (startCol < 0) { startCol = 0; }
+                            mutable int uw = (txt.length() - startCol) * cw;
+                            if (uw < cw) { uw = cw; }
+                            batch.rect(textX + startCol * cw, y + ch - 2, uw, 2, dr, dg, db, 0.85);
+                        }
+                        di = di + 1;
+                    }
                 }
             }
 

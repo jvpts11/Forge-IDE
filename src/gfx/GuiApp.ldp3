@@ -199,8 +199,9 @@ public bundle forge {
                     wb.runShell("Run", arg);
                     System.IO.Console.println("ok " + wb.output().lineCount().toString() + " lines");
                 } else if (cmd.equals("build")) {
-                    wb.runShell("Build", "ldp3 build");
-                    System.IO.Console.println("ok " + wb.output().lineCount().toString() + " lines");
+                    wb.diagnose();
+                    System.IO.Console.println("ok " + wb.errorCount().toString() + " errors "
+                        + wb.warningCount().toString() + " warnings");
                 } else if (cmd.equals("state")) {
                     GuiApp.serveState(wb);
                 } else {

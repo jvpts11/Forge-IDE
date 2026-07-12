@@ -3,8 +3,12 @@ import app.Controller;
 import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
+import app.Diagnostic;
 import input.Key;
 import input.KeyMap;
+import System.Collections.ArrayList;
+import System.Text.Strings;
+import System.IO.Paths;
 
 program Forge;
 
@@ -21,13 +25,62 @@ public bundle forge {
             private mutable CommandRegistry* commands;
             private mutable KeyMap* keymap;
             private mutable OutputPanel* out;
+            private mutable ArrayList<Diagnostic>* diags;
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
                 this.commands = new CommandRegistry() on heap;
                 this.keymap = new KeyMap() on heap;
                 this.out = new OutputPanel() on heap;
+                this.diags = new ArrayList<Diagnostic>() on heap;
                 this.docs.openNew();               // start on one empty document
+            }
+
+            // --- diagnostics: run the LDP3 compiler and surface its errors/warnings inline ---
+            public method diagnostics() returns ArrayList<Diagnostic>* { return this.diags; }
+            public method errorCount() returns int { return this.countBySeverity(0); }
+            public method warningCount() returns int { return this.countBySeverity(1); }
+            private method countBySeverity(int sev) returns int {
+                mutable int c = 0;
+                mutable int i = 0;
+                while (i < this.diags.size()) {
+                    if (this.diags.get(i).severity == sev) { c = c + 1; }
+                    i = i + 1;
+                }
+                return c;
+            }
+            // Build the project and parse the compiler output into inline diagnostics. Merge stderr into
+            // stdout (2>&1) because the compiler writes its errors to stderr, which Process.run drops.
+            public method diagnose() returns void {
+                this.runShell("Build", "ldp3 build 2>&1");
+                ArrayList<Diagnostic>* ds = new ArrayList<Diagnostic>() on heap;
+                mutable int i = 0;
+                while (i < this.out.lineCount()) {
+                    Diagnostic* d = Workbench.parseLine(this.out.line(i));
+                    if (d.line > 0) { ds.add(d); }
+                    i = i + 1;
+                }
+                this.diags = ds;
+            }
+            // Parse `path.ldp3:LINE:COL: severity: message`; returns a sentinel (line < 0) if it doesn't match.
+            private static method parseLine(String s) returns Diagnostic* {
+                int m = s.indexOf(".ldp3:");
+                if (m < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                String path = s.substring(0, m + 5);
+                String rest = s.substring(m + 6, s.length());
+                int c1 = rest.indexOf(":");
+                if (c1 < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                String rest2 = rest.substring(c1 + 1, rest.length());
+                int c2 = rest2.indexOf(":");
+                if (c2 < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                String rest3 = rest2.substring(c2 + 1, rest2.length()).trim();
+                int c3 = rest3.indexOf(":");
+                if (c3 < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                mutable int sev = 0;
+                if (rest3.substring(0, c3).trim().equals("warning")) { sev = 1; }
+                return new Diagnostic(Paths.basename(path), rest.substring(0, c1).toInt(),
+                                      rest2.substring(0, c2).toInt(), sev,
+                                      rest3.substring(c3 + 1, rest3.length()).trim()) on heap;
             }
 
             public method documents() returns DocumentManager* { return this.docs; }
@@ -56,7 +109,7 @@ public bundle forge {
                 if (id.equals("edit.redo")) { c.redo(); return true; }
                 if (id.equals("edit.selectAll")) { c.selectAll(); return true; }
                 if (id.equals("edit.duplicateLine")) { c.duplicateLine(); return true; }
-                if (id.equals("run.build")) { this.runShell("Build", "ldp3 build"); return true; }
+                if (id.equals("run.build")) { this.diagnose(); return true; }
                 if (id.equals("run.program")) { this.runShell("Run", "ldp3 run"); return true; }
                 if (id.equals("view.output")) { this.out.toggle(); return true; }
                 return false;

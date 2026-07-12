@@ -1,0 +1,27 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One compiler diagnostic parsed from `ldp3 build` output: the file it belongs to (basename), the
+        // 1-based line/column, a severity (0 = error, 1 = warning), and the message. The editor draws these
+        // as squiggles + gutter markers so Forge does real syntax/semantic checking, powered by the LDP3
+        // compiler itself.
+        public class Diagnostic {
+            public mutable String file;
+            public mutable int line;
+            public mutable int col;
+            public mutable int severity;
+            public mutable String message;
+
+            public constructor Diagnostic(String file, int line, int col, int severity, String message) {
+                this.file = file;
+                this.line = line;
+                this.col = col;
+                this.severity = severity;
+                this.message = message;
+            }
+            public method isError() returns boolean { return this.severity == 0; }
+        }
+    }
+}
