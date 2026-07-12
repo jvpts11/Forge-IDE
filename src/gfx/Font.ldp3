@@ -55,9 +55,15 @@ public bundle forge {
             // Draw a whole string starting at pixel (x, y), advancing one cell per character.
             public method drawText(Batch2D* batch, int x, int y, String s, float r, float g, float bl, float a)
                     returns void {
+                this.drawSub(batch, x, y, s, 0, s.length(), r, g, bl, a);
+            }
+
+            // Draw the [from, to) slice of `s` starting at pixel (x, y) -- used to colour one token span.
+            public method drawSub(Batch2D* batch, int x, int y, String s, int from, int to,
+                                  float r, float g, float bl, float a) returns void {
                 mutable int cx = x;
-                mutable int i = 0;
-                while (i < s.length()) {
+                mutable int i = from;
+                while (i < to) {
                     this.drawChar(batch, cx, y, s.charAt(i), r, g, bl, a);
                     cx = cx + this.cellW;
                     i = i + 1;

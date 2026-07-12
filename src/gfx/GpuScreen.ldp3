@@ -1,6 +1,9 @@
 import gfx.Batch2D;
 import gfx.Font;
 import app.Controller;
+import syntax.Tok;
+import syntax.Span;
+import System.Collections.ArrayList;
 
 program Forge;
 
@@ -38,6 +41,8 @@ public bundle forge {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 int gpx = this.gutterPx();
+                int textX = gpx + 6;
+                int caretRow = c.caretScreenRow();
 
                 // gutter background band
                 batch.rect(0, 0, gpx, screenH, 0.039, 0.078, 0.086, 1.0);
@@ -46,12 +51,39 @@ public bundle forge {
                 mutable int r = 0;
                 while (r < visible) {
                     int y = this.topPad + r * ch;
+                    // current-line highlight band (behind the text)
+                    if (r == caretRow) {
+                        batch.rect(gpx, y, screenW - gpx, ch, 1.0, 1.0, 1.0, 0.035);
+                    }
+                    // line number, right-aligned in the gutter
                     String num = (c.lineNumberAt(r) + 1).toString();
                     int nx = gpx - 8 - num.length() * cw;
-                    this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);   // gutter fg
-                    this.font.drawText(batch, gpx + 6, y, c.renderLine(r), 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);
+                    // code text, coloured by token
+                    String line = c.renderLine(r);
+                    ArrayList<Span> spans = c.renderSpans(r);
+                    mutable int si = 0;
+                    while (si < spans.size()) {
+                        this.drawSpan(batch, textX, y, cw, line, spans.get(si));
+                        si = si + 1;
+                    }
                     r = r + 1;
                 }
+            }
+
+            // Draw one token span at its column, coloured by its kind (whitespace draws nothing).
+            private method drawSpan(Batch2D* batch, int textX, int y, int cw, String line, Span* sp)
+                    returns void {
+                Tok k = sp.kind;
+                int x = textX + sp.start * cw;
+                if (k == Tok.WS) { return; }
+                if (k == Tok.KEYWORD) { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.918, 0.706, 0.392, 1.0); return; }
+                if (k == Tok.NUMBER)  { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.902, 0.647, 0.400, 1.0); return; }
+                if (k == Tok.STRING)  { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0); return; }
+                if (k == Tok.CHAR)    { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0); return; }
+                if (k == Tok.COMMENT) { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.302, 0.416, 0.427, 1.0); return; }
+                if (k == Tok.PUNCT)   { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.565, 0.635, 0.631, 1.0); return; }
+                this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.804, 0.851, 0.843, 1.0);   // IDENT
             }
         }
     }
