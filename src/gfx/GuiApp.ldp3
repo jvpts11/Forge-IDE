@@ -53,6 +53,7 @@ public bundle forge {
                 mutable boolean prevDown = false;
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
+                mutable int blink = 0;
                 while (win.isOpen()) {
                     win.pump();
                     GuiApp.processInput(win, wb, ov, comp, menu);
@@ -72,11 +73,27 @@ public bundle forge {
                         lastW = w2;
                         lastH = h2;
                     }
+                    // the editing feel: an I-beam over the text region (arrow over the chrome) and a caret that
+                    // blinks about twice a second.
+                    win.setIBeam(GuiApp.overEditor(screen, win, ov, h2));
+                    blink = blink + 1;
+                    if (blink >= 60) { blink = 0; }
+                    screen.setCaretOn(blink < 30);
                     GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
                     win.swap();
                     win.sleep(8);
                 }
                 return;
+            }
+
+            // True when the mouse is over the editable text region (right of the tree, below the breadcrumb
+            // bar, above the status bar) and no modal overlay covers it -- the region that gets the I-beam.
+            private static method overEditor(GpuScreen* screen, GlWindow* win, Overlay* ov, int screenH)
+                    returns boolean {
+                if (ov.isOpen()) { return false; }
+                int mx = win.cursorX();
+                int my = win.cursorY();
+                return mx >= screen.treeWidth() && my >= screen.editorTop() && my < screenH - screen.statusH();
             }
 
             private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,

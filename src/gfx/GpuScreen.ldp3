@@ -34,13 +34,18 @@ public bundle forge {
             private mutable int gutterChars;
             private mutable int topPad;
             private mutable int treeW;
+            private mutable boolean caretOn;   // caret visibility for blink (the live loop toggles it)
 
             public constructor GpuScreen(Font* font) {
                 this.font = font;
                 this.gutterChars = 6;
                 this.topPad = 6;
                 this.treeW = 230;
+                this.caretOn = true;
             }
+
+            // The live loop toggles this to blink the caret; shot/serve leave it on so the caret always shows.
+            public method setCaretOn(boolean visible) returns void { this.caretOn = visible; }
 
             public method fontTexture() returns int { return this.font.texture(); }
             public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
@@ -398,7 +403,7 @@ public bundle forge {
                 }
 
                 int ccr = c.caretScreenRow();
-                if (ccr >= 0 && ccr < visible) {
+                if (ccr >= 0 && ccr < visible && this.caretOn) {
                     int cx = textX + c.caretScreenCol() * cw;
                     batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
                 }
