@@ -148,6 +148,9 @@ public bundle forge {
                     return 0;
                 }
                 ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                String path = c.document().path();
                 mutable int count = 0;
                 int total = c.editor().document().lineCount();
                 mutable int row = 0;
@@ -156,11 +159,14 @@ public bundle forge {
                     int here = Workbench.countWholeWord(line, w);
                     if (here > 0) {
                         body.add("  L" + (row + 1).toString() + ":  " + line.trim());
+                        navFiles.add(path);
+                        navLines.add(row);
                         count = count + here;
                     }
                     row = row + 1;
                 }
-                this.out.showLines(count.toString() + " references to '" + w + "'", body);
+                this.out.showNavigable(count.toString() + " references to '" + w + "'", body,
+                                       navFiles, navLines);
                 return count;
             }
             private static method countWholeWord(String line, String w) returns int {

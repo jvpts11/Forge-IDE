@@ -280,7 +280,8 @@ public bundle forge {
                     }
                     return;
                 }
-                // clicks in the output panel (close button or body) are consumed there, not by the editor
+                // clicks in the output panel are consumed there: the close button hides it, and a navigable
+                // result row (search / references) jumps to its file and line.
                 int panelH = screen.outputPanelHeight(wb.output(), win.height());
                 if (panelH > 0) {
                     int panelTop = win.height() - screen.statusH() - panelH;
@@ -288,6 +289,23 @@ public bundle forge {
                         if (screen.outputCloseAt(mx, my, screen.treeWidth(), panelTop,
                                                  win.width() - screen.treeWidth())) {
                             wb.output().hide();
+                            return;
+                        }
+                        int ch = screen.lineH();
+                        int headerH = ch + 8;
+                        int bodyTop = panelTop + headerH;
+                        if (my >= bodyTop) {
+                            int visRows = (panelH - headerH) / ch;
+                            int total = wb.output().lineCount();
+                            mutable int startRow = 0;
+                            if (total > visRows) { startRow = total - visRows; }
+                            int idx = startRow + (my - bodyTop) / ch;
+                            String nf = wb.output().navFileAt(idx);
+                            int nl = wb.output().navLineAt(idx);
+                            if (nf.length() > 0 && nl >= 0) {
+                                wb.openFile(nf);
+                                wb.active().placeCaret(nl, 0);
+                            }
                         }
                         return;
                     }
@@ -1032,6 +1050,8 @@ public bundle forge {
                 String q = ov.query;
                 if (q.length() == 0) { return; }
                 ArrayList<String>* results = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
                 mutable int fi = 0;
                 mutable int hits = 0;
                 while (fi < ov.items.size() && results.size() < 800) {
@@ -1044,13 +1064,16 @@ public bundle forge {
                             if (lines.get(li).indexOf(q) >= 0) {
                                 hits = hits + 1;
                                 results.add(base + ":" + (li + 1).toString() + ":  " + lines.get(li).trim());
+                                navFiles.add(path);
+                                navLines.add(li);
                             }
                             li = li + 1;
                         }
                     }
                     fi = fi + 1;
                 }
-                wb.output().showLines(hits.toString() + " matches for '" + q + "'", results);
+                wb.output().showNavigable(hits.toString() + " matches for '" + q + "'", results,
+                                          navFiles, navLines);
                 return;
             }
             // Only grep text-ish files (skip binaries/images the tree may include).

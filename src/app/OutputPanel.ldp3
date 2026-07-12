@@ -15,11 +15,17 @@ public bundle forge {
             public mutable ArrayList<String>* lines;
             public mutable boolean visible;
             public mutable String title;
+            // Optional jump targets parallel to `lines`: for a navigable result list (search / references),
+            // clicking row i opens navFile[i] at navLine[i]. Empty strings mean "not navigable".
+            public mutable ArrayList<String>* navFile;
+            public mutable ArrayList<int>* navLine;
 
             public constructor OutputPanel() {
                 this.lines = new ArrayList<String>() on heap;
                 this.visible = false;
                 this.title = "Output";
+                this.navFile = new ArrayList<String>() on heap;
+                this.navLine = new ArrayList<int>() on heap;
             }
 
             public method toggle() returns void { this.visible = !this.visible; }
@@ -30,13 +36,35 @@ public bundle forge {
                 ArrayList<String>* out = new ArrayList<String>() on heap;
                 out.add(text);
                 this.lines = out;
+                this.navFile = new ArrayList<String>() on heap;
+                this.navLine = new ArrayList<int>() on heap;
                 this.visible = true;
             }
-            // Show a prepared list of lines (e.g. find-references results).
+            // Show a prepared list of lines (e.g. find-references results). Not navigable.
             public method showLines(String caption, ArrayList<String>* body) returns void {
                 this.title = caption;
                 this.lines = body;
+                this.navFile = new ArrayList<String>() on heap;
+                this.navLine = new ArrayList<int>() on heap;
                 this.visible = true;
+            }
+            // Show a navigable result list: line i, when clicked, opens files.get(i) at lineNums.get(i).
+            public method showNavigable(String caption, ArrayList<String>* body, ArrayList<String>* files,
+                                        ArrayList<int>* lineNums) returns void {
+                this.title = caption;
+                this.lines = body;
+                this.navFile = files;
+                this.navLine = lineNums;
+                this.visible = true;
+            }
+            // The jump target for row i, or "" / -1 when that row isn't navigable.
+            public method navFileAt(int i) returns String {
+                if (i >= 0 && i < this.navFile.size()) { return this.navFile.get(i); }
+                return "";
+            }
+            public method navLineAt(int i) returns int {
+                if (i >= 0 && i < this.navLine.size()) { return this.navLine.get(i); }
+                return 0 - 1;
             }
             public method lineCount() returns int { return this.lines.size(); }
             public method line(int i) returns String { return this.lines.get(i); }
@@ -56,6 +84,8 @@ public bundle forge {
                 }
                 out.add("[exit " + r.exitCode.toString() + "]");
                 this.lines = out;
+                this.navFile = new ArrayList<String>() on heap;
+                this.navLine = new ArrayList<int>() on heap;
                 this.visible = true;
             }
         }
