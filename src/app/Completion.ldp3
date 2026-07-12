@@ -45,21 +45,45 @@ public bundle forge {
                 int col = c.editor().cursorCol();
                 String line = c.editor().document().line(row);
                 mutable int start = col;
-                while (start > 0 && this.isWordChar(line.charAt(start - 1))) { start = start - 1; }
-                if (col - start < 2) { this.active = false; return; }
+                while (start > 0 && this.isWordChar(line.charAt(start - 1))) {
+                    start = start - 1;
+                }
                 String pre = line.substring(start, col);
                 this.prefix = pre;
                 ArrayList<String>* out = new ArrayList<String>() on heap;
-                // keywords first
-                mutable int i = 0;
-                while (i < this.keywords.size()) {
-                    String kw = this.keywords.get(i);
-                    if (kw.startsWith(pre) && !kw.equals(pre)) { out.add(kw); }
-                    i = i + 1;
+                // a word preceded by '.' is a member access: offer the buffer's member names
+                boolean member = start > 0 && line.charAt(start - 1) == '.';
+                if (member) {
+                    ArrayList<String>* members = Members.list(c);
+                    mutable int mi = 0;
+                    while (mi < members.size()) {
+                        String m = members.get(mi);
+                        if (m.startsWith(pre) && !m.equals(pre)) {
+                            out.add(m);
+                        }
+                        mi = mi + 1;
+                    }
+                } else {
+                    if (col - start < 2) {
+                        this.active = false;
+                        return;
+                    }
+                    // keywords first
+                    mutable int i = 0;
+                    while (i < this.keywords.size()) {
+                        String kw = this.keywords.get(i);
+                        if (kw.startsWith(pre) && !kw.equals(pre)) {
+                            out.add(kw);
+                        }
+                        i = i + 1;
+                    }
+                    // then identifiers already in the buffer (deduped, excluding the prefix itself)
+                    this.collectIdentifiers(c, pre, out);
                 }
-                // then identifiers already in the buffer (deduped, excluding the prefix itself)
-                this.collectIdentifiers(c, pre, out);
-                if (out.size() == 0) { this.active = false; return; }
+                if (out.size() == 0) {
+                    this.active = false;
+                    return;
+                }
                 this.items = out;
                 this.sel = 0;
                 this.active = true;

@@ -1,0 +1,131 @@
+import app.Controller;
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // Extracts the member names (methods and fields) declared in a buffer, for member-access autocomplete
+        // (`this.` and `obj.`). A best-effort scan: method names come from `method NAME(`, field names from a
+        // declaration line that ends in `;` with no call parentheses. Good enough for the completion popup.
+        public class Members {
+
+            public static method list(Controller* c) returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                int n = c.editor().document().lineCount();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = Members.stripComment(c.editor().document().line(row));
+                    String mname = Members.afterKeyword(line, "method");
+                    if (mname.length() > 0 && !Members.has(out, mname)) {
+                        out.add(mname);
+                    }
+                    String field = Members.fieldName(line);
+                    if (field.length() > 0 && !Members.has(out, field)) {
+                        out.add(field);
+                    }
+                    row = row + 1;
+                }
+                return out;
+            }
+
+            // The identifier following `kw` on the line (a word-boundary match), or "".
+            private static method afterKeyword(String line, String kw) returns String {
+                mutable String prev = "";
+                mutable int i = 0;
+                int n = line.length();
+                while (i < n) {
+                    while (i < n && !Members.isIdentChar(line.charAt(i))) {
+                        i = i + 1;
+                    }
+                    mutable int start = i;
+                    while (i < n && Members.isIdentChar(line.charAt(i))) {
+                        i = i + 1;
+                    }
+                    if (i > start) {
+                        String word = line.substring(start, i);
+                        if (prev.equals(kw)) {
+                            return word;
+                        }
+                        prev = word;
+                    }
+                }
+                return "";
+            }
+
+            // The name of a field declared on this line, or "". A field line begins with a visibility modifier,
+            // has no call parentheses, and ends (before any initializer) with the field name followed by ';'.
+            private static method fieldName(String rawLine) returns String {
+                String line = rawLine.trim();
+                if (!Members.startsWithVisibility(line)) {
+                    return "";
+                }
+                if (line.indexOf("(") >= 0) {
+                    return "";
+                }
+                // cut at '=' (initializer) or ';'
+                mutable int cut = line.indexOf("=");
+                int semi = line.indexOf(";");
+                if (cut < 0) {
+                    cut = semi;
+                }
+                if (cut < 0) {
+                    return "";
+                }
+                String head = line.substring(0, cut).trim();
+                // the field name is the last identifier in the head
+                mutable int end = head.length();
+                while (end > 0 && !Members.isIdentChar(head.charAt(end - 1))) {
+                    end = end - 1;
+                }
+                mutable int begin = end;
+                while (begin > 0 && Members.isIdentChar(head.charAt(begin - 1))) {
+                    begin = begin - 1;
+                }
+                if (end <= begin) {
+                    return "";
+                }
+                String name = head.substring(begin, end);
+                if (Members.isKeyword(name)) {
+                    return "";
+                }
+                return name;
+            }
+
+            private static method startsWithVisibility(String line) returns boolean {
+                return line.startsWith("public ") || line.startsWith("private ")
+                    || line.startsWith("protected ") || line.startsWith("internal ");
+            }
+            private static method isKeyword(String w) returns boolean {
+                return w.equals("mutable") || w.equals("static") || w.equals("void") || w.equals("int")
+                    || w.equals("boolean") || w.equals("char") || w.equals("final") || w.equals("abstract");
+            }
+            private static method isIdentChar(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
+            private static method has(ArrayList<String>* xs, String w) returns boolean {
+                mutable int i = 0;
+                while (i < xs.size()) {
+                    if (xs.get(i).equals(w)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+            private static method stripComment(String line) returns String {
+                int n = line.length();
+                mutable int i = 0;
+                while (i + 1 < n) {
+                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') {
+                        return line.substring(0, i);
+                    }
+                    i = i + 1;
+                }
+                return line;
+            }
+        }
+    }
+}
