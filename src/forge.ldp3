@@ -74,17 +74,64 @@ public bundle forge {
             }
         }
 
+        // A whole-document snapshot for undo/redo: the text plus where the caret was.
+        public class Snapshot {
+            public mutable String text;
+            public mutable int row;
+            public mutable int col;
+            public constructor Snapshot(String text, int row, int col) {
+                this.text = text;
+                this.row = row;
+                this.col = col;
+            }
+        }
+
         // A caret over a TextBuffer: turns key events (type/enter/backspace) and arrow moves into buffer
-        // edits, keeping (row, col) valid. This is the model an input layer will drive.
+        // edits, keeping (row, col) valid, with snapshot-based undo/redo. This is the model an input layer
+        // will drive.
         public class Editor {
             private mutable TextBuffer* buf;
             private mutable int row;
             private mutable int col;
+            private mutable ArrayList<Snapshot>* undoStack;
+            private mutable ArrayList<Snapshot>* redoStack;
 
             public constructor Editor(TextBuffer* doc) {
                 this.buf = doc;
                 this.row = 0;
                 this.col = 0;
+                this.undoStack = new ArrayList<Snapshot>() on heap;
+                this.redoStack = new ArrayList<Snapshot>() on heap;
+            }
+
+            // Record the current state before a mutating edit; a fresh edit invalidates the redo history.
+            private method saveUndo() returns void {
+                this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
+                this.redoStack.clear();
+            }
+
+            private method restore(Snapshot* s) returns void {
+                this.buf.loadText(s.text);
+                this.row = s.row;
+                this.col = s.col;
+            }
+
+            public method undo() returns boolean {
+                if (this.undoStack.size() == 0) { return false; }
+                this.redoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
+                int last = this.undoStack.size() - 1;
+                this.restore(this.undoStack.get(last));
+                this.undoStack.removeAt(last);
+                return true;
+            }
+
+            public method redo() returns boolean {
+                if (this.redoStack.size() == 0) { return false; }
+                this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
+                int last = this.redoStack.size() - 1;
+                this.restore(this.redoStack.get(last));
+                this.redoStack.removeAt(last);
+                return true;
             }
 
             public method cursorRow() returns int { return this.row; }
@@ -92,11 +139,13 @@ public bundle forge {
             public method document() returns TextBuffer* { return this.buf; }
 
             public method type(char c) returns void {
+                this.saveUndo();
                 this.buf.insertChar(this.row, this.col, c);
                 this.col = this.col + 1;
             }
 
             public method enter() returns void {
+                this.saveUndo();
                 this.buf.splitLine(this.row, this.col);
                 this.row = this.row + 1;
                 this.col = 0;
@@ -104,6 +153,7 @@ public bundle forge {
 
             public method backspace() returns void {
                 if (this.col == 0 && this.row == 0) { return; }
+                this.saveUndo();
                 boolean joining = this.col == 0;
                 int newCol = this.buf.backspace(this.row, this.col);
                 if (joining) { this.row = this.row - 1; }
@@ -167,6 +217,13 @@ public bundle forge {
                 else {
                     this.failed = this.failed + 1;
                     System.IO.Console.printf("FAIL %s: %d != %d\n", name, actual, expected);
+                }
+            }
+            public method eqBool(boolean actual, boolean expected, String name) returns void {
+                if (actual == expected) { this.passed = this.passed + 1; }
+                else {
+                    this.failed = this.failed + 1;
+                    System.IO.Console.printf("FAIL %s (boolean mismatch)\n", name);
                 }
             }
             public method summary(String suite) returns void {
@@ -331,6 +388,22 @@ public bundle forge {
                 a.eqInt(cast<int>(sp.get(11).kind), cast<int>(Tok.COMMENT), "hl.comment");
                 ArrayList<Span> sp2 = hl.tokenize("s = \"hi\";");
                 a.eqInt(cast<int>(sp2.get(4).kind), cast<int>(Tok.STRING), "hl.string");
+
+                // --- undo / redo ---
+                Editor ed2 = new Editor(new TextBuffer() on heap) on heap;
+                ed2.type('h'); ed2.type('i');                 // "hi"
+                a.eqStr(ed2.document().line(0), "hi", "ur.typed");
+                ed2.undo();  a.eqStr(ed2.document().line(0), "h", "ur.undo1");
+                ed2.undo();  a.eqStr(ed2.document().line(0), "", "ur.undo2");
+                ed2.redo();  a.eqStr(ed2.document().line(0), "h", "ur.redo1");
+                ed2.redo();  a.eqStr(ed2.document().line(0), "hi", "ur.redo2");
+                boolean more = ed2.redo();                     // nothing left to redo
+                a.eqBool(more, false, "ur.redo-empty");
+                ed2.undo();                                    // back to "h"
+                ed2.type('o');                                 // a fresh edit -> "ho", redo cleared
+                a.eqStr(ed2.document().line(0), "ho", "ur.new-edit");
+                boolean r = ed2.redo();
+                a.eqBool(r, false, "ur.redo-cleared");
 
                 a.summary("editor tests");
                 return;
