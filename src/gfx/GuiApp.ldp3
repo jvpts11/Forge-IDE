@@ -5,6 +5,7 @@ import glfw.InputEvent;
 import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
+import io.FileTree;
 import input.Key;
 import input.KeyCode;
 import System.IO.Console;
@@ -32,10 +33,11 @@ public bundle forge {
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
+                FileTree* tree = new FileTree("src") on heap;
                 while (win.isOpen()) {
                     win.pump();
                     GuiApp.processInput(win, wb);
-                    GuiApp.drawFrame(win, batch, screen, wb);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree);
                     win.swap();
                     win.sleep(8);
                 }
@@ -90,9 +92,9 @@ public bundle forge {
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
-                GuiApp.scriptDemo(wb);   // drive edits through handleKey so the shot shows live editing
+                FileTree* tree = new FileTree("src") on heap;
                 win.pump();
-                GuiApp.drawFrame(win, batch, screen, wb);
+                GuiApp.drawFrame(win, batch, screen, wb, tree);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -113,10 +115,10 @@ public bundle forge {
             // one of Forge's own source files (real, long, colourful LDP3), falling back to a small embedded
             // sample if it isn't on disk, then places the caret and a selection to demonstrate scrolling.
             private static method buildWorkbench(GpuScreen* screen, int w, int h) returns Workbench* {
-                int rows = screen.rowsFor(h);
-                int cols = screen.colsFor(w);
+                int rows = screen.paneRowsFor(h);
+                int cols = screen.paneColsFor(w);
                 Workbench* wb = new Workbench(rows, cols) on heap;
-                wb.openFile("src/gfx/GuiApp.ldp3");
+                wb.openFile("src/gfx/GpuScreen.ldp3");
                 Controller* c = wb.active();
                 if (c.editor().document().lineCount() < 3) { c.insertText(GuiApp.sample()); }
                 c.moveDocStart(false);
@@ -133,9 +135,9 @@ public bundle forge {
                 return;
             }
 
-            // One frame: clear to the Forge ground, then draw the active document.
-            private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb)
-                    returns void {
+            // One frame: clear to the Forge ground, then draw the full IDE (tabs + tree + editor).
+            private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb,
+                                            FileTree* tree) returns void {
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);
@@ -143,7 +145,7 @@ public bundle forge {
                 Wgl.glClear(16384);   // GL_COLOR_BUFFER_BIT
 
                 batch.begin(w, h, screen.fontTexture());
-                screen.draw(batch, wb.active(), w, h);
+                screen.drawWorkbench(batch, wb, tree, w, h);
                 batch.flush();
                 return;
             }

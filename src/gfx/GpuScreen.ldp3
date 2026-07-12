@@ -1,6 +1,10 @@
 import gfx.Batch2D;
 import gfx.Font;
 import app.Controller;
+import app.Workbench;
+import app.DocumentManager;
+import io.FileTree;
+import io.FileNode;
 import syntax.Tok;
 import syntax.Span;
 import System.Collections.ArrayList;
@@ -10,59 +14,114 @@ program Forge;
 public bundle forge {
     public namespace gfx {
 
-        // Draws an editor Controller's visible state on the GPU -- the graphical counterpart of the text
-        // ScreenRenderer. It reads the same render queries (visibleRows/lineNumberAt/renderLine, and later
-        // the spans, caret and selection) and paints them as Batch2D quads. This slice draws the gutter,
-        // right-aligned line numbers, and the code text of every visible line, monospace-aligned. It owns no
-        // model state; the caller passes the active Controller each frame.
+        // Draws the whole IDE frame on the GPU -- the graphical counterpart of ScreenRenderer. It composes a
+        // tab bar, a project tree panel, and the editor pane (gutter + line numbers + token-coloured code +
+        // current-line highlight + selection + caret), all from live Workbench + FileTree state through
+        // Batch2D quads. It owns no model state; the caller passes the Workbench each frame.
         public class GpuScreen {
             private mutable Font* font;
             private mutable int gutterChars;
             private mutable int topPad;
+            private mutable int treeW;
 
             public constructor GpuScreen(Font* font) {
                 this.font = font;
                 this.gutterChars = 6;
-                this.topPad = 8;
+                this.topPad = 6;
+                this.treeW = 230;
             }
 
-            // The gutter width, and the viewport size (rows/cols) that fit the code area of a pixel window,
-            // so the caller can size the Controller's viewport to match what is drawn.
             public method fontTexture() returns int { return this.font.texture(); }
             public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
-            public method rowsFor(int screenH) returns int {
-                return (screenH - this.topPad) / this.font.lineHeight();
+            public method tabH() returns int { return this.font.lineHeight() + 12; }
+            public method treeWidth() returns int { return this.treeW; }
+            // Viewport rows/cols that fit the editor pane of a pixel window (window minus chrome).
+            public method paneRowsFor(int screenH) returns int {
+                return (screenH - this.tabH() - this.topPad) / this.font.lineHeight();
             }
-            public method colsFor(int screenW) returns int {
-                return (screenW - this.gutterPx() - 8) / this.font.advance();
+            public method paneColsFor(int screenW) returns int {
+                return (screenW - this.treeW - this.gutterPx() - 8) / this.font.advance();
             }
 
-            public method draw(Batch2D* batch, Controller* c, int screenW, int screenH) returns void {
+            // Compose the full IDE frame.
+            public method drawWorkbench(Batch2D* batch, Workbench* wb, FileTree* tree, int screenW, int screenH)
+                    returns void {
+                int tabh = this.tabH();
+                int tw = this.treeW;
+                // chrome panel backgrounds
+                batch.rect(0, 0, screenW, tabh, 0.027, 0.055, 0.063, 1.0);              // tab bar
+                batch.rect(0, tabh, tw, screenH - tabh, 0.035, 0.070, 0.078, 1.0);      // tree panel
+                batch.rect(tw, tabh, 1, screenH - tabh, 0.016, 0.035, 0.039, 1.0);      // tree/editor divider
+                this.drawTabBar(batch, wb.documents(), tabh);
+                this.drawTree(batch, tree, tabh, screenH);
+                this.drawEditor(batch, wb.active(), tw, tabh, screenW - tw, screenH - tabh);
+            }
+
+            private method drawTabBar(Batch2D* batch, DocumentManager* docs, int tabh) returns void {
+                int cw = this.font.advance();
+                int ty = (tabh - this.font.lineHeight()) / 2;
+                mutable int x = 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    String title = docs.title(i);
+                    int tw = (title.length() + 3) * cw;
+                    boolean active = i == docs.activeIndex();
+                    mutable float r = 0.502;
+                    mutable float g = 0.588;
+                    mutable float b = 0.584;
+                    if (active) {
+                        batch.rect(x, 0, tw, tabh, 0.051, 0.102, 0.114, 1.0);   // active tab = editor ground
+                        batch.rect(x, 0, tw, 2, 0.918, 0.706, 0.392, 1.0);      // amber accent
+                        r = 0.804; g = 0.851; b = 0.843;
+                    }
+                    this.font.drawText(batch, x + cw, ty, title, r, g, b, 1.0);
+                    x = x + tw;
+                    i = i + 1;
+                }
+            }
+
+            private method drawTree(Batch2D* batch, FileTree* tree, int tabh, int screenH) returns void {
+                int ch = this.font.lineHeight();
+                ArrayList<FileNode>* rows = tree.visible();
+                mutable int i = 0;
+                while (i < rows.size()) {
+                    int y = tabh + 6 + i * ch;
+                    if (y + ch > screenH) { return; }
+                    FileNode* node = rows.get(i);
+                    mutable float r = 0.576;
+                    mutable float g = 0.678;
+                    mutable float b = 0.667;
+                    if (node.isDir) { r = 0.918; g = 0.706; b = 0.392; }
+                    this.font.drawText(batch, 8, y, tree.rowLabel(node), r, g, b, 1.0);
+                    i = i + 1;
+                }
+            }
+
+            // The editor pane at (ox, oy), size (pw, ph).
+            private method drawEditor(Batch2D* batch, Controller* c, int ox, int oy, int pw, int ph)
+                    returns void {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 int gpx = this.gutterPx();
-                int textX = gpx + 6;
+                int textX = ox + gpx + 6;
                 int caretRow = c.caretScreenRow();
-
                 int visible = c.visibleRows();
                 int firstLine = c.firstLine();
 
-                // gutter background band
-                batch.rect(0, 0, gpx, screenH, 0.039, 0.078, 0.086, 1.0);
+                batch.rect(ox, oy, gpx, ph, 0.039, 0.078, 0.086, 1.0);   // gutter band
 
-                // selection highlight (under the text), one band per line the selection touches
                 if (c.editor().hasSelection()) {
-                    this.drawSelection(batch, c, textX, cw, ch, visible, firstLine, screenW - textX);
+                    this.drawSelection(batch, c, textX, oy, cw, ch, visible, firstLine);
                 }
 
                 mutable int r = 0;
                 while (r < visible) {
-                    int y = this.topPad + r * ch;
+                    int y = oy + this.topPad + r * ch;
                     if (r == caretRow) {
-                        batch.rect(gpx, y, screenW - gpx, ch, 1.0, 1.0, 1.0, 0.035);
+                        batch.rect(ox + gpx, y, pw - gpx, ch, 1.0, 1.0, 1.0, 0.035);
                     }
                     String num = (c.lineNumberAt(r) + 1).toString();
-                    int nx = gpx - 8 - num.length() * cw;
+                    int nx = ox + gpx - 8 - num.length() * cw;
                     this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);
                     String line = c.renderLine(r);
                     ArrayList<Span> spans = c.renderSpans(r);
@@ -74,17 +133,15 @@ public bundle forge {
                     r = r + 1;
                 }
 
-                // caret (on top), a thin amber bar
                 int ccr = c.caretScreenRow();
                 if (ccr >= 0 && ccr < visible) {
                     int cx = textX + c.caretScreenCol() * cw;
-                    batch.rect(cx, this.topPad + ccr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                    batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
                 }
             }
 
-            // Draw the translucent selection band(s), clipped to the visible rows.
-            private method drawSelection(Batch2D* batch, Controller* c, int textX, int cw, int ch,
-                                         int visible, int firstLine, int maxW) returns void {
+            private method drawSelection(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
+                                         int visible, int firstLine) returns void {
                 int sr = c.editor().selStartRow();
                 int sc = c.editor().selStartCol();
                 int er = c.editor().selEndRow();
@@ -98,15 +155,14 @@ public bundle forge {
                         mutable int endCol = c.editor().document().line(row).length();
                         if (row == er) { endCol = ec; }
                         mutable int wsel = (endCol - startCol) * cw;
-                        if (wsel < cw && row < er) { wsel = cw; }   // show a sliver for a selected newline
+                        if (wsel < cw && row < er) { wsel = cw; }
                         int x = textX + startCol * cw;
-                        batch.rect(x, this.topPad + screenRow * ch, wsel, ch, 0.918, 0.706, 0.392, 0.22);
+                        batch.rect(x, oy + this.topPad + screenRow * ch, wsel, ch, 0.918, 0.706, 0.392, 0.22);
                     }
                     row = row + 1;
                 }
             }
 
-            // Draw one token span at its column, coloured by its kind (whitespace draws nothing).
             private method drawSpan(Batch2D* batch, int textX, int y, int cw, String line, Span* sp)
                     returns void {
                 Tok k = sp.kind;
@@ -118,7 +174,7 @@ public bundle forge {
                 if (k == Tok.CHAR)    { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0); return; }
                 if (k == Tok.COMMENT) { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.302, 0.416, 0.427, 1.0); return; }
                 if (k == Tok.PUNCT)   { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.565, 0.635, 0.631, 1.0); return; }
-                this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.804, 0.851, 0.843, 1.0);   // IDENT
+                this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.804, 0.851, 0.843, 1.0);
             }
         }
     }
