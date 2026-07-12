@@ -1,0 +1,128 @@
+import System.Collections.ArrayList;
+import System.Text.StringBuilder;
+import System.Text.Strings;
+import app.Controller;
+import syntax.Highlighter;
+import syntax.Span;
+import syntax.Tok;
+
+program Forge;
+
+public bundle forge {
+    public namespace view {
+
+        // Renders a Controller's visible state into text rows -- a "screenshot" of the editor, so the whole
+        // engine is demonstrable and testable with no GUI. renderPlain returns one String per screen row (a
+        // line-number gutter plus the horizontally-clipped slice of each line); renderAnsi wraps each token
+        // run in an ANSI colour for a real terminal. The caret is reported by the Controller and overlaid by
+        // the caller. The renderer owns a Highlighter -- colouring is a view concern.
+        public class TextRenderer {
+            private mutable Highlighter* hl;
+            public constructor TextRenderer() { this.hl = new Highlighter() on heap; }
+
+            // Digits needed to print the largest line number, at least 3 for a steady gutter.
+            private method gutterWidth(int totalLines) returns int {
+                mutable int digits = 1;
+                mutable int n = totalLines;
+                while (n >= 10) { n = n / 10; digits = digits + 1; }
+                if (digits < 3) { digits = 3; }
+                return digits;
+            }
+
+            // The visible window of `line`, starting at column `from`, at most `width` columns.
+            private method clip(String line, int from, int width) returns String {
+                int len = line.length();
+                if (from >= len) { return ""; }
+                mutable int end = from + width;
+                if (end > len) { end = len; }
+                return line.substring(from, end);
+            }
+
+            // One row: "  7 | text". `gw` is the gutter digit width.
+            private method plainRow(Controller* c, int screenRow, int gw) returns String {
+                int lineNo = c.lineNumberAt(screenRow) + 1;   // 1-based for humans
+                String num = Strings.padLeft(lineNo.toString(), gw, " ");
+                String text = this.clip(c.renderLine(screenRow), c.firstColumn(), c.viewport().width());
+                return num + " | " + text;
+            }
+
+            // Every visible row as plain text (no colour), top to bottom.
+            public method renderPlain(Controller* c) returns ArrayList<String> {
+                ArrayList<String> rows = new ArrayList<String>() on heap;
+                int gw = this.gutterWidth(c.lineCount());
+                int visible = c.visibleRows();
+                for (mutable int r = 0; r < visible; r++) {
+                    rows.add(this.plainRow(c, r, gw));
+                }
+                return rows;
+            }
+
+            // The whole plain frame as one String (rows joined by '\n'), handy for a quick dump/snapshot.
+            public method renderPlainString(Controller* c) returns String {
+                return Strings.join(this.renderPlain(c), "\n");
+            }
+
+            // A one-line status bar: path (or [No Name]), a '*' when modified, caret position, line count.
+            public method statusBar(Controller* c) returns String {
+                mutable String path = c.document().path();
+                if (path.length() == 0) { path = "[No Name]"; }
+                mutable String dirty = "";
+                if (c.document().isModified()) { dirty = " *"; }
+                int line = c.editor().cursorRow() + 1;
+                int col = c.editor().cursorCol() + 1;
+                return path + dirty + "  Ln " + line.toString() + ", Col " + col.toString()
+                     + "  (" + c.lineCount().toString() + " lines)";
+            }
+
+            // --- ANSI colour (for a real terminal) ---
+            private method esc(String code) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(cast<char>(27));   // ESC
+                sb.append("[");
+                sb.append(code);
+                sb.append("m");
+                return sb.toString();
+            }
+            private method reset() returns String { return this.esc("0"); }
+            // Foreground colour code per token class; empty means "leave default".
+            private method colorFor(Tok kind) returns String {
+                if (kind == Tok.KEYWORD) { return this.esc("38;5;204"); }   // pink/red
+                if (kind == Tok.NUMBER)  { return this.esc("38;5;180"); }   // amber
+                if (kind == Tok.STRING)  { return this.esc("38;5;114"); }   // green
+                if (kind == Tok.CHAR)    { return this.esc("38;5;114"); }
+                if (kind == Tok.COMMENT) { return this.esc("38;5;245"); }   // grey
+                return "";
+            }
+            private method colorize(String text) returns String {
+                ArrayList<Span> spans = this.hl.tokenize(text);
+                StringBuilder sb = new StringBuilder() on heap;
+                for (mutable int i = 0; i < spans.size(); i++) {
+                    Span sp = spans.get(i);
+                    String piece = text.substring(sp.start, sp.end);
+                    String color = this.colorFor(sp.kind);
+                    if (color.length() == 0) {
+                        sb.append(piece);
+                    } else {
+                        sb.append(color);
+                        sb.append(piece);
+                        sb.append(this.reset());
+                    }
+                }
+                return sb.toString();
+            }
+            // Every visible row with a plain gutter and a colourised (clipped) line.
+            public method renderAnsi(Controller* c) returns ArrayList<String> {
+                ArrayList<String> rows = new ArrayList<String>() on heap;
+                int gw = this.gutterWidth(c.lineCount());
+                int visible = c.visibleRows();
+                for (mutable int r = 0; r < visible; r++) {
+                    int lineNo = c.lineNumberAt(r) + 1;
+                    String num = Strings.padLeft(lineNo.toString(), gw, " ");
+                    String text = this.clip(c.renderLine(r), c.firstColumn(), c.viewport().width());
+                    rows.add(num + " | " + this.colorize(text));
+                }
+                return rows;
+            }
+        }
+    }
+}

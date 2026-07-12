@@ -45,6 +45,7 @@ public bundle forge {
             public method editor() returns Editor* { return this.ed; }
             public method viewport() returns Viewport* { return this.view; }
             public method document() returns Document* { return this.doc; }
+            public method lineCount() returns int { return this.ed.document().lineCount(); }
             public method setScrollMargin(int m) returns void { this.scrollMargin = m; }
 
             // --- text-changing commands ---

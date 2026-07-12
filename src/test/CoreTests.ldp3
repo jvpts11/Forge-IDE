@@ -6,6 +6,7 @@ import syntax.Span;
 import syntax.Highlighter;
 import io.Document;
 import view.Viewport;
+import view.TextRenderer;
 import app.Controller;
 import input.Key;
 import input.KeyCode;
@@ -336,6 +337,29 @@ public bundle forge {
                 a.eqBool(km.dispatch(kc3, Key.ctrlKey(KeyCode.HOME)), true, "key.ctrl-home");
                 a.eqInt(kc3.editor().cursorCol(), 0, "key.ctrl-home-col");
                 a.eqBool(km.dispatch(kc3, Key.ch('~')), true, "key.printable");
+
+                // --- rendering: gutter, clipping, status bar, ANSI ---
+                Controller rc = new Controller(4, 20) on heap;   // 4 rows x 20 cols
+                rc.insertText("alpha\nbeta\ngamma");
+                rc.moveDocStart(false);
+                TextRenderer tr = new TextRenderer() on heap;
+                ArrayList<String> frame = tr.renderPlain(rc);
+                a.eqInt(frame.size(), 3, "render.rows");
+                a.eqStr(frame.get(0), "  1 | alpha", "render.row0");
+                a.eqStr(frame.get(1), "  2 | beta", "render.row1");
+                a.eqStr(frame.get(2), "  3 | gamma", "render.row2");
+                String status = tr.statusBar(rc);
+                a.eqBool(status.contains("Ln 1, Col 1"), true, "render.status-caret");
+                a.eqBool(status.contains("3 lines"), true, "render.status-lines");
+                a.eqBool(status.contains("*"), true, "render.status-dirty");
+                a.eqBool(tr.renderAnsi(rc).get(0).contains("alpha"), true, "render.ansi-text");
+
+                Controller rc2 = new Controller(2, 5) on heap;   // width 5 -> horizontal clip
+                rc2.insertText("abcdefghij");
+                rc2.moveDocStart(false);
+                a.eqStr(tr.renderPlain(rc2).get(0), "  1 | abcde", "render.clip-left");
+                rc2.moveDocEnd(false);                            // scroll right to follow the caret
+                a.eqBool(tr.renderPlain(rc2).get(0).contains("ghij"), true, "render.clip-scrolled");
 
                 a.summary("editor tests");
                 return a.failCount();
