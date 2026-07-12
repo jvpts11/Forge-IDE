@@ -5,6 +5,9 @@ import syntax.Tok;
 import syntax.Span;
 import syntax.Highlighter;
 import io.Document;
+import io.FileTree;
+import io.FileNode;
+import System.IO.File;
 import view.Viewport;
 import view.TextRenderer;
 import app.Controller;
@@ -416,6 +419,31 @@ public bundle forge {
                 dm.close(0);
                 a.eqInt(dm.count(), 1, "dm.closed");
                 a.eqStr(dm.active().editor().document().line(0), "", "dm.after-close");
+
+                // --- file tree over a real temp directory (dirs first, lazy expand) ---
+                File.mkdir("ft_tree.tmp");
+                File.mkdir("ft_tree.tmp/sub");
+                File.writeAll("ft_tree.tmp/a.txt", "1");
+                File.writeAll("ft_tree.tmp/b.txt", "2");
+                File.writeAll("ft_tree.tmp/sub/c.txt", "3");
+                FileTree tree = new FileTree("ft_tree.tmp") on heap;
+                FileNode* troot = tree.root();
+                a.eqInt(troot.children.size(), 3, "tree.child-count");
+                a.eqStr(troot.children.get(0).name, "sub", "tree.dir-first");
+                a.eqBool(troot.children.get(0).isDir, true, "tree.dir-flag");
+                a.eqStr(troot.children.get(1).name, "a.txt", "tree.file1");
+                a.eqStr(troot.children.get(2).name, "b.txt", "tree.file2");
+                a.eqBool(troot.children.get(0).expanded, false, "tree.collapsed");
+                a.eqInt(tree.visible().size(), 4, "tree.visible-collapsed");   // root + 3
+                tree.toggle(troot.children.get(0));                            // expand "sub"
+                a.eqBool(troot.children.get(0).expanded, true, "tree.expanded");
+                a.eqInt(troot.children.get(0).children.size(), 1, "tree.sub-loaded");
+                a.eqStr(troot.children.get(0).children.get(0).name, "c.txt", "tree.sub-child");
+                a.eqInt(tree.visible().size(), 5, "tree.visible-expanded");    // root, sub, c.txt, a, b
+                a.eqStr(tree.rowLabel(troot.children.get(0)), "  v sub", "tree.row-label");
+                File.remove("ft_tree.tmp/sub/c.txt");
+                File.remove("ft_tree.tmp/a.txt");
+                File.remove("ft_tree.tmp/b.txt");
 
                 a.summary("editor tests");
                 return a.failCount();
