@@ -8,6 +8,7 @@ import app.Command;
 import app.CommandRegistry;
 import app.OutputPanel;
 import app.Diagnostic;
+import app.Completion;
 import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
@@ -283,6 +284,32 @@ public bundle forge {
                         batch.rect(x, oy + this.topPad + screenRow * ch, wsel, ch, 0.918, 0.706, 0.392, 0.22);
                     }
                     row = row + 1;
+                }
+            }
+
+            // The autocomplete popup, anchored below the caret at the prefix start.
+            public method drawCompletion(Batch2D* batch, Completion* comp, Workbench* wb, int screenW,
+                                         int screenH) returns void {
+                Controller* c = wb.active();
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int ox = this.treeW;
+                int cx = ox + this.gutterPx() + 6 + c.caretScreenCol() * cw;
+                int cy = this.tabH() + this.topPad + c.caretScreenRow() * ch;
+                int px = cx - comp.prefix.length() * cw;
+                int py = cy + ch;
+                mutable int shown = comp.items.size();
+                if (shown > 10) { shown = 10; }
+                int pw = 280;
+                int pph = shown * (ch + 2) + 6;
+                batch.rect(px, py, pw, pph, 0.063, 0.106, 0.114, 1.0);
+                batch.rect(px, py, 2, pph, 0.918, 0.706, 0.392, 1.0);
+                mutable int i = 0;
+                while (i < shown) {
+                    int ry = py + 3 + i * (ch + 2);
+                    if (i == comp.sel) { batch.rect(px + 2, ry - 1, pw - 4, ch + 2, 0.918, 0.706, 0.392, 0.18); }
+                    this.font.drawText(batch, px + 8, ry, comp.items.get(i), 0.804, 0.851, 0.843, 1.0);
+                    i = i + 1;
                 }
             }
 

@@ -48,12 +48,13 @@ public bundle forge {
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
+                Completion* comp = new Completion() on heap;
                 mutable boolean prevDown = false;
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
                 while (win.isOpen()) {
                     win.pump();
-                    GuiApp.processInput(win, wb, ov);
+                    GuiApp.processInput(win, wb, ov, comp);
                     // left click -> place the caret (edge-triggered); ignored while an overlay is open
                     boolean down = win.keyDown(1);   // VK_LBUTTON
                     if (down && !prevDown && !ov.isOpen()) { GuiApp.handleClick(win, screen, wb, tree); }
@@ -69,7 +70,7 @@ public bundle forge {
                         lastW = w2;
                         lastH = h2;
                     }
-                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
                     win.swap();
                     win.sleep(8);
                 }
@@ -127,6 +128,7 @@ public bundle forge {
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
+                Completion* comp = new Completion() on heap;
                 System.IO.Console.println("forge-serve ready");
                 Win32.fflush(0);
                 mutable boolean running = true;
@@ -136,7 +138,7 @@ public bundle forge {
                     if (line.length() == 0) { running = false; }
                     else if (GuiApp.firstWord(line).equals("quit")) { running = false; }
                     else {
-                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov);
+                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp);
                         Win32.fflush(0);
                     }
                 }
@@ -144,7 +146,8 @@ public bundle forge {
             }
 
             private static method serveCommand(String line, GlWindow* win, Batch2D* batch, GpuScreen* screen,
-                                               Workbench* wb, FileTree* tree, Overlay* ov) returns void {
+                                               Workbench* wb, FileTree* tree, Overlay* ov, Completion* comp)
+                    returns void {
                 String cmd = GuiApp.firstWord(line);
                 String arg = GuiApp.rest(line);
                 if (cmd.equals("type")) {
@@ -154,9 +157,10 @@ public bundle forge {
                         if (ov.isOpen()) { ov.typeChar(c); } else { wb.handleKey(Key.ch(c)); }
                         i = i + 1;
                     }
+                    if (!ov.isOpen()) { comp.update(wb.active()); }
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("key")) {
-                    GuiApp.serveKey(wb, ov, arg);
+                    GuiApp.serveKey(wb, ov, comp, arg);
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("click")) {
                     String rx = GuiApp.firstWord(arg);
@@ -187,7 +191,7 @@ public bundle forge {
                     ov.close();
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("shot")) {
-                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
                     Wgl.glFinish();
                     int w = win.width();
                     int h = win.height();
@@ -210,7 +214,7 @@ public bundle forge {
                 return;
             }
 
-            private static method serveKey(Workbench* wb, Overlay* ov, String name) returns void {
+            private static method serveKey(Workbench* wb, Overlay* ov, Completion* comp, String name) returns void {
                 int vk = GuiApp.vkForName(name);
                 if (ov.isOpen()) {
                     if (vk == 27) { ov.close(); }
@@ -222,8 +226,11 @@ public bundle forge {
                         else { wb.active().find(ov.query); }
                         ov.close();
                     }
+                } else if (comp.active && GuiApp.completionKey(comp, wb, vk)) {
+                    return;
                 } else {
                     GuiApp.dispatchKey(wb, vk, false, false, false);
+                    if (vk == 8) { comp.update(wb.active()); } else { comp.dismiss(); }
                 }
                 return;
             }
@@ -285,6 +292,7 @@ public bundle forge {
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
+                Completion* comp = new Completion() on heap;
 
                 // open the command palette and type a query via real WM_CHAR messages, routed through the
                 // overlay path (processInput -> overlayEvent -> typeChar).
@@ -296,9 +304,9 @@ public bundle forge {
                     i = i + 1;
                 }
                 win.pump();
-                GuiApp.processInput(win, wb, ov);
+                GuiApp.processInput(win, wb, ov, comp);
 
-                GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -316,7 +324,8 @@ public bundle forge {
             // Drain the window's keyboard events and drive the Workbench: printable characters type, special
             // keys navigate/edit, Ctrl+letter runs a shortcut -- exactly the CHAR-vs-special split the KeyMap
             // expects. Typed text comes via WM_CHAR; Ctrl combos and named keys via WM_KEYDOWN.
-            private static method processInput(GlWindow* win, Workbench* wb, Overlay* ov) returns void {
+            private static method processInput(GlWindow* win, Workbench* wb, Overlay* ov, Completion* comp)
+                    returns void {
                 while (win.hasEvent()) {
                     InputEvent* e = win.nextEvent();
                     boolean ctrl = win.modCtrl();
@@ -324,18 +333,33 @@ public bundle forge {
                     boolean alt = win.modAlt();
                     if (ov.isOpen()) {
                         GuiApp.overlayEvent(ov, wb, e, ctrl);
+                    } else if (comp.active && e.isKey() && GuiApp.completionKey(comp, wb, e.vk)) {
+                        // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
                     } else if (e.isKey() && ctrl && shift && e.vk == 80) {   // Ctrl+Shift+P -> palette
                         ov.open(1);
                     } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
                         ov.open(2);
                     } else if (e.isChar()) {
                         int cp = e.code;
-                        if (cp >= 32 && cp != 127 && !ctrl) { wb.handleKey(Key.ch(cast<char>(cp))); }
+                        if (cp >= 32 && cp != 127 && !ctrl) {
+                            wb.handleKey(Key.ch(cast<char>(cp)));
+                            comp.update(wb.active());
+                        }
                     } else if (e.isKey()) {
                         GuiApp.dispatchKey(wb, e.vk, ctrl, shift, alt);
+                        if (e.vk == 8) { comp.update(wb.active()); } else { comp.dismiss(); }
                     }
                 }
                 return;
+            }
+
+            // Handle a key while the completion popup is open. Returns true if it consumed the key.
+            private static method completionKey(Completion* comp, Workbench* wb, int vk) returns boolean {
+                if (vk == 9 || vk == 13) { comp.accept(wb.active()); return true; }   // Tab / Enter
+                if (vk == 27) { comp.dismiss(); return true; }                        // Esc
+                if (vk == 40) { comp.moveSel(1); return true; }                       // Down
+                if (vk == 38) { comp.moveSel(0 - 1); return true; }                   // Up
+                return false;
             }
 
             // Route an event to the open overlay: type into its query, Esc closes, Enter runs it, arrows
@@ -401,8 +425,9 @@ public bundle forge {
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
+                Completion* comp = new Completion() on heap;
                 win.pump();
-                GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -446,7 +471,7 @@ public bundle forge {
             // One frame: clear to the Forge ground, draw the full IDE (tabs + tree + editor), then any
             // open modal overlay on top.
             private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb,
-                                            FileTree* tree, Overlay* ov) returns void {
+                                            FileTree* tree, Overlay* ov, Completion* comp) returns void {
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);
@@ -455,6 +480,7 @@ public bundle forge {
 
                 batch.begin(w, h, screen.fontTexture());
                 screen.drawWorkbench(batch, wb, tree, w, h);
+                if (comp.active) { screen.drawCompletion(batch, comp, wb, w, h); }
                 if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
                 batch.flush();
                 return;
