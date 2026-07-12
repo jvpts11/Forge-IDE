@@ -1,0 +1,33 @@
+import System.Collections.ArrayList;
+import System.IO.Console;
+import app.Controller;
+import view.TextRenderer;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // A headless demo of the editor engine: build a document, run a few edits through the Controller,
+        // then print the rendered frame (line-number gutter + clipped lines) and the status bar. This is one
+        // frame of what a real terminal front-end will draw continuously, so running Forge.exe shows the
+        // whole pipeline -- buffer, caret, viewport, highlighter, renderer -- working end to end.
+        public class Demo {
+            public static method run() returns void {
+                Controller c = new Controller(12, 58) on heap;
+                c.insertText("program Hello;\n\npublic bundle main {\n    public class Main {\n        // a tiny sample program\n        public static method main(string[] args) returns void {\n            mutable int x = 42;\n            x = x + 1;\n        }\n    }\n}");
+                c.moveDocStart(false);
+
+                TextRenderer tr = new TextRenderer() on heap;
+                System.IO.Console.println("+------------------------- Forge --------------------------+");
+                ArrayList<String> rows = tr.renderPlain(c);
+                for (mutable int i = 0; i < rows.size(); i++) {
+                    System.IO.Console.println("| " + rows.get(i));
+                }
+                System.IO.Console.println("+----------------------------------------------------------+");
+                System.IO.Console.println(tr.statusBar(c));
+                System.IO.Console.println("");
+            }
+        }
+    }
+}
