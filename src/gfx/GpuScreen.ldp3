@@ -515,9 +515,12 @@ public bundle forge {
 
                 batch.rect(ox, oy, gpx, ph, 0.039, 0.078, 0.086, 1.0);   // gutter band
 
-                // find: highlight every occurrence of the query in the visible lines
+                // find: highlight every occurrence of the query in the visible lines. With the find bar closed,
+                // fall back to highlighting the identifier the caret sits on, JetBrains/VS Code-style.
                 if (ov.mode == 2 && ov.query.length() > 0) {
                     this.drawFindMatches(batch, c, ov.query, textX, oy, cw, ch, visible, firstLine);
+                } else if (!c.editor().hasSelection()) {
+                    this.drawOccurrences(batch, c, textX, oy, cw, ch, visible);
                 }
 
                 if (c.editor().hasSelection()) {
@@ -725,6 +728,58 @@ public bundle forge {
                     r = r + 1;
                 }
             }
+            // Highlight every whole-word occurrence of the identifier under the caret (the caret's own
+            // instance excluded), a faint green box, so you see where a name is used at a glance. Only kicks
+            // in for identifiers of two or more characters and while nothing is selected.
+            private method drawOccurrences(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
+                                           int visible) returns void {
+                String word = c.wordAtCaret();
+                int wlen = word.length();
+                if (wlen < 2) { return; }
+                int total = c.lineCount();
+                int caretRow = c.editor().cursorRow();
+                int caretCol = c.editor().cursorCol();
+                mutable int r = 0;
+                while (r < visible) {
+                    int docRow = c.lineNumberAt(r);
+                    if (docRow < total) {
+                        String line = c.editor().document().line(docRow);
+                        int n = line.length();
+                        mutable int i = 0;
+                        while (i + wlen <= n) {
+                            if (GpuScreen.wordMatchAt(line, word, i)) {
+                                boolean isCaretOne = docRow == caretRow && caretCol >= i && caretCol <= i + wlen;
+                                if (!isCaretOne) {
+                                    batch.rect(textX + i * cw, oy + this.topPad + r * ch, wlen * cw, ch,
+                                               0.549, 0.784, 0.624, 0.13);
+                                }
+                                i = i + wlen;
+                            } else {
+                                i = i + 1;
+                            }
+                        }
+                    }
+                    r = r + 1;
+                }
+            }
+
+            // A case-sensitive whole-word match of `word` in `line` at index `i` (identifier boundaries).
+            private static method wordMatchAt(String line, String word, int i) returns boolean {
+                int wlen = word.length();
+                mutable int j = 0;
+                while (j < wlen) {
+                    if (line.charAt(i + j) != word.charAt(j)) { return false; }
+                    j = j + 1;
+                }
+                if (i > 0 && GpuScreen.isWordCh(line.charAt(i - 1))) { return false; }
+                if (i + wlen < line.length() && GpuScreen.isWordCh(line.charAt(i + wlen))) { return false; }
+                return true;
+            }
+            private static method isWordCh(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
+
             // Draw a subtle boxed cell around a matched bracket at screen row `sr`, column `col`.
             private method drawBracketCell(Batch2D* batch, int sr, int col, int textX, int oy, int cw, int ch,
                                            int visible) returns void {
