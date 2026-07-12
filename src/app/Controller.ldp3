@@ -149,6 +149,7 @@ public bundle forge {
             }
 
             // --- search / file ---
+            public method matchCount(String needle) returns int { return this.ed.matchCount(needle); }
             public method find(String needle) returns boolean {
                 boolean r = this.ed.find(needle); this.moved(); return r;
             }

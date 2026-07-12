@@ -1,8 +1,11 @@
 import gfx.Batch2D;
 import gfx.Font;
+import gfx.Overlay;
 import app.Controller;
 import app.Workbench;
 import app.DocumentManager;
+import app.Command;
+import app.CommandRegistry;
 import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
@@ -212,6 +215,62 @@ public bundle forge {
                     }
                     row = row + 1;
                 }
+            }
+
+            // --- modal overlays (drawn on top of the frame) ---
+            public method drawOverlay(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW, int screenH)
+                    returns void {
+                if (ov.mode == 1) { this.drawPalette(batch, ov, wb, screenW, screenH); }
+                else if (ov.mode == 2) { this.drawFindBar(batch, ov, wb, screenW); }
+            }
+
+            private method drawPalette(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW, int screenH)
+                    returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 640;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                ArrayList<Command>* results = wb.registry().filter(ov.query);
+                mutable int shown = results.size();
+                if (shown > 12) { shown = 12; }
+                int bh = ch + 12 + shown * (ch + 4) + 8;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);        // dim backdrop
+                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
+                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
+                // query row
+                this.font.drawText(batch, bx + 12, by + 7, "> ", 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                int qx = bx + 12 + (2 + ov.query.length()) * cw;
+                batch.rect(qx, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                // results
+                mutable int i = 0;
+                while (i < shown) {
+                    int ry = by + ch + 12 + i * (ch + 4);
+                    if (i == ov.sel) { batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18); }
+                    Command* cmd = results.get(i);
+                    this.font.drawText(batch, bx + 16, ry, cmd.title, 0.804, 0.851, 0.843, 1.0);
+                    int idx = bx + bw - 16 - cmd.id.length() * cw;
+                    this.font.drawText(batch, idx, ry, cmd.id, 0.376, 0.478, 0.475, 1.0);
+                    i = i + 1;
+                }
+            }
+
+            private method drawFindBar(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 420;
+                int bx = screenW - bw - 24;
+                int by = this.tabH() + 10;
+                int bh = ch + 12;
+                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
+                batch.rect(bx, by, 3, bh, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, bx + 12, by + 6, "find ", 0.502, 0.588, 0.584, 1.0);
+                this.font.drawText(batch, bx + 12 + 5 * cw, by + 6, ov.query, 0.804, 0.851, 0.843, 1.0);
+                int qx = bx + 12 + (5 + ov.query.length()) * cw;
+                batch.rect(qx, by + 6, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                String cnt = wb.active().matchCount(ov.query).toString() + " matches";
+                this.font.drawText(batch, bx + bw - (cnt.length() + 1) * cw, by + 6, cnt, 0.502, 0.588, 0.584, 1.0);
             }
 
             private method drawSpan(Batch2D* batch, int textX, int y, int cw, String line, Span* sp)

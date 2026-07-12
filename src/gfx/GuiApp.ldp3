@@ -5,6 +5,7 @@ import glfw.InputEvent;
 import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
+import app.Command;
 import io.FileTree;
 import io.FileNode;
 import input.Key;
@@ -42,15 +43,16 @@ public bundle forge {
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
+                Overlay* ov = new Overlay() on heap;
                 mutable boolean prevDown = false;
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
                 while (win.isOpen()) {
                     win.pump();
-                    GuiApp.processInput(win, wb);
-                    // left click -> place the caret (edge-triggered)
+                    GuiApp.processInput(win, wb, ov);
+                    // left click -> place the caret (edge-triggered); ignored while an overlay is open
                     boolean down = win.keyDown(1);   // VK_LBUTTON
-                    if (down && !prevDown) { GuiApp.handleClick(win, screen, wb, tree); }
+                    if (down && !prevDown && !ov.isOpen()) { GuiApp.handleClick(win, screen, wb, tree); }
                     prevDown = down;
                     // mouse wheel -> scroll the view (3 lines per notch)
                     int scroll = win.takeScroll();
@@ -63,7 +65,7 @@ public bundle forge {
                         lastW = w2;
                         lastH = h2;
                     }
-                    GuiApp.drawFrame(win, batch, screen, wb, tree);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
                     win.swap();
                     win.sleep(8);
                 }
@@ -118,23 +120,21 @@ public bundle forge {
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
+                Overlay* ov = new Overlay() on heap;
 
-                String typed = "// live keystrokes via WM_CHAR ->";
+                // open the command palette and type a query via real WM_CHAR messages, routed through the
+                // overlay path (processInput -> overlayEvent -> typeChar).
+                ov.open(1);
+                String typed = "save";
                 mutable int i = 0;
                 while (i < typed.length()) {
                     GuiApp.post(win, 258, cast<int>(typed.charAt(i)));   // WM_CHAR
                     i = i + 1;
                 }
-                GuiApp.post(win, 256, 13);    // WM_KEYDOWN VK_RETURN
-                GuiApp.post(win, 256, 36);    // WM_KEYDOWN VK_HOME
+                win.pump();
+                GuiApp.processInput(win, wb, ov);
 
-                win.pump();                   // decode posted messages into the event queue
-                GuiApp.processInput(win, wb); // drain through the real handleKey path
-
-                // verify a tree file-open click (row 9 of the src listing is main.ldp3)
-                GuiApp.clickAt(screen, wb, tree, 30, screen.tabH() + 6 + 9 * screen.lineH());
-
-                GuiApp.drawFrame(win, batch, screen, wb, tree);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -152,18 +152,56 @@ public bundle forge {
             // Drain the window's keyboard events and drive the Workbench: printable characters type, special
             // keys navigate/edit, Ctrl+letter runs a shortcut -- exactly the CHAR-vs-special split the KeyMap
             // expects. Typed text comes via WM_CHAR; Ctrl combos and named keys via WM_KEYDOWN.
-            private static method processInput(GlWindow* win, Workbench* wb) returns void {
+            private static method processInput(GlWindow* win, Workbench* wb, Overlay* ov) returns void {
                 while (win.hasEvent()) {
                     InputEvent* e = win.nextEvent();
                     boolean ctrl = win.modCtrl();
                     boolean shift = win.modShift();
                     boolean alt = win.modAlt();
-                    if (e.isChar()) {
+                    if (ov.isOpen()) {
+                        GuiApp.overlayEvent(ov, wb, e, ctrl);
+                    } else if (e.isKey() && ctrl && shift && e.vk == 80) {   // Ctrl+Shift+P -> palette
+                        ov.open(1);
+                    } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
+                        ov.open(2);
+                    } else if (e.isChar()) {
                         int cp = e.code;
                         if (cp >= 32 && cp != 127 && !ctrl) { wb.handleKey(Key.ch(cast<char>(cp))); }
                     } else if (e.isKey()) {
                         GuiApp.dispatchKey(wb, e.vk, ctrl, shift, alt);
                     }
+                }
+                return;
+            }
+
+            // Route an event to the open overlay: type into its query, Esc closes, Enter runs it, arrows
+            // move the palette selection.
+            private static method overlayEvent(Overlay* ov, Workbench* wb, InputEvent* e, boolean ctrl)
+                    returns void {
+                if (e.isKey()) {
+                    int vk = e.vk;
+                    if (vk == 27) { ov.close(); return; }               // Esc
+                    if (vk == 8) { ov.backspace(); return; }            // Backspace
+                    if (vk == 40) { ov.moveSel(1); return; }            // Down
+                    if (vk == 38) { ov.moveSel(0 - 1); return; }        // Up
+                    if (vk == 13) {                                     // Enter
+                        if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
+                        else { wb.active().find(ov.query); }
+                        ov.close();
+                    }
+                    return;
+                }
+                if (e.isChar()) {
+                    int cp = e.code;
+                    if (cp >= 32 && cp != 127 && !ctrl) { ov.typeChar(cast<char>(cp)); }
+                }
+                return;
+            }
+
+            private static method runPaletteSelection(Overlay* ov, Workbench* wb) returns void {
+                ArrayList<Command>* results = wb.registry().filter(ov.query);
+                if (ov.sel >= 0 && ov.sel < results.size()) {
+                    wb.runCommand(results.get(ov.sel).id);
                 }
                 return;
             }
@@ -198,8 +236,9 @@ public bundle forge {
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
+                Overlay* ov = new Overlay() on heap;
                 win.pump();
-                GuiApp.drawFrame(win, batch, screen, wb, tree);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -240,9 +279,10 @@ public bundle forge {
                 return;
             }
 
-            // One frame: clear to the Forge ground, then draw the full IDE (tabs + tree + editor).
+            // One frame: clear to the Forge ground, draw the full IDE (tabs + tree + editor), then any
+            // open modal overlay on top.
             private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb,
-                                            FileTree* tree) returns void {
+                                            FileTree* tree, Overlay* ov) returns void {
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);
@@ -251,6 +291,7 @@ public bundle forge {
 
                 batch.begin(w, h, screen.fontTexture());
                 screen.drawWorkbench(batch, wb, tree, w, h);
+                if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
                 batch.flush();
                 return;
             }

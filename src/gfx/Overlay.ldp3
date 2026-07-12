@@ -1,0 +1,46 @@
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // A modal input overlay: the command palette or the find bar. While it is open, keystrokes edit its
+        // query string instead of the document; Enter runs it, Esc closes it. The app owns one and routes
+        // input to it when isOpen(). Kept tiny -- the drawing lives in GpuScreen, the actions in GuiApp.
+        public class Overlay {
+            public mutable int mode;    // 0 = none, 1 = command palette, 2 = find
+            public mutable String query;
+            public mutable int sel;     // highlighted result (palette)
+
+            public constructor Overlay() {
+                this.mode = 0;
+                this.query = "";
+                this.sel = 0;
+            }
+
+            public method isOpen() returns boolean { return this.mode != 0; }
+            public method open(int m) returns void { this.mode = m; this.query = ""; this.sel = 0; }
+            public method close() returns void { this.mode = 0; }
+
+            public method typeChar(char c) returns void {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append(this.query);
+                sb.appendChar(c);
+                this.query = sb.toString();
+                this.sel = 0;
+            }
+            public method backspace() returns void {
+                if (this.query.length() > 0) {
+                    this.query = this.query.substring(0, this.query.length() - 1);
+                    this.sel = 0;
+                }
+            }
+            public method moveSel(int delta) returns void {
+                mutable int s = this.sel + delta;
+                if (s < 0) { s = 0; }
+                this.sel = s;
+            }
+        }
+    }
+}
