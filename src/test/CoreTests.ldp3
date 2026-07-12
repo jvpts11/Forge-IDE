@@ -13,6 +13,8 @@ import view.Viewport;
 import view.TextRenderer;
 import app.Controller;
 import app.DocumentManager;
+import app.Command;
+import app.CommandRegistry;
 import input.Key;
 import input.KeyCode;
 import input.KeyMap;
@@ -468,6 +470,18 @@ public bundle forge {
                 Match* mm3 = bp3.matchingBracket();
                 a.eqBool(mm3.valid(), true, "match.close-valid");
                 a.eqInt(mm3.col, 0, "match.close-open");
+
+                // --- command palette: registry + fuzzy filter ---
+                CommandRegistry cr = new CommandRegistry() on heap;
+                a.eqInt(cr.all().size(), 11, "cmd.count");
+                a.eqInt(cr.filter("").size(), 11, "cmd.filter-empty");
+                a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
+                a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
+                a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
+                a.eqInt(cr.filter("file").size(), 4, "cmd.filter-file");      // New/Open/Save/Save As File
+                a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
+                a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
+                a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
 
                 a.summary("editor tests");
                 return a.failCount();
