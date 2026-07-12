@@ -194,6 +194,34 @@ public bundle forge {
                 a.eqInt(eci.replaceAll("foo", "x"), 3, "replace.ci-count");
                 a.eqStr(eci.document().line(0), "x x x", "replace.ci-result");
 
+                // --- word-wise motion / deletion / selection ---
+                Editor ew = new Editor(new TextBuffer() on heap) on heap;
+                ew.document().loadText("foo bar baz");
+                ew.moveWordRight(); a.eqInt(ew.cursorCol(), 3, "word.right1");
+                ew.moveWordRight(); a.eqInt(ew.cursorCol(), 7, "word.right2");
+                ew.moveWordRight(); a.eqInt(ew.cursorCol(), 11, "word.right3");
+                ew.moveWordLeft();  a.eqInt(ew.cursorCol(), 8, "word.left1");
+                ew.moveWordLeft();  a.eqInt(ew.cursorCol(), 4, "word.left2");
+                ew.moveWordLeft();  a.eqInt(ew.cursorCol(), 0, "word.left3");
+
+                Editor ew2 = new Editor(new TextBuffer() on heap) on heap;
+                ew2.document().loadText("hello world");
+                ew2.moveRight(); ew2.moveRight();               // caret inside "hello"
+                ew2.selectWordAtCaret();
+                a.eqStr(ew2.selectionText(), "hello", "word.select");
+
+                Editor ew3 = new Editor(new TextBuffer() on heap) on heap;
+                ew3.document().loadText("alpha beta");
+                ew3.moveWordRight(); ew3.moveWordRight();       // caret at end of "beta"
+                ew3.deleteWordLeft();
+                a.eqStr(ew3.document().line(0), "alpha ", "word.del-left");
+                a.eqInt(ew3.cursorCol(), 6, "word.del-left-caret");
+
+                Editor ew4 = new Editor(new TextBuffer() on heap) on heap;
+                ew4.document().loadText("alpha beta");
+                ew4.deleteWordRight();                          // caret at 0 -> removes "alpha"
+                a.eqStr(ew4.document().line(0), " beta", "word.del-right");
+
                 a.summary("editor tests");
                 return a.failCount();
             }

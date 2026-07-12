@@ -152,6 +152,82 @@ public bundle forge {
                 if (this.col >= remove) { this.col = this.col - remove; } else { this.col = 0; }
             }
 
+            // --- word-wise motion & deletion (Ctrl+Arrows, Ctrl+Backspace / Ctrl+Delete) ---
+            private method isWordChar(char c) returns boolean {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_';
+            }
+            // Column of the next word boundary to the right on the current line: skip a run of separators,
+            // then a run of word chars, landing just past the coming word (or at end of line).
+            private method wordRightCol() returns int {
+                String s = this.buf.line(this.row);
+                int len = s.length();
+                mutable int c = this.col;
+                while (c < len && !this.isWordChar(s.charAt(c))) { c = c + 1; }
+                while (c < len && this.isWordChar(s.charAt(c))) { c = c + 1; }
+                return c;
+            }
+            // Mirror image: skip separators then word chars to the left, landing at the word's start.
+            private method wordLeftCol() returns int {
+                String s = this.buf.line(this.row);
+                mutable int c = this.col;
+                while (c > 0 && !this.isWordChar(s.charAt(c - 1))) { c = c - 1; }
+                while (c > 0 && this.isWordChar(s.charAt(c - 1))) { c = c - 1; }
+                return c;
+            }
+            private method rawWordRight() returns void {
+                if (this.col >= this.buf.line(this.row).length()) { this.rawRight(); return; }
+                this.col = this.wordRightCol();
+            }
+            private method rawWordLeft() returns void {
+                if (this.col == 0) { this.rawLeft(); return; }
+                this.col = this.wordLeftCol();
+            }
+            public method moveWordRight()   returns void { this.clearSelection(); this.rawWordRight(); }
+            public method moveWordLeft()    returns void { this.clearSelection(); this.rawWordLeft(); }
+            public method selectWordRight() returns void { this.anchorSelection(); this.rawWordRight(); }
+            public method selectWordLeft()  returns void { this.anchorSelection(); this.rawWordLeft(); }
+
+            public method deleteWordLeft() returns void {
+                if (this.hasSelection()) { this.saveUndo(); this.deleteSelection(); return; }
+                if (this.col == 0) { this.backspace(); return; }   // at line start: join upward
+                int target = this.wordLeftCol();
+                this.saveUndo();
+                this.buf.deleteRange(this.row, target, this.row, this.col);
+                this.col = target;
+            }
+            public method deleteWordRight() returns void {
+                if (this.hasSelection()) { this.saveUndo(); this.deleteSelection(); return; }
+                int len = this.buf.line(this.row).length();
+                if (this.col >= len) {                             // at line end: pull the next line up
+                    if (this.row < this.buf.lineCount() - 1) {
+                        this.saveUndo();
+                        this.buf.setLine(this.row, this.buf.line(this.row) + this.buf.line(this.row + 1));
+                        this.buf.removeLine(this.row + 1);
+                    }
+                    return;
+                }
+                int target = this.wordRightCol();
+                this.saveUndo();
+                this.buf.deleteRange(this.row, this.col, this.row, target);
+            }
+
+            // Select the word under (or immediately before) the caret -- double-click semantics. No-op when
+            // the caret is not on a word.
+            public method selectWordAtCaret() returns void {
+                String s = this.buf.line(this.row);
+                int len = s.length();
+                mutable int start = this.col;
+                mutable int end = this.col;
+                while (start > 0 && this.isWordChar(s.charAt(start - 1))) { start = start - 1; }
+                while (end < len && this.isWordChar(s.charAt(end))) { end = end + 1; }
+                if (start == end) { return; }
+                this.selRow = this.row;
+                this.selCol = start;
+                this.hasSel = true;
+                this.col = end;
+            }
+
             // --- selection ---
             private method anchorSelection() returns void {
                 if (!this.hasSel) {
