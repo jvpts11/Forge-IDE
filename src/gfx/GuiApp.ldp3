@@ -106,6 +106,155 @@ public bundle forge {
                 return;
             }
 
+            // Scriptable automation server: open the window once, then read one command per line from stdin
+            // and drive the IDE. This is the transport the Forge MCP server speaks -- a remote control for
+            // testing, scripting, and (eventually) AI integration. Commands: type <text>, key <name>,
+            // click <x> <y>, cmd <id>, open <path>, save, palette <query>, find <query>, esc, shot <path>,
+            // state, quit. Each command prints a one-line acknowledgement.
+            public static method serve() returns void {
+                GlWindow* win = new GlWindow() on heap;
+                if (win.open("Forge", 1100, 720, 4, 6) == 0) {
+                    System.IO.Console.println("err: no GL window");
+                    return;
+                }
+                Font* font = GuiApp.loadFont(win, 18);
+                Batch2D* batch = new Batch2D(win.gl) on heap;
+                GpuScreen* screen = new GpuScreen(font) on heap;
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
+                FileTree* tree = new FileTree("src") on heap;
+                Overlay* ov = new Overlay() on heap;
+                System.IO.Console.println("forge-serve ready");
+                mutable boolean running = true;
+                while (running) {
+                    win.pump();
+                    String line = System.IO.Console.read();
+                    if (line.length() == 0) { running = false; }
+                    else if (GuiApp.firstWord(line).equals("quit")) { running = false; }
+                    else { GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov); }
+                }
+                return;
+            }
+
+            private static method serveCommand(String line, GlWindow* win, Batch2D* batch, GpuScreen* screen,
+                                               Workbench* wb, FileTree* tree, Overlay* ov) returns void {
+                String cmd = GuiApp.firstWord(line);
+                String arg = GuiApp.rest(line);
+                if (cmd.equals("type")) {
+                    mutable int i = 0;
+                    while (i < arg.length()) {
+                        char c = arg.charAt(i);
+                        if (ov.isOpen()) { ov.typeChar(c); } else { wb.handleKey(Key.ch(c)); }
+                        i = i + 1;
+                    }
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("key")) {
+                    GuiApp.serveKey(wb, ov, arg);
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("click")) {
+                    String rx = GuiApp.firstWord(arg);
+                    String ry = GuiApp.rest(arg);
+                    GuiApp.clickAt(screen, wb, tree, rx.toInt(), ry.toInt());
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("cmd")) {
+                    wb.runCommand(arg);
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("open")) {
+                    wb.openFile(arg);
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("save")) {
+                    wb.active().save();
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("palette")) {
+                    ov.open(1);
+                    mutable int i = 0;
+                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("find")) {
+                    ov.open(2);
+                    mutable int i = 0;
+                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    wb.active().find(arg);
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("esc")) {
+                    ov.close();
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("shot")) {
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov);
+                    Wgl.glFinish();
+                    int w = win.width();
+                    int h = win.height();
+                    byte[] px = win.gl.readPixelsRgb(0, 0, w, h);
+                    GuiApp.writePpm(arg, px, w, h);
+                    win.swap();
+                    System.IO.Console.println("shot " + arg);
+                } else if (cmd.equals("state")) {
+                    GuiApp.serveState(wb);
+                } else {
+                    System.IO.Console.println("err: unknown " + cmd);
+                }
+                return;
+            }
+
+            private static method serveKey(Workbench* wb, Overlay* ov, String name) returns void {
+                int vk = GuiApp.vkForName(name);
+                if (ov.isOpen()) {
+                    if (vk == 27) { ov.close(); }
+                    else if (vk == 8) { ov.backspace(); }
+                    else if (vk == 40) { ov.moveSel(1); }
+                    else if (vk == 38) { ov.moveSel(0 - 1); }
+                    else if (vk == 13) {
+                        if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
+                        else { wb.active().find(ov.query); }
+                        ov.close();
+                    }
+                } else {
+                    GuiApp.dispatchKey(wb, vk, false, false, false);
+                }
+                return;
+            }
+
+            private static method serveState(Workbench* wb) returns void {
+                Controller* c = wb.active();
+                mutable String path = c.document().path();
+                if (path.length() == 0) { path = "untitled"; }
+                mutable int dirty = 0;
+                if (c.document().isModified()) { dirty = 1; }
+                System.IO.Console.println("state file=" + path
+                    + " ln=" + (c.editor().cursorRow() + 1).toString()
+                    + " col=" + (c.editor().cursorCol() + 1).toString()
+                    + " lines=" + c.lineCount().toString()
+                    + " tabs=" + wb.documents().count().toString()
+                    + " dirty=" + dirty.toString());
+                return;
+            }
+
+            private static method firstWord(String s) returns String {
+                int sp = s.indexOf(" ");
+                if (sp < 0) { return s; }
+                return s.substring(0, sp);
+            }
+            private static method rest(String s) returns String {
+                int sp = s.indexOf(" ");
+                if (sp < 0) { return ""; }
+                return s.substring(sp + 1, s.length());
+            }
+            private static method vkForName(String name) returns int {
+                if (name.equals("enter")) { return 13; }
+                if (name.equals("backspace")) { return 8; }
+                if (name.equals("tab")) { return 9; }
+                if (name.equals("esc")) { return 27; }
+                if (name.equals("delete")) { return 46; }
+                if (name.equals("left")) { return 37; }
+                if (name.equals("up")) { return 38; }
+                if (name.equals("right")) { return 39; }
+                if (name.equals("down")) { return 40; }
+                if (name.equals("home")) { return 36; }
+                if (name.equals("end")) { return 35; }
+                if (name.equals("pageup")) { return 33; }
+                if (name.equals("pagedown")) { return 34; }
+                return 0;
+            }
+
             // Offscreen verification of the REAL input path: post WM_CHAR/WM_KEYDOWN to the window, let
             // pump() decode them into the event queue, drain them through processInput (the same code the
             // live loop runs), then render one frame to a PPM.
