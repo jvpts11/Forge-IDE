@@ -86,6 +86,56 @@ public bundle forge {
                 File.writeAll(WorkspaceStore.recentFile(), sb.toString());
             }
 
+            // --- per-project session (the set of open files), so Forge reopens your tabs ---
+            private static method keyOf(String dir) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i < dir.length()) {
+                    char c = dir.charAt(i);
+                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                        sb.appendChar(c);
+                    } else {
+                        sb.appendChar('_');
+                    }
+                    i = i + 1;
+                }
+                return sb.toString();
+            }
+            private static method sessionFile(String projectDir) returns String {
+                return WorkspaceStore.configDir() + "/session_" + WorkspaceStore.keyOf(projectDir) + ".txt";
+            }
+            // Persist the open file paths for `projectDir`, one per line.
+            public static method saveSession(String projectDir, ArrayList<String>* paths) returns void {
+                if (projectDir.length() == 0 || projectDir.equals(".")) { return; }
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i < paths.size()) {
+                    sb.append(paths.get(i));
+                    sb.append("\n");
+                    i = i + 1;
+                }
+                WorkspaceStore.ensureConfigDir();
+                File.writeAll(WorkspaceStore.sessionFile(projectDir), sb.toString());
+            }
+            // The files that were open last time this project was closed, filtered to ones that still exist.
+            public static method loadSession(String projectDir) returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                String path = WorkspaceStore.sessionFile(projectDir);
+                if (!File.exists(path)) {
+                    return out;
+                }
+                ArrayList<String> lines = Strings.split(File.readAll(path), "\n");
+                mutable int i = 0;
+                while (i < lines.size()) {
+                    String ln = lines.get(i).trim();
+                    if (ln.length() > 0 && File.exists(ln)) {
+                        out.add(ln);
+                    }
+                    i = i + 1;
+                }
+                return out;
+            }
+
             // The most recent workspace that still exists, or "" if there is none.
             public static method lastProject() returns String {
                 ArrayList<String>* r = WorkspaceStore.loadRecent();

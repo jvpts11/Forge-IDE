@@ -68,6 +68,7 @@ public bundle forge {
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
                                                       GuiApp.fileToOpenFor(ws));
                 wb.setProjectDir(treeRoot);
+                GuiApp.restoreSession(wb, treeRoot);
                 mutable FileTree* tree = new FileTree(treeRoot) on heap;
                 // No project yet? Show the welcome screen instead of an editor over the launch directory.
                 mutable boolean workspaceOpen = ws.length() > 0;
@@ -113,6 +114,7 @@ public bundle forge {
                                 String picked = NativeDialog.pickFolder(win.hwnd, "Open a folder");
                                 if (picked.length() > 0) {
                                     wb.setProjectDir(picked);
+                                    GuiApp.restoreSession(wb, picked);
                                     tree = new FileTree(picked) on heap;
                                     WorkspaceStore.addRecent(picked);
                                     workspaceOpen = true;
@@ -122,6 +124,7 @@ public bundle forge {
                                 String picked = NativeDialog.pickFolder(win.hwnd, "Open an LDP3 project folder");
                                 if (picked.length() > 0) {
                                     wb.setProjectDir(picked);
+                                    GuiApp.restoreSession(wb, picked);
                                     tree = new FileTree(picked) on heap;
                                     WorkspaceStore.addRecent(picked);
                                     workspaceOpen = true;
@@ -133,6 +136,7 @@ public bundle forge {
                             } else if (hit >= 0) {
                                 String p = recent.get(hit);
                                 wb.setProjectDir(p);
+                                GuiApp.restoreSession(wb, p);
                                 tree = new FileTree(p) on heap;
                                 WorkspaceStore.addRecent(p);
                                 workspaceOpen = true;
@@ -173,10 +177,16 @@ public bundle forge {
                     prevDown = down;
                     // a "File > Open Folder" click asked to switch projects: swap the tree live
                     if (req.path.length() > 0) {
+                        WorkspaceStore.saveSession(wb.projectRoot(), wb.documents().openPaths());
                         wb.setProjectDir(req.path);
+                        GuiApp.restoreSession(wb, req.path);
                         tree = new FileTree(req.path) on heap;
                         WorkspaceStore.addRecent(req.path);
                         req.path = "";
+                    }
+                    // periodically persist the open tabs so the session survives a crash / next launch
+                    if (frames % 300 == 0) {
+                        WorkspaceStore.saveSession(wb.projectRoot(), wb.documents().openPaths());
                     }
                     // mouse wheel -> scroll the view (3 lines per notch)
                     int scroll = win.takeScroll();
@@ -484,6 +494,18 @@ public bundle forge {
                 } else {
                     wb.output().banner("Reference not found",
                         "Could not find " + name + " next to Forge (looked in " + GuiApp.exeDir() + "/reference).");
+                }
+                return;
+            }
+
+            // Reopen the files that were open last time this project was closed, so Forge picks up where the
+            // user left off. Called on opening/switching a project.
+            private static method restoreSession(Workbench* wb, String dir) returns void {
+                ArrayList<String>* sess = WorkspaceStore.loadSession(dir);
+                mutable int i = 0;
+                while (i < sess.size()) {
+                    wb.openFile(sess.get(i));
+                    i = i + 1;
                 }
                 return;
             }

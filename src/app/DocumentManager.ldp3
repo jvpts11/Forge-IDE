@@ -77,6 +77,17 @@ public bundle forge {
                 for (mutable int i = 0; i < this.tabs.size(); i++) { out.add(this.title(i)); }
                 return out;
             }
+            // The file paths of the open tabs (skipping untitled buffers) -- used to save/restore the session.
+            public method openPaths() returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < this.tabs.size()) {
+                    String p = this.tabs.get(i).document().path();
+                    if (p.length() > 0) { out.add(p); }
+                    i = i + 1;
+                }
+                return out;
+            }
         }
     }
 }
