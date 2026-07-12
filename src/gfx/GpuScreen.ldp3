@@ -428,6 +428,44 @@ public bundle forge {
                         di = di + 1;
                     }
                 }
+
+                // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
+                this.drawOverviewRuler(batch, wb, ox + pw, oy, ph);
+            }
+
+            // A JetBrains/VS Code-style overview ruler down the right edge of the editor: a faint scroll thumb
+            // sized to the visible fraction, plus a colored tick per diagnostic at its proportional position,
+            // so you see at a glance where the errors are even when they're scrolled off screen.
+            private method drawOverviewRuler(Batch2D* batch, Workbench* wb, int rightX, int oy, int ph)
+                    returns void {
+                int rw = 12;
+                int x = rightX - rw;
+                batch.rect(x, oy, rw, ph, 0.027, 0.055, 0.063, 1.0);      // track
+                Controller* c = wb.active();
+                int total = c.lineCount();
+                if (total <= 0) { return; }
+                int first = c.firstLine();
+                int vis = c.visibleRows();
+                int thumbY = oy + (first * ph) / total;
+                mutable int thumbH = (vis * ph) / total;
+                if (thumbH < 24) { thumbH = 24; }
+                batch.rect(x + 2, thumbY, rw - 4, thumbH, 0.918, 0.706, 0.392, 0.28);   // amber thumb
+                String base = Paths.basename(c.document().path());
+                if (base.length() == 0) { return; }
+                ArrayList<Diagnostic>* ds = wb.diagnostics();
+                mutable int i = 0;
+                while (i < ds.size()) {
+                    Diagnostic* d = ds.get(i);
+                    if (d.file.equals(base)) {
+                        int ty = oy + ((d.line - 1) * ph) / total;
+                        mutable float r = 0.902;
+                        mutable float g = 0.318;
+                        mutable float b = 0.263;
+                        if (d.severity != 0) { g = 0.706; b = 0.318; }
+                        batch.rect(x, ty, rw, 2, r, g, b, 1.0);
+                    }
+                    i = i + 1;
+                }
             }
 
             private method drawSelection(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
