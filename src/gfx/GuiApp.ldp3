@@ -1,9 +1,12 @@
 import gl.Gl;
 import gl.Wgl;
 import glfw.GlWindow;
+import glfw.InputEvent;
 import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
+import input.Key;
+import input.KeyCode;
 import System.IO.Console;
 import System.IO.File;
 import System.Text.StringBuilder;
@@ -31,10 +34,49 @@ public bundle forge {
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 while (win.isOpen()) {
                     win.pump();
+                    GuiApp.processInput(win, wb);
                     GuiApp.drawFrame(win, batch, screen, wb);
                     win.swap();
                     win.sleep(8);
                 }
+                return;
+            }
+
+            // Drain the window's keyboard events and drive the Workbench: printable characters type, special
+            // keys navigate/edit, Ctrl+letter runs a shortcut -- exactly the CHAR-vs-special split the KeyMap
+            // expects. Typed text comes via WM_CHAR; Ctrl combos and named keys via WM_KEYDOWN.
+            private static method processInput(GlWindow* win, Workbench* wb) returns void {
+                while (win.hasEvent()) {
+                    InputEvent* e = win.nextEvent();
+                    boolean ctrl = win.modCtrl();
+                    boolean shift = win.modShift();
+                    boolean alt = win.modAlt();
+                    if (e.isChar()) {
+                        int cp = e.code;
+                        if (cp >= 32 && cp != 127 && !ctrl) { wb.handleKey(Key.ch(cast<char>(cp))); }
+                    } else if (e.isKey()) {
+                        GuiApp.dispatchKey(wb, e.vk, ctrl, shift, alt);
+                    }
+                }
+                return;
+            }
+
+            // Map a Win32 virtual-key to a Key and dispatch it, carrying the modifier state.
+            private static method dispatchKey(Workbench* wb, int vk, boolean ctrl, boolean shift, boolean alt)
+                    returns void {
+                if (ctrl && vk >= 65 && vk <= 90) { wb.handleKey(Key.ctrlCh(cast<char>(vk + 32))); return; }
+                if (vk == 0x25) { wb.handleKey(new Key(KeyCode.LEFT, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x27) { wb.handleKey(new Key(KeyCode.RIGHT, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x26) { wb.handleKey(new Key(KeyCode.UP, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x28) { wb.handleKey(new Key(KeyCode.DOWN, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x08) { wb.handleKey(new Key(KeyCode.BACKSPACE, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x0D) { wb.handleKey(new Key(KeyCode.ENTER, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x2E) { wb.handleKey(new Key(KeyCode.DELETE, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x09) { wb.handleKey(new Key(KeyCode.TAB, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x24) { wb.handleKey(new Key(KeyCode.HOME, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x23) { wb.handleKey(new Key(KeyCode.END, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x21) { wb.handleKey(new Key(KeyCode.PAGE_UP, ' ', ctrl, shift, alt) on heap); return; }
+                if (vk == 0x22) { wb.handleKey(new Key(KeyCode.PAGE_DOWN, ' ', ctrl, shift, alt) on heap); return; }
                 return;
             }
 
@@ -48,6 +90,7 @@ public bundle forge {
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
+                GuiApp.scriptDemo(wb);   // drive edits through handleKey so the shot shows live editing
                 win.pump();
                 GuiApp.drawFrame(win, batch, screen, wb);
                 Wgl.glFinish();
@@ -76,12 +119,18 @@ public bundle forge {
                 wb.openFile("src/gfx/GuiApp.ldp3");
                 Controller* c = wb.active();
                 if (c.editor().document().lineCount() < 3) { c.insertText(GuiApp.sample()); }
-                mutable int i = 0;
-                while (i < 44) { c.moveDown(false); i = i + 1; }   // scroll into the file
-                c.moveLineStart(false);
-                mutable int j = 0;
-                while (j < 12) { c.moveRight(true); j = j + 1; }   // a demo selection
+                c.moveDocStart(false);
                 return wb;
+            }
+
+            // Drive a few edits through handleKey -- the same path the live loop uses -- so the offscreen
+            // shot demonstrates that typed input reaches the model and re-renders.
+            private static method scriptDemo(Workbench* wb) returns void {
+                String s = "// typed live in Forge, then run() takes the keyboard.";
+                mutable int i = 0;
+                while (i < s.length()) { wb.handleKey(Key.ch(s.charAt(i))); i = i + 1; }
+                wb.handleKey(new Key(KeyCode.ENTER, ' ', false, false, false) on heap);
+                return;
             }
 
             // One frame: clear to the Forge ground, then draw the active document.
