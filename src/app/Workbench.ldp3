@@ -9,6 +9,8 @@ import input.KeyMap;
 import System.Collections.ArrayList;
 import System.Text.Strings;
 import System.IO.Paths;
+import System.IO.File;
+import System.IO.Files;
 
 program Forge;
 
@@ -26,6 +28,8 @@ public bundle forge {
             private mutable KeyMap* keymap;
             private mutable OutputPanel* out;
             private mutable ArrayList<Diagnostic>* diags;
+            private mutable String projectDir;      // where build/run commands execute (the project root)
+            private mutable String projectName;     // from ldp3.toml, shown in the status bar
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -33,7 +37,44 @@ public bundle forge {
                 this.keymap = new KeyMap() on heap;
                 this.out = new OutputPanel() on heap;
                 this.diags = new ArrayList<Diagnostic>() on heap;
+                this.projectDir = ".";
+                this.projectName = "";
                 this.docs.openNew();               // start on one empty document
+            }
+
+            // Point build/run and the project label at a workspace directory. Reads its ldp3.toml (if any)
+            // for the program name, so the shell knows which project it's driving.
+            public method setProjectDir(String dir) returns void {
+                this.projectDir = dir;
+                this.projectName = Workbench.readProjectName(dir);
+            }
+            public method projectRoot() returns String { return this.projectDir; }
+            public method projectLabel() returns String { return this.projectName; }
+            public method hasProject() returns boolean {
+                return File.exists(Paths.join(this.projectDir, "ldp3.toml"));
+            }
+            // Pull `name = "..."` out of the [program]/[library] section of an ldp3.toml, or "" if absent.
+            private static method readProjectName(String dir) returns String {
+                String toml = Paths.join(dir, "ldp3.toml");
+                if (!File.exists(toml)) { return ""; }
+                ArrayList<String> ls = Files.readLines(toml);
+                mutable int i = 0;
+                while (i < ls.size()) {
+                    String t = ls.get(i).trim();
+                    if (t.startsWith("name") && t.indexOf("=") >= 0) {
+                        String v = t.substring(t.indexOf("=") + 1, t.length()).trim();
+                        return Workbench.unquote(v);
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+            private static method unquote(String s) returns String {
+                mutable String v = s;
+                if (v.length() >= 2 && v.charAt(0) == '"' && v.charAt(v.length() - 1) == '"') {
+                    v = v.substring(1, v.length() - 1);
+                }
+                return v;
             }
 
             // --- diagnostics: run the LDP3 compiler and surface its errors/warnings inline ---
@@ -149,7 +190,11 @@ public bundle forge {
             }
             public method output() returns OutputPanel* { return this.out; }
             // Run a shell command on the project and show its output in the bottom panel.
-            public method runShell(String caption, String cmd) returns void { this.out.run(caption, cmd); }
+            // Run a shell command in the project directory (so `ldp3 build`/`ldp3 run` drive the open project,
+            // not whatever directory Forge was launched from).
+            public method runShell(String caption, String cmd) returns void {
+                this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
+            }
 
             // Feed a decoded key to the active document's editor. Returns whether it was handled.
             public method handleKey(Key* k) returns boolean {

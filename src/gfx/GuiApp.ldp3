@@ -67,6 +67,7 @@ public bundle forge {
                 String treeRoot = GuiApp.treeRootFor(ws);
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
                                                       GuiApp.fileToOpenFor(ws));
+                wb.setProjectDir(treeRoot);
                 mutable FileTree* tree = new FileTree(treeRoot) on heap;
                 // No project yet? Show the welcome screen instead of an editor over the launch directory.
                 mutable boolean workspaceOpen = ws.length() > 0;
@@ -96,18 +97,41 @@ public bundle forge {
                         boolean wdown = win.keyDown(1);
                         if (wdown && !prevDown) {
                             int hit = screen.welcomeHit(win.cursorX(), win.cursorY(), recent.size(), win.width());
-                            if (hit == 0 - 2) {
-                                String picked = NativeDialog.pickFolder(win.hwnd, "Open a project folder");
+                            if (hit == 0 - 1) {
+                                // New Project: scaffold ldp3.toml + src/main.ldp3 in a chosen folder, then open it.
+                                String picked = NativeDialog.pickFolder(win.hwnd, "Create the project in this folder");
                                 if (picked.length() > 0) {
+                                    GuiApp.scaffoldProject(picked);
+                                    wb.setProjectDir(picked);
+                                    wb.openFile(Paths.join(picked, "src/main.ldp3"));
+                                    tree = new FileTree(picked) on heap;
+                                    WorkspaceStore.addRecent(picked);
+                                    workspaceOpen = true;
+                                }
+                            } else if (hit == 0 - 2) {
+                                String picked = NativeDialog.pickFolder(win.hwnd, "Open a folder");
+                                if (picked.length() > 0) {
+                                    wb.setProjectDir(picked);
                                     tree = new FileTree(picked) on heap;
                                     WorkspaceStore.addRecent(picked);
                                     workspaceOpen = true;
                                 }
                             } else if (hit == 0 - 3) {
-                                tree = new FileTree(".") on heap;
-                                workspaceOpen = true;
+                                // Open Project: a folder that is an LDP3 project (has ldp3.toml).
+                                String picked = NativeDialog.pickFolder(win.hwnd, "Open an LDP3 project folder");
+                                if (picked.length() > 0) {
+                                    wb.setProjectDir(picked);
+                                    tree = new FileTree(picked) on heap;
+                                    WorkspaceStore.addRecent(picked);
+                                    workspaceOpen = true;
+                                    if (!File.exists(Paths.join(picked, "ldp3.toml"))) {
+                                        wb.output().banner("Not an LDP3 project",
+                                            "No ldp3.toml in " + picked + " -- opened as a plain folder.");
+                                    }
+                                }
                             } else if (hit >= 0) {
                                 String p = recent.get(hit);
+                                wb.setProjectDir(p);
                                 tree = new FileTree(p) on heap;
                                 WorkspaceStore.addRecent(p);
                                 workspaceOpen = true;
@@ -148,6 +172,7 @@ public bundle forge {
                     prevDown = down;
                     // a "File > Open Folder" click asked to switch projects: swap the tree live
                     if (req.path.length() > 0) {
+                        wb.setProjectDir(req.path);
                         tree = new FileTree(req.path) on heap;
                         WorkspaceStore.addRecent(req.path);
                         req.path = "";
@@ -228,6 +253,9 @@ public bundle forge {
                     return;
                 }
                 if (my < screen.menuH()) {
+                    int tb = screen.toolButtonAt(mx, my, win.width());
+                    if (tb == 1) { menu.close(); wb.runCommand("run.program"); return; }
+                    if (tb == 0) { menu.close(); wb.runCommand("run.build"); return; }
                     int ti = screen.menuTitleAtX(menu, mx);
                     if (ti >= 0) { menu.openAt(ti); }
                     return;
@@ -356,6 +384,49 @@ public bundle forge {
                     c.saveAs(path);
                 }
                 return;
+            }
+
+            // Scaffold a minimal LDP3 project in `dir`: an ldp3.toml and a src/main.ldp3 hello-world, so
+            // "New Project" produces something that builds and runs immediately. Never overwrites main.ldp3.
+            private static method scaffoldProject(String dir) returns void {
+                String prog = GuiApp.toIdent(Paths.basename(dir));
+                String toml = "[program]\nname = \"" + prog + "\"\nversion = \"0.1.0\"\n"
+                    + "entry = \"src/main.ldp3\"\n\n[build]\noutput = \"build-output/\"\n";
+                File.writeAll(Paths.join(dir, "ldp3.toml"), toml);
+                File.mkdir(Paths.join(dir, "src"));
+                String main = Paths.join(dir, "src/main.ldp3");
+                if (!File.exists(main)) {
+                    StringBuilder sb = new StringBuilder() on heap;
+                    sb.append("import System.IO.Console;\n\n");
+                    sb.append("program " + prog + ";\n\n");
+                    sb.append("public bundle main {\n");
+                    sb.append("    public namespace app {\n");
+                    sb.append("        public class Main {\n");
+                    sb.append("            public static method main(string[] args) returns void {\n");
+                    sb.append("                System.IO.Console.println(\"Hello from " + prog + "!\");\n");
+                    sb.append("            }\n");
+                    sb.append("        }\n");
+                    sb.append("    }\n");
+                    sb.append("}\n");
+                    File.writeAll(main, sb.toString());
+                }
+                return;
+            }
+            // A valid LDP3 identifier from a folder name (drop non-alphanumerics; fall back to "App").
+            private static method toIdent(String s) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i < s.length()) {
+                    char c = s.charAt(i);
+                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                        sb.appendChar(c);
+                    }
+                    i = i + 1;
+                }
+                String r = sb.toString();
+                if (r.length() == 0) { return "App"; }
+                if (r.charAt(0) >= '0' && r.charAt(0) <= '9') { return "App" + r; }
+                return r;
             }
 
             // The directory Forge.exe lives in (via GetModuleFileNameA), so bundled resources resolve
@@ -1052,7 +1123,7 @@ public bundle forge {
                 } else if (!ov.isOpen()) {
                     screen.drawSignatureHelp(batch, wb, w);
                 }
-                screen.drawMenuBar(batch, menu, w);
+                screen.drawMenuBar(batch, menu, wb, mx, my, w);
                 screen.drawMenuDropdown(batch, menu, mx, my);
                 if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
                 batch.flush();
