@@ -13,6 +13,7 @@ import input.KeyCode;
 import System.Collections.ArrayList;
 import System.IO.Console;
 import System.IO.File;
+import System.IO.Paths;
 import System.Text.StringBuilder;
 
 program Forge;
@@ -35,7 +36,7 @@ public bundle forge {
         // through GpuScreen. run() is the live interactive window; shot() renders one frame to a PPM for
         // offscreen verification.
         public class GuiApp {
-            public static method run() returns void {
+            public static method run(String openPath) returns void {
                 GlWindow* win = new GlWindow() on heap;
                 if (win.open("Forge", 1100, 720, 4, 6) == 0) {
                     System.IO.Console.printf("Forge: could not open a GL 4.6 window\n");
@@ -45,8 +46,9 @@ public bundle forge {
                 Font* font = GuiApp.loadFont(win, 18);
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
-                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
-                FileTree* tree = new FileTree("src") on heap;
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
+                                                      GuiApp.fileToOpenFor(openPath));
+                FileTree* tree = new FileTree(GuiApp.treeRootFor(openPath)) on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 MenuBar* menu = new MenuBar() on heap;
@@ -216,7 +218,8 @@ public bundle forge {
                 Font* font = GuiApp.loadFont(win, 18);
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
-                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
+                                                      "src/gfx/GpuScreen.ldp3");
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
@@ -453,7 +456,8 @@ public bundle forge {
                 Font* font = GuiApp.loadFont(win, 18);
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
-                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
+                                                      "src/gfx/GpuScreen.ldp3");
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
@@ -639,7 +643,8 @@ public bundle forge {
                 Font* font = GuiApp.loadFont(win, 18);
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
-                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
+                                                      "src/gfx/GpuScreen.ldp3");
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
@@ -665,15 +670,43 @@ public bundle forge {
             // Build the editor with a viewport sized to the window's code area, and open a document. Opens
             // one of Forge's own source files (real, long, colourful LDP3), falling back to a small embedded
             // sample if it isn't on disk, then places the caret and a selection to demonstrate scrolling.
-            private static method buildWorkbench(GpuScreen* screen, int w, int h) returns Workbench* {
+            // Build the workbench, opening `fileToOpen` when it names an existing file, otherwise leaving the
+            // single untitled document the Workbench starts with. Opening a path that doesn't exist would show
+            // a phantom tab, so it's skipped -- Forge runs cleanly from any directory.
+            private static method buildWorkbench(GpuScreen* screen, int w, int h, String fileToOpen)
+                    returns Workbench* {
                 int rows = screen.paneRowsFor(h);
                 int cols = screen.paneColsFor(w);
                 Workbench* wb = new Workbench(rows, cols) on heap;
-                wb.openFile("src/gfx/GpuScreen.ldp3");
-                Controller* c = wb.active();
-                if (c.editor().document().lineCount() < 3) { c.insertText(GuiApp.sample()); }
-                c.moveDocStart(false);
+                if (fileToOpen.length() > 0 && File.exists(fileToOpen)) {
+                    wb.openFile(fileToOpen);
+                    wb.active().moveDocStart(false);
+                }
                 return wb;
+            }
+            // From a path argument, decide which directory the tree shows and which file (if any) to open:
+            // a directory becomes the tree root; a file opens with its parent directory as the root; empty or
+            // missing falls back to the current directory with an untitled document.
+            private static method treeRootFor(String openPath) returns String {
+                if (openPath.length() == 0) {
+                    return ".";
+                }
+                if (File.isDir(openPath)) {
+                    return openPath;
+                }
+                if (File.exists(openPath)) {
+                    String d = Paths.dirname(openPath);
+                    if (d.length() > 0) {
+                        return d;
+                    }
+                }
+                return ".";
+            }
+            private static method fileToOpenFor(String openPath) returns String {
+                if (openPath.length() > 0 && File.exists(openPath) && !File.isDir(openPath)) {
+                    return openPath;
+                }
+                return "";
             }
 
             // Drive a few edits through handleKey -- the same path the live loop uses -- so the offscreen

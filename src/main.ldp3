@@ -15,8 +15,11 @@ public bundle forge {
                     if (args[0].equals("shot")) { GuiApp.shot("frame.ppm"); return; }
                     if (args[0].equals("uitest")) { GuiApp.uitest("frame.ppm"); return; }
                     if (args[0].equals("serve")) { GuiApp.serve(); return; }
+                    // any other argument is a file or project directory to open
+                    GuiApp.run(args[0]);
+                    return;
                 }
-                GuiApp.run();
+                GuiApp.run("");
                 return;
             }
         }
