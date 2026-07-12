@@ -109,7 +109,8 @@ write — and proves the language can build a real GUI application.
 the IDE was built first, decoupled from graphics so it is unit-testable without a window.
 Every module is its own `.ldp3` file in a namespaced package; `ldp3 build` (via `ldp3.toml`)
 compiles them into one program, and `build.ps1` runs the self-check (**"editor tests: OK
-(154 checks)"**). Running `Forge.exe` also prints one rendered frame of the engine.
+(221 checks)"**). Running `Forge.exe` also prints one fully-composed IDE frame — tab bar,
+project tree, editor pane, and status bar — rendered from live state.
 
 Layered as a clean MVC:
 
@@ -122,7 +123,9 @@ Layered as a clean MVC:
     anchor; **clipboard** (copy/cut/paste, multi-line); **line ops** (duplicate/delete/
     move/indent/dedent); **snapshot-based undo/redo**; and plain-text **find/replace**.
   - **`Search`** — line-oriented plain-text search (findAll/next/prev/count, case folding)
-    with a `Match` sentinel so callers never touch a nullable.
+    with a `Match` sentinel so callers never touch a nullable; also drives find/replace.
+  - **`Brackets`** — bracket matching by depth scan; the Editor uses it for auto-close pairs
+    (typeWithPairs) and match highlighting (matchingBracket).
   - **`Snapshot` / `Clipboard`** — small value/holder classes for undo and cut-paste.
 - **View — `view/` + `syntax/`**
   - **`Viewport`** — a cell-based scrolling window: keep-caret-visible with a scrolloff
@@ -131,17 +134,26 @@ Layered as a clean MVC:
     (keyword/ident/number/string/char/comment/punct).
   - **`TextRenderer`** — paints the visible state into text rows (line-number gutter +
     horizontal clipping), a status bar, and an ANSI-coloured variant for a real terminal.
-- **Controller & input — `app/` + `input/`**
-  - **`Controller`** — the brain: owns Document + Editor + Viewport + Highlighter, keeps
-    the viewport following the caret, tracks the dirty flag, and exposes a flat command +
-    render-query surface for any front-end.
+  - **`ScreenRenderer`** — composes a whole IDE frame (tab bar + project tree + editor pane +
+    status bar) from live Workbench + FileTree state.
+- **Controller, application & input — `app/` + `input/`**
+  - **`Controller`** — the per-document brain: owns Document + Editor + Viewport +
+    Highlighter, keeps the viewport following the caret, tracks the dirty flag, and exposes a
+    flat command + render-query surface for any front-end.
+  - **`DocumentManager`** — the open documents (tabs): one Controller per document, active
+    switching, open/open-file(de-dup)/close, titles.
+  - **`Command` / `CommandRegistry`** — the command set + a fuzzy palette (subsequence match,
+    ranked) — the Ctrl+Shift+P foundation; selecting yields an id.
+  - **`Workbench`** — the application root a shell instantiates: owns the DocumentManager,
+    CommandRegistry and KeyMap; feeds keys to the active editor and runs palette commands.
   - **`input.Key` / `input.KeyMap`** — a decoded key model and all editor key bindings in
     one place (Shift = extend selection, Ctrl = word/document scope, Alt = line moves,
     Ctrl+C/X/V/Z/Y/A/D shortcuts).
-  - **`app.Demo`** — prints one rendered frame so `Forge.exe` demonstrates the whole
-    pipeline end to end.
-- **`io.Document`** — open/save a file from disk (Files.readLines/writeLines) with a
-  modified flag; **`test/`** — the `Asserts` harness + `CoreTests` suite.
+  - **`app.Demo`** — builds a Workbench, loads Forge's own src/ as the tree, and prints one
+    composed IDE frame so `Forge.exe` demonstrates the whole pipeline end to end.
+- **`io.Document`** — open/save a file (Files.readLines/writeLines) with a modified flag;
+  **`io.FileTree`** — the lazy project explorer (dirs-first, expand/collapse) over the real
+  filesystem; **`test/`** — the `Asserts` harness + `CoreTests` suite.
 
 Found and fixed stdlib/language gaps on the way: `ArrayList.insertAt` (LDP3 repo); confirmed
 the reserved-word set (`on`, `step`) and the nullable/no-narrowing model shape the API design
