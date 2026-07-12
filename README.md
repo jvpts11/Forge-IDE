@@ -12,23 +12,33 @@ can carry real, GUI-heavy systems software, not just command-line programs.
 Mascot and identity are shared with the language: **Flamo**, the amber flame, on the
 deep teal ground.
 
-## Status — design phase
+## Status — editor engine built (headless), graphics layer next
 
-Forge is **not being built yet**. Its home exists so the design and roadmap have a
-place to live. Construction is gated behind the LDP3 master sequence:
+The **editor engine is implemented and passing** — a complete, well-structured,
+multi-file LDP3 codebase built decoupled from graphics so it is unit-testable without a
+window. `ldp3 build` compiles all of `src/` into one program; `build.ps1` runs the
+headless self-check (**"editor tests: OK (229 checks)"**), and running `Forge.exe` prints
+one fully-composed IDE frame — tab bar, project tree, editor pane with a gutter, and
+status bar — rendered from live state.
 
-> finish the language → stdlib → toolchain → audit & optimize → **real software (Forge)**
+What works today (see [`docs/DESIGN.md`](docs/DESIGN.md) for the module map): a line-based
+text buffer; a full caret/editing model (selection, clipboard, undo/redo, word- and
+line-wise motion and deletion, smart Home/End, auto-indent, block indent/dedent, line
+comment toggle, configurable tab width); plain-text find/replace; bracket matching with
+auto-close pairs; a syntax highlighter; a scrolling viewport; a tab/document manager; a
+project file tree over the real filesystem; a fuzzy command palette; a key map; a
+Workbench application root; and text/screen renderers.
 
-and behind Forge's own prerequisite chain (see [`docs/DESIGN.md`](docs/DESIGN.md)):
+What's left is the **graphics/UI layer**, which needs visual verification: a window +
+input layer, the `ldp3-opengl` 2D canvas, glyph rendering, and a UI toolkit — then wiring
+the `Workbench` + `ScreenRenderer` onto a real surface. Forge's prerequisite chain:
 
 ```
-prove FFI  →  windowing + input  →  ldp3-opengl  →  text rendering  →  UI toolkit  →  editor core  →  IDE
+prove FFI  →  windowing + input  →  ldp3-opengl  →  text rendering  →  UI toolkit  →  [editor core ✓]  →  IDE
 ```
 
-The first concrete graphics milestone is **not Vulkan** — it is proving the LDP3 FFI
-against a real C library, then a windowing layer and **ldp3-opengl** (a 2D canvas is all
-a text editor needs). `ldp3-vulkan` is a later, separate effort for the game-grade
-flagships.
+The first graphics milestone is **not Vulkan** — a 2D canvas is all a text editor needs.
+`ldp3-vulkan` is a later, separate effort for the game-grade flagships.
 
 ## What Forge looks like
 
@@ -52,7 +62,7 @@ Forge depends on sibling LDP3 projects:
 |----------------|---------------------------------------------------|----------------|
 | `LDP3`         | the language, compiler (`ldp3c`), driver (`ldp3`) | in progress    |
 | `ldp3-lsp`     | language server (ships in the LDP3 repo)          | exists         |
-| `ldp3-opengl`  | pluggable 2D/GL rendering library                 | not started    |
+| `ldp3-opengl`  | pluggable modern-GL (3.3 core) rendering library  | exists, proven |
 | windowing lib  | native window + input (GLFW/SDL via FFI, or OS)   | not started    |
 
 ## Building (eventually)
