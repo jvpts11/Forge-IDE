@@ -447,7 +447,7 @@ public bundle forge {
                     boolean shift = win.modShift();
                     boolean alt = win.modAlt();
                     if (ov.isOpen()) {
-                        GuiApp.overlayEvent(ov, wb, e, ctrl, shift);
+                        GuiApp.overlayEvent(ov, wb, e, ctrl, shift, alt);
                     } else if (menu.isOpen() && e.isKey() && e.vk == 27) {   // Esc closes an open menu
                         menu.close();
                     } else if (comp.active && e.isKey() && GuiApp.completionKey(comp, wb, e.vk)) {
@@ -459,8 +459,11 @@ public bundle forge {
                     } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
                         ov.open(2);
                     } else if (e.isChar()) {
+                        // Accept a printable character. Reject it only for a real Ctrl shortcut (Ctrl without
+                        // Alt); AltGr, which Windows reports as Ctrl+Alt, produces printable chars like { } [ ]
+                        // on ABNT2/international layouts and must pass through.
                         int cp = e.code;
-                        if (cp >= 32 && cp != 127 && !ctrl) {
+                        if (cp >= 32 && cp != 127 && (!ctrl || alt)) {
                             wb.handleKey(Key.ch(cast<char>(cp)));
                             comp.update(wb.active());
                         }
@@ -484,7 +487,7 @@ public bundle forge {
             // Route an event to the open overlay: type into its query, Esc closes, Enter runs it, arrows
             // move the palette selection.
             private static method overlayEvent(Overlay* ov, Workbench* wb, InputEvent* e, boolean ctrl,
-                                               boolean shift) returns void {
+                                               boolean shift, boolean alt) returns void {
                 if (e.isKey()) {
                     int vk = e.vk;
                     if (vk == 27) { ov.close(); return; }               // Esc
@@ -502,7 +505,7 @@ public bundle forge {
                 }
                 if (e.isChar()) {
                     int cp = e.code;
-                    if (cp >= 32 && cp != 127 && !ctrl) { ov.typeChar(cast<char>(cp)); }
+                    if (cp >= 32 && cp != 127 && (!ctrl || alt)) { ov.typeChar(cast<char>(cp)); }
                 }
                 return;
             }
@@ -557,8 +560,9 @@ public bundle forge {
             // Map a Win32 virtual-key to a Key and dispatch it, carrying the modifier state.
             private static method dispatchKey(Workbench* wb, int vk, boolean ctrl, boolean shift, boolean alt)
                     returns void {
-                if (ctrl && vk >= 65 && vk <= 90) { wb.handleKey(Key.ctrlCh(cast<char>(vk + 32))); return; }
-                if (ctrl && vk == 191) { wb.handleKey(Key.ctrlCh('/')); return; }   // Ctrl+/ -> toggle comment
+                // A real Ctrl shortcut never has Alt held; Ctrl+Alt is AltGr (a character), so exclude it.
+                if (ctrl && !alt && vk >= 65 && vk <= 90) { wb.handleKey(Key.ctrlCh(cast<char>(vk + 32))); return; }
+                if (ctrl && !alt && vk == 191) { wb.handleKey(Key.ctrlCh('/')); return; }   // Ctrl+/ toggle comment
                 if (vk == 0x25) { wb.handleKey(new Key(KeyCode.LEFT, ' ', ctrl, shift, alt) on heap); return; }
                 if (vk == 0x27) { wb.handleKey(new Key(KeyCode.RIGHT, ' ', ctrl, shift, alt) on heap); return; }
                 if (vk == 0x26) { wb.handleKey(new Key(KeyCode.UP, ' ', ctrl, shift, alt) on heap); return; }
