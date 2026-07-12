@@ -1,0 +1,96 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One entry in a dropdown menu: the caption shown to the user and the command id it triggers when
+        // chosen. A separator (commandId "-") draws a divider and can't be selected.
+        public class MenuItem {
+            public mutable String caption;
+            public mutable String commandId;
+            public constructor MenuItem(String caption, String commandId) {
+                this.caption = caption;
+                this.commandId = commandId;
+            }
+            public method isSeparator() returns boolean { return this.commandId.equals("-"); }
+        }
+
+        // A top-level menu: a title and the list of items in its dropdown.
+        public class Menu {
+            public mutable String title;
+            public mutable ArrayList<MenuItem>* items;
+            public constructor Menu(String title) {
+                this.title = title;
+                this.items = new ArrayList<MenuItem>() on heap;
+            }
+            public method add(String caption, String commandId) returns void {
+                this.items.add(new MenuItem(caption, commandId) on heap);
+            }
+            public method sep() returns void { this.items.add(new MenuItem("-", "-") on heap); }
+        }
+
+        // The window's menu bar: File / Edit / View / Run / Help, each a dropdown of commands. Tracks which
+        // menu is currently open (openIndex, -1 = none). The shell hit-tests a title click to open/switch a
+        // menu and an item click to run the mapped command; GpuScreen draws the bar and the open dropdown.
+        // Item command ids reuse the CommandRegistry ids where one exists (file.new, edit.undo, run.build, ...)
+        // and add a few shell-level ones the GUI interprets directly: edit.find and view.palette open the
+        // respective overlays, file.close closes the active tab, app.quit ends the session, help.about shows
+        // a banner in the output panel.
+        public class MenuBar {
+            public mutable ArrayList<Menu>* menus;
+            public mutable int openIndex;
+
+            public constructor MenuBar() {
+                this.menus = new ArrayList<Menu>() on heap;
+                this.openIndex = 0 - 1;
+                this.build();
+            }
+
+            private method build() returns void {
+                Menu* file = new Menu("File") on heap;
+                file.add("New File", "file.new");
+                file.add("Save", "file.save");
+                file.sep();
+                file.add("Close Tab", "file.close");
+                file.add("Exit", "app.quit");
+                this.menus.add(file);
+
+                Menu* edit = new Menu("Edit") on heap;
+                edit.add("Undo", "edit.undo");
+                edit.add("Redo", "edit.redo");
+                edit.sep();
+                edit.add("Select All", "edit.selectAll");
+                edit.add("Duplicate Line", "edit.duplicateLine");
+                edit.add("Find", "edit.find");
+                this.menus.add(edit);
+
+                Menu* view = new Menu("View") on heap;
+                view.add("Command Palette", "view.palette");
+                view.add("Toggle Output", "view.output");
+                this.menus.add(view);
+
+                Menu* run = new Menu("Run") on heap;
+                run.add("Build", "run.build");
+                run.add("Run", "run.program");
+                this.menus.add(run);
+
+                Menu* help = new Menu("Help") on heap;
+                help.add("About Forge", "help.about");
+                this.menus.add(help);
+            }
+
+            public method count() returns int { return this.menus.size(); }
+            public method menuAt(int i) returns Menu* { return this.menus.get(i); }
+            public method title(int i) returns String { return this.menus.get(i).title; }
+            public method isOpen() returns boolean { return this.openIndex >= 0; }
+            public method openMenu() returns Menu* { return this.menus.get(this.openIndex); }
+            public method close() returns void { this.openIndex = 0 - 1; }
+            public method openAt(int i) returns void { this.openIndex = i; }
+            public method toggle(int i) returns void {
+                if (this.openIndex == i) { this.openIndex = 0 - 1; } else { this.openIndex = i; }
+            }
+        }
+    }
+}

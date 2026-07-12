@@ -24,6 +24,14 @@ public bundle forge {
 
             public method toggle() returns void { this.visible = !this.visible; }
             public method hide() returns void { this.visible = false; }
+            // Show a static one-line message in the panel (no process run) -- used by menu items like About.
+            public method banner(String caption, String text) returns void {
+                this.title = caption;
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                out.add(text);
+                this.lines = out;
+                this.visible = true;
+            }
             public method lineCount() returns int { return this.lines.size(); }
             public method line(int i) returns String { return this.lines.get(i); }
 

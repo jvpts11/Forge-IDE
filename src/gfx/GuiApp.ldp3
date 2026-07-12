@@ -49,15 +49,17 @@ public bundle forge {
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
+                MenuBar* menu = new MenuBar() on heap;
                 mutable boolean prevDown = false;
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
                 while (win.isOpen()) {
                     win.pump();
-                    GuiApp.processInput(win, wb, ov, comp);
-                    // left click -> place the caret (edge-triggered); ignored while an overlay is open
+                    GuiApp.processInput(win, wb, ov, comp, menu);
+                    // left click -> menu bar / tab / tree / caret (edge-triggered); ignored while an overlay
+                    // is open, but menu clicks still work because the menu isn't a modal overlay
                     boolean down = win.keyDown(1);   // VK_LBUTTON
-                    if (down && !prevDown && !ov.isOpen()) { GuiApp.handleClick(win, screen, wb, tree); }
+                    if (down && !prevDown && !ov.isOpen()) { GuiApp.handleClick(win, screen, wb, tree, ov, menu); }
                     prevDown = down;
                     // mouse wheel -> scroll the view (3 lines per notch)
                     int scroll = win.takeScroll();
@@ -70,25 +72,46 @@ public bundle forge {
                         lastW = w2;
                         lastH = h2;
                     }
-                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
                     win.swap();
                     win.sleep(8);
                 }
                 return;
             }
 
-            private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree)
-                    returns void {
-                GuiApp.clickAt(screen, wb, tree, win.cursorX(), win.cursorY());
+            private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
+                                              Overlay* ov, MenuBar* menu) returns void {
+                GuiApp.clickAt(win, screen, wb, tree, ov, menu, win.cursorX(), win.cursorY());
                 return;
             }
 
-            // Route a click at pixel (mx, my): a tab activates it, a tree directory expands/collapses, a
-            // tree file opens in a tab, and the editor pane places the caret. Split out from cursor reading
-            // so it can be verified with synthetic coordinates.
-            private static method clickAt(GpuScreen* screen, Workbench* wb, FileTree* tree, int mx, int my)
-                    returns void {
-                if (my < screen.tabH()) {
+            // Route a click at pixel (mx, my): the menu bar opens/switches a menu or runs a dropdown item; a
+            // tab activates it; a tree directory expands/collapses; a tree file opens in a tab; and the editor
+            // pane places the caret. Split out from cursor reading so it can be verified with synthetic
+            // coordinates. Menu handling has top priority so its dropdown overlays the rest.
+            private static method clickAt(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
+                                          Overlay* ov, MenuBar* menu, int mx, int my) returns void {
+                if (menu.isOpen()) {
+                    int item = screen.dropdownItemAt(menu, mx, my);
+                    if (item >= 0) {
+                        String id = menu.openMenu().items.get(item).commandId;
+                        menu.close();
+                        GuiApp.runMenuCommand(win, wb, ov, id);
+                        return;
+                    }
+                    if (my < screen.menuH()) {
+                        int ti = screen.menuTitleAtX(menu, mx);
+                        if (ti >= 0) { menu.toggle(ti); return; }
+                    }
+                    menu.close();
+                    return;
+                }
+                if (my < screen.menuH()) {
+                    int ti = screen.menuTitleAtX(menu, mx);
+                    if (ti >= 0) { menu.openAt(ti); }
+                    return;
+                }
+                if (my < screen.contentTop()) {
                     int ti = screen.tabAtX(wb.documents(), mx);
                     if (ti >= 0) { wb.documents().setActive(ti); }
                     return;
@@ -111,6 +134,26 @@ public bundle forge {
                 return;
             }
 
+            // Execute a menu item's command id. Most map straight to Workbench.runCommand; a few are shell-level
+            // actions the GUI owns: opening the find/palette overlays, closing the active tab, quitting the
+            // window (WM_CLOSE), and the About banner.
+            private static method runMenuCommand(GlWindow* win, Workbench* wb, Overlay* ov, String id)
+                    returns void {
+                if (id.equals("edit.find")) { ov.open(2); return; }
+                if (id.equals("view.palette")) { ov.open(1); return; }
+                if (id.equals("file.close")) {
+                    if (wb.documents().count() > 1) { wb.documents().close(wb.documents().activeIndex()); }
+                    return;
+                }
+                if (id.equals("app.quit")) { Win32.PostMessageA(win.hwnd, 16, 0, 0); return; }   // WM_CLOSE
+                if (id.equals("help.about")) {
+                    wb.output().banner("About Forge", "Forge -- the LDP3 IDE, written in LDP3.");
+                    return;
+                }
+                wb.runCommand(id);
+                return;
+            }
+
             // Scriptable automation server: open the window once, then read one command per line from stdin
             // and drive the IDE. This is the transport the Forge MCP server speaks -- a remote control for
             // testing, scripting, and (eventually) AI integration. Commands: type <text>, key <name>,
@@ -129,6 +172,7 @@ public bundle forge {
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
+                MenuBar* menu = new MenuBar() on heap;
                 System.IO.Console.println("forge-serve ready");
                 Win32.fflush(0);
                 mutable boolean running = true;
@@ -138,7 +182,7 @@ public bundle forge {
                     if (line.length() == 0) { running = false; }
                     else if (GuiApp.firstWord(line).equals("quit")) { running = false; }
                     else {
-                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp);
+                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp, menu);
                         Win32.fflush(0);
                     }
                 }
@@ -146,8 +190,8 @@ public bundle forge {
             }
 
             private static method serveCommand(String line, GlWindow* win, Batch2D* batch, GpuScreen* screen,
-                                               Workbench* wb, FileTree* tree, Overlay* ov, Completion* comp)
-                    returns void {
+                                               Workbench* wb, FileTree* tree, Overlay* ov, Completion* comp,
+                                               MenuBar* menu) returns void {
                 String cmd = GuiApp.firstWord(line);
                 String arg = GuiApp.rest(line);
                 if (cmd.equals("type")) {
@@ -165,7 +209,23 @@ public bundle forge {
                 } else if (cmd.equals("click")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
-                    GuiApp.clickAt(screen, wb, tree, rx.toInt(), ry.toInt());
+                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, rx.toInt(), ry.toInt());
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("menu")) {
+                    // menu <i> opens/toggles menu i; menu -1 closes any open menu
+                    int mi = arg.toInt();
+                    if (mi < 0) { menu.close(); } else { menu.toggle(mi); }
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("menuitem")) {
+                    // menuitem <i> runs item i of the currently open menu (scripted equivalent of a click)
+                    if (menu.isOpen()) {
+                        int mi = arg.toInt();
+                        if (mi >= 0 && mi < menu.openMenu().items.size()) {
+                            String id = menu.openMenu().items.get(mi).commandId;
+                            menu.close();
+                            GuiApp.runMenuCommand(win, wb, ov, id);
+                        }
+                    }
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("cmd")) {
                     wb.runCommand(arg);
@@ -191,7 +251,7 @@ public bundle forge {
                     ov.close();
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("shot")) {
-                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
                     Wgl.glFinish();
                     int w = win.width();
                     int h = win.height();
@@ -293,6 +353,7 @@ public bundle forge {
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
+                MenuBar* menu = new MenuBar() on heap;
 
                 // open the command palette and type a query via real WM_CHAR messages, routed through the
                 // overlay path (processInput -> overlayEvent -> typeChar).
@@ -304,9 +365,9 @@ public bundle forge {
                     i = i + 1;
                 }
                 win.pump();
-                GuiApp.processInput(win, wb, ov, comp);
+                GuiApp.processInput(win, wb, ov, comp, menu);
 
-                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -324,8 +385,8 @@ public bundle forge {
             // Drain the window's keyboard events and drive the Workbench: printable characters type, special
             // keys navigate/edit, Ctrl+letter runs a shortcut -- exactly the CHAR-vs-special split the KeyMap
             // expects. Typed text comes via WM_CHAR; Ctrl combos and named keys via WM_KEYDOWN.
-            private static method processInput(GlWindow* win, Workbench* wb, Overlay* ov, Completion* comp)
-                    returns void {
+            private static method processInput(GlWindow* win, Workbench* wb, Overlay* ov, Completion* comp,
+                                               MenuBar* menu) returns void {
                 while (win.hasEvent()) {
                     InputEvent* e = win.nextEvent();
                     boolean ctrl = win.modCtrl();
@@ -333,6 +394,8 @@ public bundle forge {
                     boolean alt = win.modAlt();
                     if (ov.isOpen()) {
                         GuiApp.overlayEvent(ov, wb, e, ctrl);
+                    } else if (menu.isOpen() && e.isKey() && e.vk == 27) {   // Esc closes an open menu
+                        menu.close();
                     } else if (comp.active && e.isKey() && GuiApp.completionKey(comp, wb, e.vk)) {
                         // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
                     } else if (e.isKey() && ctrl && shift && e.vk == 80) {   // Ctrl+Shift+P -> palette
@@ -426,8 +489,9 @@ public bundle forge {
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
+                MenuBar* menu = new MenuBar() on heap;
                 win.pump();
-                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -471,7 +535,8 @@ public bundle forge {
             // One frame: clear to the Forge ground, draw the full IDE (tabs + tree + editor), then any
             // open modal overlay on top.
             private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb,
-                                            FileTree* tree, Overlay* ov, Completion* comp) returns void {
+                                            FileTree* tree, Overlay* ov, Completion* comp, MenuBar* menu)
+                    returns void {
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);
@@ -481,6 +546,8 @@ public bundle forge {
                 batch.begin(w, h, screen.fontTexture());
                 screen.drawWorkbench(batch, wb, tree, w, h);
                 if (comp.active) { screen.drawCompletion(batch, comp, wb, w, h); }
+                screen.drawMenuBar(batch, menu, w);
+                screen.drawMenuDropdown(batch, menu);
                 if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
                 batch.flush();
                 return;

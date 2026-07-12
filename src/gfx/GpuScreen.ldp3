@@ -9,6 +9,9 @@ import app.CommandRegistry;
 import app.OutputPanel;
 import app.Diagnostic;
 import app.Completion;
+import app.MenuBar;
+import app.Menu;
+import app.MenuItem;
 import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
@@ -40,14 +43,17 @@ public bundle forge {
 
             public method fontTexture() returns int { return this.font.texture(); }
             public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
+            public method menuH() returns int { return this.font.lineHeight() + 8; }
             public method tabH() returns int { return this.font.lineHeight() + 12; }
             public method statusH() returns int { return this.font.lineHeight() + 8; }
+            // Pixel y where the tab bar / tree / editor begin, below the menu bar.
+            public method contentTop() returns int { return this.menuH() + this.tabH(); }
             public method treeWidth() returns int { return this.treeW; }
             public method charW() returns int { return this.font.advance(); }
             public method lineH() returns int { return this.font.lineHeight(); }
             // Pixel origin of the code text (for mouse hit-testing).
             public method textOx() returns int { return this.treeW + this.gutterPx() + 6; }
-            public method textOy() returns int { return this.tabH() + this.topPad; }
+            public method textOy() returns int { return this.contentTop() + this.topPad; }
             // Which tab index is under pixel x in the tab bar (-1 if none) -- mirrors drawTabBar's layout.
             public method tabAtX(DocumentManager* docs, int mx) returns int {
                 int cw = this.font.advance();
@@ -63,11 +69,11 @@ public bundle forge {
             }
             // Which tree row is under pixel y (may be out of range; the caller checks against visible()).
             public method treeRowAtY(int my) returns int {
-                return (my - (this.tabH() + 6)) / this.font.lineHeight();
+                return (my - (this.contentTop() + 6)) / this.font.lineHeight();
             }
             // Viewport rows/cols that fit the editor pane of a pixel window (window minus chrome).
             public method paneRowsFor(int screenH) returns int {
-                return (screenH - this.tabH() - this.statusH() - this.topPad) / this.font.lineHeight();
+                return (screenH - this.contentTop() - this.statusH() - this.topPad) / this.font.lineHeight();
             }
             public method paneColsFor(int screenW) returns int {
                 return (screenW - this.treeW - this.gutterPx() - 8) / this.font.advance();
@@ -76,22 +82,143 @@ public bundle forge {
             // Compose the full IDE frame.
             public method drawWorkbench(Batch2D* batch, Workbench* wb, FileTree* tree, int screenW, int screenH)
                     returns void {
+                int mh = this.menuH();
                 int tabh = this.tabH();
+                int ctop = mh + tabh;
                 int tw = this.treeW;
                 // chrome panel backgrounds
-                batch.rect(0, 0, screenW, tabh, 0.027, 0.055, 0.063, 1.0);              // tab bar
-                batch.rect(0, tabh, tw, screenH - tabh, 0.035, 0.070, 0.078, 1.0);      // tree panel
-                batch.rect(tw, tabh, 1, screenH - tabh, 0.016, 0.035, 0.039, 1.0);      // tree/editor divider
+                batch.rect(0, mh, screenW, tabh, 0.027, 0.055, 0.063, 1.0);             // tab bar
+                batch.rect(0, ctop, tw, screenH - ctop, 0.035, 0.070, 0.078, 1.0);      // tree panel
+                batch.rect(tw, ctop, 1, screenH - ctop, 0.016, 0.035, 0.039, 1.0);      // tree/editor divider
                 int sh = this.statusH();
                 mutable int panelH = 0;
                 if (wb.output().visible) { panelH = 220; }
-                this.drawTabBar(batch, wb.documents(), tabh);
-                this.drawTree(batch, tree, tabh, screenH - sh);
-                this.drawEditor(batch, wb, tw, tabh, screenW - tw, screenH - tabh - sh - panelH);
+                this.drawTabBar(batch, wb.documents(), mh, tabh);
+                this.drawTree(batch, tree, ctop, screenH - sh);
+                this.drawEditor(batch, wb, tw, ctop, screenW - tw, screenH - ctop - sh - panelH);
                 if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH);
                 }
                 this.drawStatusBar(batch, wb, screenW, screenH, sh);
+            }
+
+            // The top menu bar (File / Edit / View / Run / Help). Drawn on top of the frame so the open menu's
+            // title can highlight; the dropdown itself is drawn separately by drawMenuDropdown.
+            public method drawMenuBar(Batch2D* batch, MenuBar* mb, int screenW) returns void {
+                int cw = this.font.advance();
+                int mh = this.menuH();
+                batch.rect(0, 0, screenW, mh, 0.031, 0.063, 0.071, 1.0);
+                batch.rect(0, mh - 1, screenW, 1, 0.016, 0.035, 0.039, 1.0);      // bottom hairline
+                int ty = (mh - this.font.lineHeight()) / 2;
+                mutable int x = 8;
+                mutable int i = 0;
+                while (i < mb.count()) {
+                    String t = mb.title(i);
+                    int tw = (t.length() + 2) * cw;
+                    boolean isOpen = mb.openIndex == i;
+                    mutable float r = 0.706;
+                    mutable float g = 0.769;
+                    mutable float b = 0.761;
+                    if (isOpen) {
+                        batch.rect(x, 0, tw, mh, 0.063, 0.106, 0.114, 1.0);
+                        r = 0.918; g = 0.706; b = 0.392;
+                    }
+                    this.font.drawText(batch, x + cw, ty, t, r, g, b, 1.0);
+                    x = x + tw;
+                    i = i + 1;
+                }
+            }
+
+            // The open menu's dropdown, anchored under its title. Does nothing if no menu is open.
+            public method drawMenuDropdown(Batch2D* batch, MenuBar* mb) returns void {
+                if (!mb.isOpen()) { return; }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int mh = this.menuH();
+                Menu* m = mb.openMenu();
+                int x = this.menuTitleX(mb, mb.openIndex);
+                int dw = this.dropdownWidth(m, cw);
+                int rowH = ch + 6;
+                mutable int dh = 6;
+                mutable int i = 0;
+                while (i < m.items.size()) {
+                    if (m.items.get(i).isSeparator()) { dh = dh + 7; } else { dh = dh + rowH; }
+                    i = i + 1;
+                }
+                batch.rect(x, mh, dw, dh, 0.063, 0.106, 0.114, 1.0);
+                batch.rect(x, mh, dw, 2, 0.918, 0.706, 0.392, 1.0);
+                mutable int y = mh + 3;
+                i = 0;
+                while (i < m.items.size()) {
+                    MenuItem* it = m.items.get(i);
+                    if (it.isSeparator()) {
+                        batch.rect(x + 6, y + 3, dw - 12, 1, 0.204, 0.278, 0.290, 1.0);
+                        y = y + 7;
+                    } else {
+                        this.font.drawText(batch, x + cw, y + 3, it.caption, 0.804, 0.851, 0.843, 1.0);
+                        y = y + rowH;
+                    }
+                    i = i + 1;
+                }
+            }
+
+            private method dropdownWidth(Menu* m, int cw) returns int {
+                mutable int maxc = 12;
+                mutable int i = 0;
+                while (i < m.items.size()) {
+                    int l = m.items.get(i).caption.length();
+                    if (l > maxc) { maxc = l; }
+                    i = i + 1;
+                }
+                return (maxc + 4) * cw;
+            }
+
+            // x pixel where menu title `idx` begins (mirrors drawMenuBar's layout).
+            public method menuTitleX(MenuBar* mb, int idx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 8;
+                mutable int i = 0;
+                while (i < idx) { x = x + (mb.title(i).length() + 2) * cw; i = i + 1; }
+                return x;
+            }
+            // Which menu title is under pixel x in the bar (-1 if none). Only meaningful when my < menuH().
+            public method menuTitleAtX(MenuBar* mb, int mx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 8;
+                mutable int i = 0;
+                while (i < mb.count()) {
+                    int tw = (mb.title(i).length() + 2) * cw;
+                    if (mx >= x && mx < x + tw) { return i; }
+                    x = x + tw;
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Which dropdown item is under pixel (mx, my) for the open menu (-1 if none or on a separator).
+            public method dropdownItemAt(MenuBar* mb, int mx, int my) returns int {
+                if (!mb.isOpen()) { return 0 - 1; }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int mh = this.menuH();
+                Menu* m = mb.openMenu();
+                int x = this.menuTitleX(mb, mb.openIndex);
+                int dw = this.dropdownWidth(m, cw);
+                if (mx < x || mx >= x + dw || my < mh) { return 0 - 1; }
+                int rowH = ch + 6;
+                mutable int y = mh + 3;
+                mutable int i = 0;
+                while (i < m.items.size()) {
+                    MenuItem* it = m.items.get(i);
+                    mutable int h = rowH;
+                    if (it.isSeparator()) { h = 7; }
+                    if (my >= y && my < y + h) {
+                        if (it.isSeparator()) { return 0 - 1; }
+                        return i;
+                    }
+                    y = y + h;
+                    i = i + 1;
+                }
+                return 0 - 1;
             }
 
             // The build/run output panel: a titled band at the bottom of the editor area showing the tail of
@@ -154,9 +281,9 @@ public bundle forge {
                 this.font.drawText(batch, px, ty, pos, 0.502, 0.588, 0.584, 1.0);
             }
 
-            private method drawTabBar(Batch2D* batch, DocumentManager* docs, int tabh) returns void {
+            private method drawTabBar(Batch2D* batch, DocumentManager* docs, int top, int tabh) returns void {
                 int cw = this.font.advance();
-                int ty = (tabh - this.font.lineHeight()) / 2;
+                int ty = top + (tabh - this.font.lineHeight()) / 2;
                 mutable int x = 6;
                 mutable int i = 0;
                 while (i < docs.count()) {
@@ -167,8 +294,8 @@ public bundle forge {
                     mutable float g = 0.588;
                     mutable float b = 0.584;
                     if (active) {
-                        batch.rect(x, 0, tw, tabh, 0.051, 0.102, 0.114, 1.0);   // active tab = editor ground
-                        batch.rect(x, 0, tw, 2, 0.918, 0.706, 0.392, 1.0);      // amber accent
+                        batch.rect(x, top, tw, tabh, 0.051, 0.102, 0.114, 1.0);   // active tab = editor ground
+                        batch.rect(x, top, tw, 2, 0.918, 0.706, 0.392, 1.0);      // amber accent
                         r = 0.804; g = 0.851; b = 0.843;
                     }
                     this.font.drawText(batch, x + cw, ty, title, r, g, b, 1.0);
@@ -177,12 +304,12 @@ public bundle forge {
                 }
             }
 
-            private method drawTree(Batch2D* batch, FileTree* tree, int tabh, int screenH) returns void {
+            private method drawTree(Batch2D* batch, FileTree* tree, int top, int screenH) returns void {
                 int ch = this.font.lineHeight();
                 ArrayList<FileNode>* rows = tree.visible();
                 mutable int i = 0;
                 while (i < rows.size()) {
-                    int y = tabh + 6 + i * ch;
+                    int y = top + 6 + i * ch;
                     if (y + ch > screenH) { return; }
                     FileNode* node = rows.get(i);
                     mutable float r = 0.576;
@@ -295,7 +422,7 @@ public bundle forge {
                 int ch = this.font.lineHeight();
                 int ox = this.treeW;
                 int cx = ox + this.gutterPx() + 6 + c.caretScreenCol() * cw;
-                int cy = this.tabH() + this.topPad + c.caretScreenRow() * ch;
+                int cy = this.contentTop() + this.topPad + c.caretScreenRow() * ch;
                 int px = cx - comp.prefix.length() * cw;
                 int py = cy + ch;
                 mutable int shown = comp.items.size();
@@ -357,7 +484,7 @@ public bundle forge {
                 int ch = this.font.lineHeight();
                 int bw = 420;
                 int bx = screenW - bw - 24;
-                int by = this.tabH() + 10;
+                int by = this.contentTop() + 10;
                 int bh = ch + 12;
                 batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
                 batch.rect(bx, by, 3, bh, 0.918, 0.706, 0.392, 1.0);
