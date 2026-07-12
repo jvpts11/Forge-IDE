@@ -55,11 +55,12 @@ public bundle forge {
             public method setScrollMargin(int m) returns void { this.scrollMargin = m; }
             public method setTabWidth(int n) returns void { this.ed.setTabWidth(n); }
 
-            // --- text-changing commands ---
-            public method insertChar(char c) returns void { this.ed.typeWithPairs(c); this.edited(); }
+            // --- text-changing commands (route through the multi-caret variants; a single caret behaves as
+            // before) ---
+            public method insertChar(char c) returns void { this.ed.typeMulti(c); this.edited(); }
             public method insertText(String s) returns void { this.ed.insertText(s); this.edited(); }
-            public method newline() returns void { this.ed.enter(); this.edited(); }
-            public method backspace() returns void { this.ed.backspace(); this.edited(); }
+            public method newline() returns void { this.ed.enterMulti(); this.edited(); }
+            public method backspace() returns void { this.ed.backspaceMulti(); this.edited(); }
             public method deleteForward() returns void { this.ed.deleteForward(); this.edited(); }
             public method deleteWordLeft() returns void { this.ed.deleteWordLeft(); this.edited(); }
             public method deleteWordRight() returns void { this.ed.deleteWordRight(); this.edited(); }
@@ -133,6 +134,37 @@ public bundle forge {
             // Mouse press then drag: anchor a selection, then extend it to the dragged position.
             public method beginSelect(int row, int col) returns void { this.ed.beginSelect(row, col); this.moved(); }
             public method extendSelectTo(int row, int col) returns void { this.ed.extendSelectTo(row, col); this.moved(); }
+
+            // --- multi-cursor ---
+            public method addCaretBelow() returns void {
+                this.ed.addCaretBelow();
+                this.moved();
+            }
+            public method addCaretAbove() returns void {
+                this.ed.addCaretAbove();
+                this.moved();
+            }
+            public method addCaretAt(int row, int col) returns void {
+                this.ed.addCaretAt(row, col);
+                this.moved();
+            }
+            public method clearExtraCarets() returns void {
+                this.ed.clearExtraCarets();
+                this.moved();
+            }
+            public method hasMultipleCarets() returns boolean {
+                return this.ed.hasMultipleCarets();
+            }
+            public method extraCaretCount() returns int {
+                return this.ed.extraCaretCount();
+            }
+            // Screen row/col of secondary caret `i`, fold-aware for the row (-1 row if it's hidden/off-screen).
+            public method extraCaretScreenRow(int i) returns int {
+                return this.screenRowForDocLine(this.ed.extraCaretRow(i));
+            }
+            public method extraCaretScreenCol(int i) returns int {
+                return this.ed.extraCaretCol(i) - this.view.firstColumn();
+            }
             // Mouse wheel: scroll the viewport by `delta` lines without moving the caret.
             public method scrollLines(int delta) returns void {
                 if (delta < 0) { this.view.scrollUp(0 - delta); } else { this.view.scrollDown(delta); }

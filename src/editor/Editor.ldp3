@@ -22,6 +22,9 @@ public bundle forge {
             private mutable int tabWidth;
             private mutable ArrayList<Snapshot>* undoStack;
             private mutable ArrayList<Snapshot>* redoStack;
+            private mutable ArrayList<int>* extraRows;   // secondary carets (multi-cursor); primary is row/col
+            private mutable ArrayList<int>* extraCols;
+            private mutable boolean suppressUndo;         // set while a multi-caret edit groups into one undo
 
             public constructor Editor(TextBuffer* doc) {
                 this.buf = doc;
@@ -36,6 +39,9 @@ public bundle forge {
                 this.tabWidth = 4;
                 this.undoStack = new ArrayList<Snapshot>() on heap;
                 this.redoStack = new ArrayList<Snapshot>() on heap;
+                this.extraRows = new ArrayList<int>() on heap;
+                this.extraCols = new ArrayList<int>() on heap;
+                this.suppressUndo = false;
             }
 
             // Indentation width (spaces per level), configurable. indentUnit() is one level of spaces.
@@ -269,8 +275,16 @@ public bundle forge {
                 if (this.col == 0) { this.rawLeft(); return; }
                 this.col = this.wordLeftCol();
             }
-            public method moveWordRight()   returns void { this.clearSelection(); this.rawWordRight(); }
-            public method moveWordLeft()    returns void { this.clearSelection(); this.rawWordLeft(); }
+            public method moveWordRight() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawWordRight();
+            }
+            public method moveWordLeft() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawWordLeft();
+            }
             public method selectWordRight() returns void { this.anchorSelection(); this.rawWordRight(); }
             public method selectWordLeft()  returns void { this.anchorSelection(); this.rawWordLeft(); }
 
@@ -402,6 +416,7 @@ public bundle forge {
             // click lands here.
             public method setCaret(int row, int col) returns void {
                 this.clearSelection();
+                this.clearExtraCarets();
                 mutable int rr = row;
                 if (rr < 0) { rr = 0; }
                 if (rr >= this.buf.lineCount()) { rr = this.buf.lineCount() - 1; }
@@ -442,7 +457,12 @@ public bundle forge {
             public method selEndCol() returns int { if (this.anchorBeforeCaret()) { return this.col; } return this.selCol; }
 
             // Record the current state before a mutating edit; a fresh edit invalidates the redo history.
+            // A multi-caret edit takes one snapshot up front and suppresses the per-sub-edit snapshots so the
+            // whole thing is a single undo step.
             private method saveUndo() returns void {
+                if (this.suppressUndo) {
+                    return;
+                }
                 this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
                 this.redoStack.clear();
             }
@@ -469,6 +489,188 @@ public bundle forge {
                 this.restore(this.redoStack.get(last));
                 this.redoStack.removeAt(last);
                 return true;
+            }
+
+            // --- multi-cursor: secondary carets edited together with the primary (row, col) ---
+            public method hasMultipleCarets() returns boolean {
+                return this.extraRows.size() > 0;
+            }
+            public method extraCaretCount() returns int {
+                return this.extraRows.size();
+            }
+            public method extraCaretRow(int i) returns int {
+                return this.extraRows.get(i);
+            }
+            public method extraCaretCol(int i) returns int {
+                return this.extraCols.get(i);
+            }
+            public method clearExtraCarets() returns void {
+                this.extraRows = new ArrayList<int>() on heap;
+                this.extraCols = new ArrayList<int>() on heap;
+            }
+            // Add a secondary caret at (row, col), clamped into the document; a no-op if it duplicates a caret.
+            public method addCaretAt(int row, int col) returns void {
+                mutable int rr = row;
+                if (rr < 0) {
+                    rr = 0;
+                }
+                if (rr >= this.buf.lineCount()) {
+                    rr = this.buf.lineCount() - 1;
+                }
+                mutable int cc = col;
+                if (cc < 0) {
+                    cc = 0;
+                }
+                int len = this.buf.line(rr).length();
+                if (cc > len) {
+                    cc = len;
+                }
+                if (rr == this.row && cc == this.col) {
+                    return;
+                }
+                mutable int i = 0;
+                while (i < this.extraRows.size()) {
+                    if (this.extraRows.get(i) == rr && this.extraCols.get(i) == cc) {
+                        return;
+                    }
+                    i = i + 1;
+                }
+                this.extraRows.add(rr);
+                this.extraCols.add(cc);
+            }
+            // Add a caret one line below the bottom-most caret (or above the top-most), at the primary column.
+            public method addCaretBelow() returns void {
+                mutable int maxRow = this.row;
+                mutable int i = 0;
+                while (i < this.extraRows.size()) {
+                    if (this.extraRows.get(i) > maxRow) {
+                        maxRow = this.extraRows.get(i);
+                    }
+                    i = i + 1;
+                }
+                if (maxRow + 1 < this.buf.lineCount()) {
+                    this.addCaretAt(maxRow + 1, this.col);
+                }
+            }
+            public method addCaretAbove() returns void {
+                mutable int minRow = this.row;
+                mutable int i = 0;
+                while (i < this.extraRows.size()) {
+                    if (this.extraRows.get(i) < minRow) {
+                        minRow = this.extraRows.get(i);
+                    }
+                    i = i + 1;
+                }
+                if (minRow - 1 >= 0) {
+                    this.addCaretAt(minRow - 1, this.col);
+                }
+            }
+
+            // Type / backspace / newline that route through every caret when there are secondaries.
+            public method typeMulti(char c) returns void {
+                if (this.extraRows.size() == 0) {
+                    this.typeWithPairs(c);
+                    return;
+                }
+                this.applyMulti(0, c);
+            }
+            public method backspaceMulti() returns void {
+                if (this.extraRows.size() == 0) {
+                    this.backspace();
+                    return;
+                }
+                this.applyMulti(1, ' ');
+            }
+            public method enterMulti() returns void {
+                if (this.extraRows.size() == 0) {
+                    this.enter();
+                    return;
+                }
+                this.applyMulti(2, ' ');
+            }
+
+            // Apply one edit at every caret as a single undo step. op: 0 = type char, 1 = backspace, 2 = enter.
+            // Carets run bottom-to-top so an edit never shifts a caret still to be processed.
+            private method applyMulti(int op, char ch) returns void {
+                this.saveUndo();
+                this.suppressUndo = true;
+                ArrayList<int>* rows = new ArrayList<int>() on heap;
+                ArrayList<int>* cols = new ArrayList<int>() on heap;
+                ArrayList<int>* prim = new ArrayList<int>() on heap;
+                rows.add(this.row);
+                cols.add(this.col);
+                prim.add(1);
+                mutable int i = 0;
+                while (i < this.extraRows.size()) {
+                    rows.add(this.extraRows.get(i));
+                    cols.add(this.extraCols.get(i));
+                    prim.add(0);
+                    i = i + 1;
+                }
+                // selection sort, descending by (row, col)
+                mutable int a = 0;
+                while (a < rows.size()) {
+                    mutable int best = a;
+                    mutable int b = a + 1;
+                    while (b < rows.size()) {
+                        if (Editor.caretAfter(rows.get(b), cols.get(b), rows.get(best), cols.get(best))) {
+                            best = b;
+                        }
+                        b = b + 1;
+                    }
+                    if (best != a) {
+                        Editor.swapInt(rows, a, best);
+                        Editor.swapInt(cols, a, best);
+                        Editor.swapInt(prim, a, best);
+                    }
+                    a = a + 1;
+                }
+                // apply at each caret, recording the new position
+                mutable int k = 0;
+                while (k < rows.size()) {
+                    this.row = rows.get(k);
+                    this.col = cols.get(k);
+                    this.hasSel = false;
+                    if (op == 0) {
+                        this.typeWithPairs(ch);
+                    } else if (op == 1) {
+                        this.backspace();
+                    } else {
+                        this.enter();
+                    }
+                    rows.set(k, this.row);
+                    cols.set(k, this.col);
+                    k = k + 1;
+                }
+                // scatter back: the tagged entry is the primary, the rest become secondaries
+                this.extraRows = new ArrayList<int>() on heap;
+                this.extraCols = new ArrayList<int>() on heap;
+                mutable int j = 0;
+                while (j < rows.size()) {
+                    if (prim.get(j) == 1) {
+                        this.row = rows.get(j);
+                        this.col = cols.get(j);
+                    } else {
+                        this.extraRows.add(rows.get(j));
+                        this.extraCols.add(cols.get(j));
+                    }
+                    j = j + 1;
+                }
+                this.suppressUndo = false;
+            }
+            private static method caretAfter(int r1, int c1, int r2, int c2) returns boolean {
+                if (r1 > r2) {
+                    return true;
+                }
+                if (r1 < r2) {
+                    return false;
+                }
+                return c1 > c2;
+            }
+            private static method swapInt(ArrayList<int>* xs, int i, int j) returns void {
+                int t = xs.get(i);
+                xs.set(i, xs.get(j));
+                xs.set(j, t);
             }
 
             public method type(char c) returns void {
@@ -577,14 +779,46 @@ public bundle forge {
                 this.col = this.buf.line(this.row).length();
             }
 
-            public method moveLeft()  returns void { this.clearSelection(); this.rawLeft(); }
-            public method moveRight() returns void { this.clearSelection(); this.rawRight(); }
-            public method moveUp()    returns void { this.clearSelection(); this.rawUp(); }
-            public method moveDown()  returns void { this.clearSelection(); this.rawDown(); }
-            public method moveLineStart() returns void { this.clearSelection(); this.rawLineStart(); }
-            public method moveLineEnd()   returns void { this.clearSelection(); this.rawLineEnd(); }
-            public method moveDocStart()  returns void { this.clearSelection(); this.rawDocStart(); }
-            public method moveDocEnd()    returns void { this.clearSelection(); this.rawDocEnd(); }
+            public method moveLeft() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawLeft();
+            }
+            public method moveRight() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawRight();
+            }
+            public method moveUp() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawUp();
+            }
+            public method moveDown() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawDown();
+            }
+            public method moveLineStart() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawLineStart();
+            }
+            public method moveLineEnd() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawLineEnd();
+            }
+            public method moveDocStart() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawDocStart();
+            }
+            public method moveDocEnd() returns void {
+                this.clearSelection();
+                this.clearExtraCarets();
+                this.rawDocEnd();
+            }
 
             public method selectLeft()  returns void { this.anchorSelection(); this.rawLeft(); }
             public method selectRight() returns void { this.anchorSelection(); this.rawRight(); }

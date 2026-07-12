@@ -441,6 +441,16 @@ public bundle forge {
                     int cx = textX + c.caretScreenCol() * cw;
                     batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
                 }
+                // secondary carets (multi-cursor)
+                mutable int mc = 0;
+                while (mc < c.extraCaretCount()) {
+                    int esr = c.extraCaretScreenRow(mc);
+                    if (esr >= 0 && esr < visible && this.caretOn) {
+                        int ex = textX + c.extraCaretScreenCol(mc) * cw;
+                        batch.rect(ex, oy + this.topPad + esr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                    }
+                    mc = mc + 1;
+                }
 
                 // diagnostics (from the last build) for this file: a gutter marker + an underline
                 String base = Paths.basename(c.document().path());

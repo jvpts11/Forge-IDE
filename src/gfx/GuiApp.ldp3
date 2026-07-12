@@ -64,8 +64,8 @@ public bundle forge {
                     // is open, but menu clicks still work because the menu isn't a modal overlay
                     boolean down = win.keyDown(1);   // VK_LBUTTON
                     if (down && !prevDown && !ov.isOpen()) {
-                        GuiApp.handleClick(win, screen, wb, tree, ov, menu);
-                        dragging = GuiApp.overEditor(screen, win, ov, win.height());   // drag began in editor
+                        GuiApp.handleClick(win, screen, wb, tree, ov, menu, win.modAlt());
+                        dragging = GuiApp.overEditor(screen, win, ov, win.height()) && !win.modAlt();
                     } else if (down && prevDown && dragging && !ov.isOpen()) {
                         GuiApp.dragExtend(screen, wb, win);                   // extend the selection
                     }
@@ -106,8 +106,8 @@ public bundle forge {
             }
 
             private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
-                                              Overlay* ov, MenuBar* menu) returns void {
-                GuiApp.clickAt(win, screen, wb, tree, ov, menu, win.cursorX(), win.cursorY());
+                                              Overlay* ov, MenuBar* menu, boolean alt) returns void {
+                GuiApp.clickAt(win, screen, wb, tree, ov, menu, win.cursorX(), win.cursorY(), alt);
                 return;
             }
 
@@ -116,7 +116,7 @@ public bundle forge {
             // pane places the caret. Split out from cursor reading so it can be verified with synthetic
             // coordinates. Menu handling has top priority so its dropdown overlays the rest.
             private static method clickAt(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
-                                          Overlay* ov, MenuBar* menu, int mx, int my) returns void {
+                                          Overlay* ov, MenuBar* menu, int mx, int my, boolean alt) returns void {
                 if (menu.isOpen()) {
                     int item = screen.dropdownItemAt(menu, mx, my);
                     if (item >= 0) {
@@ -162,7 +162,11 @@ public bundle forge {
                 }
                 mutable int col = (mx - screen.textOx()) / screen.charW();
                 if (col < 0) { col = 0; }
-                c.beginSelect(c.lineNumberAt(screenRow), c.firstColumn() + col);   // anchor a drag selection
+                if (alt) {
+                    c.addCaretAt(c.lineNumberAt(screenRow), c.firstColumn() + col);   // Alt+click adds a caret
+                } else {
+                    c.beginSelect(c.lineNumberAt(screenRow), c.firstColumn() + col);  // anchor a drag selection
+                }
                 return;
             }
 
@@ -260,8 +264,13 @@ public bundle forge {
                 } else if (cmd.equals("click")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
-                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, rx.toInt(), ry.toInt());
+                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, rx.toInt(), ry.toInt(), false);
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("altclick")) {
+                    String rx = GuiApp.firstWord(arg);
+                    String ry = GuiApp.rest(arg);
+                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, rx.toInt(), ry.toInt(), true);
+                    System.IO.Console.println("ok carets=" + (wb.active().extraCaretCount() + 1).toString());
                 } else if (cmd.equals("dragto")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
@@ -387,6 +396,8 @@ public bundle forge {
                         ov.close();
                     }
                 } else if (comp.active && GuiApp.completionKey(comp, wb, vk)) {
+                    return;
+                } else if (GuiApp.caretHotkey(wb, vk, ctrl, shift, alt)) {
                     return;
                 } else {
                     GuiApp.dispatchKey(wb, vk, ctrl, shift, alt);
@@ -514,6 +525,8 @@ public bundle forge {
                         wb.active().toggleFoldAtCaret();
                     } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
                         ov.open(2);
+                    } else if (e.isKey() && GuiApp.caretHotkey(wb, e.vk, ctrl, shift, alt)) {
+                        // consumed by a multi-cursor hotkey (Ctrl+Alt+Up/Down add a caret; Esc collapses)
                     } else if (e.isChar()) {
                         // Accept a printable character. Reject it only for a real Ctrl shortcut (Ctrl without
                         // Alt); AltGr, which Windows reports as Ctrl+Alt, produces printable chars like { } [ ]
@@ -537,6 +550,25 @@ public bundle forge {
                 if (vk == 27) { comp.dismiss(); return true; }                        // Esc
                 if (vk == 40) { comp.moveSel(1); return true; }                       // Down
                 if (vk == 38) { comp.moveSel(0 - 1); return true; }                   // Up
+                return false;
+            }
+
+            // Multi-cursor hotkeys: Ctrl+Alt+Down/Up add a secondary caret below/above; Esc collapses back to
+            // one when there are extras. Returns true if it consumed the key.
+            private static method caretHotkey(Workbench* wb, int vk, boolean ctrl, boolean shift, boolean alt)
+                    returns boolean {
+                if (ctrl && alt && vk == 40) {
+                    wb.active().addCaretBelow();
+                    return true;
+                }
+                if (ctrl && alt && vk == 38) {
+                    wb.active().addCaretAbove();
+                    return true;
+                }
+                if (vk == 27 && wb.active().hasMultipleCarets()) {
+                    wb.active().clearExtraCarets();
+                    return true;
+                }
                 return false;
             }
 
