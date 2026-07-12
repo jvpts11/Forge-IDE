@@ -55,10 +55,13 @@ public bundle forge {
                 String treeRoot = GuiApp.treeRootFor(ws);
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
                                                       GuiApp.fileToOpenFor(ws));
-                FileTree* tree = new FileTree(treeRoot) on heap;
+                mutable FileTree* tree = new FileTree(treeRoot) on heap;
+                // No project yet? Show the welcome screen instead of an editor over the launch directory.
+                mutable boolean workspaceOpen = ws.length() > 0;
                 if (ws.length() > 0) {
                     WorkspaceStore.addRecent(treeRoot);
                 }
+                mutable ArrayList<String>* recent = WorkspaceStore.loadRecent();
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 MenuBar* menu = new MenuBar() on heap;
@@ -69,6 +72,34 @@ public bundle forge {
                 mutable int blink = 0;
                 while (win.isOpen()) {
                     win.pump();
+                    if (!workspaceOpen) {
+                        boolean wdown = win.keyDown(1);
+                        if (wdown && !prevDown) {
+                            int hit = screen.welcomeHit(win.cursorX(), win.cursorY(), recent.size(), win.width());
+                            if (hit == 0 - 2) {
+                                String picked = NativeDialog.pickFolder(win.hwnd, "Open a project folder");
+                                if (picked.length() > 0) {
+                                    tree = new FileTree(picked) on heap;
+                                    WorkspaceStore.addRecent(picked);
+                                    workspaceOpen = true;
+                                }
+                            } else if (hit == 0 - 3) {
+                                tree = new FileTree(".") on heap;
+                                workspaceOpen = true;
+                            } else if (hit >= 0) {
+                                String p = recent.get(hit);
+                                tree = new FileTree(p) on heap;
+                                WorkspaceStore.addRecent(p);
+                                workspaceOpen = true;
+                            }
+                        }
+                        prevDown = wdown;
+                        win.setIBeam(false);
+                        GuiApp.drawWelcomeFrame(win, batch, screen, recent);
+                        win.swap();
+                        win.sleep(8);
+                        continue;
+                    }
                     GuiApp.processInput(win, wb, ov, comp, menu);
                     // left click -> menu bar / tab / tree / caret (edge-triggered); ignored while an overlay
                     // is open, but menu clicks still work because the menu isn't a modal overlay
@@ -338,6 +369,15 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
+                } else if (cmd.equals("welcomeshot")) {
+                    GuiApp.drawWelcomeFrame(win, batch, screen, WorkspaceStore.loadRecent());
+                    Wgl.glFinish();
+                    int w = win.width();
+                    int h = win.height();
+                    byte[] px = win.gl.readPixelsRgb(0, 0, w, h);
+                    GuiApp.writePpm(arg, px, w, h);
+                    win.swap();
+                    System.IO.Console.println("welcomeshot " + arg);
                 } else if (cmd.equals("recent")) {
                     ArrayList<String>* r = WorkspaceStore.loadRecent();
                     mutable String s = "";
@@ -799,6 +839,20 @@ public bundle forge {
                 screen.drawMenuBar(batch, menu, w);
                 screen.drawMenuDropdown(batch, menu);
                 if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
+                batch.flush();
+                return;
+            }
+
+            // One frame of the welcome / start screen (shown until a project is opened).
+            private static method drawWelcomeFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen,
+                                                   ArrayList<String>* recent) returns void {
+                int w = win.width();
+                int h = win.height();
+                Wgl.glViewport(0, 0, w, h);
+                Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);
+                Wgl.glClear(16384);
+                batch.begin(w, h, screen.fontTexture());
+                screen.drawWelcome(batch, recent, w, h);
                 batch.flush();
                 return;
             }

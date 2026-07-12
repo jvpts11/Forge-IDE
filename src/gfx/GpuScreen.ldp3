@@ -147,6 +147,73 @@ public bundle forge {
                 }
             }
 
+            // The start screen shown when no project is open: the Forge banner, Open Folder / New File
+            // actions, and the list of recent projects to click. Layout is mirrored by welcomeHit.
+            public method drawWelcome(Batch2D* batch, ArrayList<String>* recent, int screenW, int screenH)
+                    returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(0, 0, screenW, screenH, 0.051, 0.102, 0.114, 1.0);
+                int x0 = screenW / 2 - 240;
+                this.font.drawText(batch, x0, 96, "Forge", 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, x0 + 6 * cw, 96, "the LDP3 IDE", 0.502, 0.588, 0.584, 1.0);
+                int btnH = ch + 18;
+                // Open Folder
+                batch.rect(x0, 150, 230, btnH, 0.063, 0.106, 0.114, 1.0);
+                batch.rect(x0, 150, 3, btnH, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, x0 + 14, 150 + 9, "Open Folder...", 0.804, 0.851, 0.843, 1.0);
+                // New File
+                batch.rect(x0 + 250, 150, 230, btnH, 0.063, 0.106, 0.114, 1.0);
+                batch.rect(x0 + 250, 150, 3, btnH, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, x0 + 264, 150 + 9, "New File", 0.804, 0.851, 0.843, 1.0);
+                // recent list
+                int hdrY = 150 + btnH + 26;
+                this.font.drawText(batch, x0, hdrY, "RECENT PROJECTS", 0.376, 0.478, 0.475, 1.0);
+                int rowH = ch + 10;
+                int listTop = hdrY + ch + 10;
+                mutable int i = 0;
+                while (i < recent.size() && i < 12) {
+                    int ry = listTop + i * rowH;
+                    String path = recent.get(i);
+                    String name = Paths.basename(path);
+                    this.font.drawText(batch, x0 + 4, ry, name, 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, x0 + 4 + (name.length() + 2) * cw, ry, path,
+                                       0.376, 0.478, 0.475, 1.0);
+                    i = i + 1;
+                }
+                if (recent.size() == 0) {
+                    this.font.drawText(batch, x0 + 4, listTop, "(none yet -- open a folder to begin)",
+                                       0.376, 0.478, 0.475, 1.0);
+                }
+            }
+            // Which welcome control is under (mx, my): -2 = Open Folder, -3 = New File, 0..n = a recent index,
+            // -1 = nothing.
+            public method welcomeHit(int mx, int my, int recentCount, int screenW) returns int {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int x0 = screenW / 2 - 240;
+                int btnH = ch + 18;
+                if (my >= 150 && my < 150 + btnH) {
+                    if (mx >= x0 && mx < x0 + 230) {
+                        return 0 - 2;
+                    }
+                    if (mx >= x0 + 250 && mx < x0 + 480) {
+                        return 0 - 3;
+                    }
+                    return 0 - 1;
+                }
+                int hdrY = 150 + btnH + 26;
+                int rowH = ch + 10;
+                int listTop = hdrY + ch + 10;
+                if (mx >= x0 && mx < x0 + 480 && my >= listTop) {
+                    int idx = (my - listTop) / rowH;
+                    if (idx >= 0 && idx < recentCount) {
+                        return idx;
+                    }
+                }
+                return 0 - 1;
+            }
+
             // The top menu bar (File / Edit / View / Run / Help). Drawn on top of the frame so the open menu's
             // title can highlight; the dropdown itself is drawn separately by drawMenuDropdown.
             public method drawMenuBar(Batch2D* batch, MenuBar* mb, int screenW) returns void {

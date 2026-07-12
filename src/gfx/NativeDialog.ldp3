@@ -1,0 +1,59 @@
+import System.Memory;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Win32 shell entry points for the folder picker.
+        public class Shell {
+            public extern stdcall static method SHBrowseForFolderA(long bi) returns long;
+            public extern stdcall static method SHGetPathFromIDListA(long pidl, address buf) returns int;
+        }
+        public class Ole {
+            public extern stdcall static method CoInitialize(long reserved) returns int;
+            public extern stdcall static method CoTaskMemFree(long p) returns void;
+        }
+
+        // A native "choose a folder" dialog, so the user opens a project with the OS picker they know. Returns
+        // the chosen directory, or "" if cancelled. Marshals a BROWSEINFOA (64 bytes on x64) by hand.
+        public class NativeDialog {
+            public static method pickFolder(long hwnd, String title) returns String {
+                Ole.CoInitialize(0);
+                address bi = Memory.alloc(64);
+                mutable int k = 0;
+                while (k < 64) {
+                    Memory.write<byte>(bi + cast<address>(k), cast<byte>(0));
+                    k = k + 1;
+                }
+                address nameBuf = Memory.alloc(260);
+                address titleBuf = Memory.alloc(cast<long>(title.length() + 1));
+                Memory.writeString(titleBuf, title);
+                Memory.write<long>(bi + cast<address>(0), hwnd);                    // hwndOwner
+                Memory.write<long>(bi + cast<address>(16), cast<long>(nameBuf));    // pszDisplayName
+                Memory.write<long>(bi + cast<address>(24), cast<long>(titleBuf));   // lpszTitle
+                // BIF_RETURNONLYFSDIRS | BIF_EDITBOX | BIF_NEWDIALOGSTYLE
+                Memory.write<int>(bi + cast<address>(32), 0x51);
+                long pidl = Shell.SHBrowseForFolderA(cast<long>(bi));
+                mutable String result = "";
+                if (pidl != 0) {
+                    address pathBuf = Memory.alloc(260);
+                    int ok = Shell.SHGetPathFromIDListA(pidl, pathBuf);
+                    if (ok != 0) {
+                        mutable int slen = 0;
+                        while (slen < 260 && Memory.read<byte>(pathBuf + cast<address>(slen)) != cast<byte>(0)) {
+                            slen = slen + 1;
+                        }
+                        result = Memory.readString(pathBuf, slen);
+                    }
+                    Memory.free(pathBuf);
+                    Ole.CoTaskMemFree(pidl);
+                }
+                Memory.free(bi);
+                Memory.free(nameBuf);
+                Memory.free(titleBuf);
+                return result;
+            }
+        }
+    }
+}
