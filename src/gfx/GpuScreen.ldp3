@@ -17,6 +17,7 @@ import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
 import syntax.Span;
+import editor.Match;
 import System.Collections.ArrayList;
 import System.IO.Paths;
 
@@ -407,6 +408,15 @@ public bundle forge {
                     r = r + 1;
                 }
 
+                // matching-bracket highlight (both the bracket at the caret and its partner)
+                Match* bm = c.editor().matchingBracket();
+                if (bm.valid()) {
+                    this.drawBracketCell(batch, bm.row, bm.col, textX, oy, cw, ch, visible, firstLine);
+                    int cr = c.editor().cursorRow();
+                    int bcol = this.caretBracketCol(c, cr, c.editor().cursorCol());
+                    if (bcol >= 0) { this.drawBracketCell(batch, cr, bcol, textX, oy, cw, ch, visible, firstLine); }
+                }
+
                 int ccr = c.caretScreenRow();
                 if (ccr >= 0 && ccr < visible && this.caretOn) {
                     int cx = textX + c.caretScreenCol() * cw;
@@ -526,6 +536,29 @@ public bundle forge {
                     }
                     r = r + 1;
                 }
+            }
+            // Draw a subtle boxed cell around a matched bracket at document (row, col).
+            private method drawBracketCell(Batch2D* batch, int row, int col, int textX, int oy, int cw, int ch,
+                                           int visible, int firstLine) returns void {
+                int sr = row - firstLine;
+                if (sr < 0 || sr >= visible) { return; }
+                int x = textX + col * cw;
+                int y = oy + this.topPad + sr * ch;
+                batch.rect(x, y, cw, ch, 0.549, 0.784, 0.624, 0.16);
+                batch.rect(x, y, cw, 1, 0.549, 0.784, 0.624, 0.85);
+                batch.rect(x, y + ch - 1, cw, 1, 0.549, 0.784, 0.624, 0.85);
+                batch.rect(x, y, 1, ch, 0.549, 0.784, 0.624, 0.85);
+                batch.rect(x + cw - 1, y, 1, ch, 0.549, 0.784, 0.624, 0.85);
+            }
+            // The column of the bracket the caret sits on/after (-1 if none) -- mirrors Editor.matchingBracket.
+            private method caretBracketCol(Controller* c, int row, int col) returns int {
+                String line = c.editor().document().line(row);
+                if (col < line.length() && this.isBracket(line.charAt(col))) { return col; }
+                if (col > 0 && this.isBracket(line.charAt(col - 1))) { return col - 1; }
+                return 0 - 1;
+            }
+            private method isBracket(char ch) returns boolean {
+                return ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}';
             }
             private method matchAt(String line, String q, int pos) returns boolean {
                 int m = q.length();

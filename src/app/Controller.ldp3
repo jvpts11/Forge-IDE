@@ -1,6 +1,7 @@
 import System.Collections.ArrayList;
 import editor.Editor;
 import editor.TextBuffer;
+import editor.Match;
 import view.Viewport;
 import syntax.Highlighter;
 import syntax.Span;
@@ -119,6 +120,8 @@ public bundle forge {
                 this.moved();
             }
             public method selectAll() returns void { this.ed.selectAll(); this.moved(); }
+            // The bracket that pairs with the one at/near the caret (invalid Match if none) -- for highlighting.
+            public method matchingBracket() returns Match* { return this.ed.matchingBracket(); }
 
             // Mouse: place the caret at a document position (a hit-test result).
             public method placeCaret(int row, int col) returns void { this.ed.setCaret(row, col); this.moved(); }
