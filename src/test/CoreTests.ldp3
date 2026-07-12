@@ -15,6 +15,7 @@ import app.Controller;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
+import app.Workbench;
 import input.Key;
 import input.KeyCode;
 import input.KeyMap;
@@ -482,6 +483,25 @@ public bundle forge {
                 a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
                 a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
                 a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
+
+                // --- workbench: application root (keys + palette commands over tabs) ---
+                Workbench wb = new Workbench(24, 80) on heap;
+                a.eqInt(wb.documents().count(), 1, "wb.starts-with-one");
+                a.eqBool(wb.documents().hasActive(), true, "wb.has-active");
+                wb.handleKey(Key.ch('h'));
+                wb.handleKey(Key.ch('i'));
+                a.eqStr(wb.active().editor().document().line(0), "hi", "wb.type");
+                wb.runCommand("edit.duplicateLine");
+                a.eqInt(wb.active().editor().document().lineCount(), 2, "wb.dupline-count");
+                a.eqStr(wb.active().editor().document().line(1), "hi", "wb.dupline-content");
+                wb.runCommand("file.new");
+                a.eqInt(wb.documents().count(), 2, "wb.new-tab");
+                wb.handleKey(Key.ch('x'));
+                a.eqStr(wb.active().editor().document().line(0), "x", "wb.type-new-tab");
+                wb.runCommand("edit.undo");
+                a.eqStr(wb.active().editor().document().line(0), "", "wb.undo-cmd");
+                a.eqBool(wb.runCommand("edit.selectAll"), true, "wb.selectall-cmd");
+                a.eqBool(wb.runCommand("bogus.cmd"), false, "wb.unknown-cmd");
 
                 a.summary("editor tests");
                 return a.failCount();

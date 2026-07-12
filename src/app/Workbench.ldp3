@@ -1,0 +1,57 @@
+import editor.Editor;
+import app.Controller;
+import app.DocumentManager;
+import app.CommandRegistry;
+import input.Key;
+import input.KeyMap;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // The application root: the open documents, the command registry, and the key map, tied together.
+        // The GUI (or terminal) shell instantiates one Workbench, feeds it key events (handleKey) and
+        // palette selections (runCommand), and renders the active document's Controller. Nothing here is
+        // graphical, so the whole application logic is unit-testable. The project file tree is a separate
+        // panel the shell owns; it is not part of the core Workbench state.
+        public class Workbench {
+            private mutable DocumentManager* docs;
+            private mutable CommandRegistry* commands;
+            private mutable KeyMap* keymap;
+
+            public constructor Workbench(int rows, int cols) {
+                this.docs = new DocumentManager(rows, cols) on heap;
+                this.commands = new CommandRegistry() on heap;
+                this.keymap = new KeyMap() on heap;
+                this.docs.openNew();               // start on one empty document
+            }
+
+            public method documents() returns DocumentManager* { return this.docs; }
+            public method registry() returns CommandRegistry* { return this.commands; }
+            public method active() returns Controller* { return this.docs.active(); }
+            public method openFile(String path) returns Controller* { return this.docs.openFile(path); }
+
+            // Feed a decoded key to the active document's editor. Returns whether it was handled.
+            public method handleKey(Key* k) returns boolean {
+                if (!this.docs.hasActive()) { return false; }
+                return this.keymap.dispatch(this.docs.active(), k);
+            }
+
+            // Run a palette command by id. Handles the argument-free commands; commands that need input
+            // (open/save-as a path, find/replace a term) are dispatched by the shell with their arguments,
+            // so this returns false for them. Returns whether the id was handled here.
+            public method runCommand(String id) returns boolean {
+                if (id.equals("file.new")) { this.docs.openNew(); return true; }
+                if (!this.docs.hasActive()) { return false; }
+                Controller* c = this.docs.active();
+                if (id.equals("file.save")) { c.save(); return true; }
+                if (id.equals("edit.undo")) { c.undo(); return true; }
+                if (id.equals("edit.redo")) { c.redo(); return true; }
+                if (id.equals("edit.selectAll")) { c.selectAll(); return true; }
+                if (id.equals("edit.duplicateLine")) { c.duplicateLine(); return true; }
+                return false;
+            }
+        }
+    }
+}
