@@ -3,6 +3,7 @@ import gl.Wgl;
 import glfw.GlWindow;
 import gltext.GdiFont;
 import gltext.FontAtlas;
+import app.Workbench;
 import System.IO.Console;
 import System.IO.File;
 import System.Text.StringBuilder;
@@ -13,8 +14,9 @@ public bundle forge {
     public namespace gfx {
 
         // The graphics front-end: opens a real OpenGL window, loads the Consolas glyph atlas onto the GPU,
-        // and runs the frame loop that draws the editor. run() is the live interactive window; shot()
-        // renders one frame to a PPM for offscreen verification. This slice draws sample text.
+        // builds the editor Workbench sized to the window, and runs the frame loop that draws the document
+        // through GpuScreen. run() is the live interactive window; shot() renders one frame to a PPM for
+        // offscreen verification.
         public class GuiApp {
             public static method run() returns void {
                 GlWindow* win = new GlWindow() on heap;
@@ -23,11 +25,13 @@ public bundle forge {
                     return;
                 }
                 win.setVSync(1);
-                Font* font = GuiApp.loadFont(win, 20);
+                Font* font = GuiApp.loadFont(win, 18);
                 Batch2D* batch = new Batch2D(win.gl) on heap;
+                GpuScreen* screen = new GpuScreen(font) on heap;
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 while (win.isOpen()) {
                     win.pump();
-                    GuiApp.drawFrame(win, batch, font);
+                    GuiApp.drawFrame(win, batch, screen, wb);
                     win.swap();
                     win.sleep(8);
                 }
@@ -40,10 +44,12 @@ public bundle forge {
                     System.IO.Console.printf("Forge: could not open a GL 4.6 window\n");
                     return;
                 }
-                Font* font = GuiApp.loadFont(win, 20);
+                Font* font = GuiApp.loadFont(win, 18);
                 Batch2D* batch = new Batch2D(win.gl) on heap;
+                GpuScreen* screen = new GpuScreen(font) on heap;
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 win.pump();
-                GuiApp.drawFrame(win, batch, font);
+                GuiApp.drawFrame(win, batch, screen, wb);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -54,30 +60,39 @@ public bundle forge {
                 return;
             }
 
-            // Rasterize the Consolas atlas and upload it as a GL texture, wrapped in a Font.
             private static method loadFont(GlWindow* win, int px) returns Font* {
                 FontAtlas atlas = GdiFont.rasterizeAscii("Consolas", px);
                 int tex = win.gl.uploadRGBA(atlas.pixels, atlas.atlasW, atlas.atlasH);
                 return new Font(atlas, tex) on heap;
             }
 
-            // One frame: clear to the Forge ground, then draw sample text (G2).
-            private static method drawFrame(GlWindow* win, Batch2D* batch, Font* font) returns void {
+            // Build the editor with a viewport sized to the window's code area, and open a sample document.
+            private static method buildWorkbench(GpuScreen* screen, int w, int h) returns Workbench* {
+                int rows = screen.rowsFor(h);
+                int cols = screen.colsFor(w);
+                Workbench* wb = new Workbench(rows, cols) on heap;
+                wb.active().insertText(GuiApp.sample());
+                wb.active().moveDocStart(false);
+                return wb;
+            }
+
+            // One frame: clear to the Forge ground, then draw the active document.
+            private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb)
+                    returns void {
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);
                 Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);   // #0d1a1d
                 Wgl.glClear(16384);   // GL_COLOR_BUFFER_BIT
 
-                batch.begin(w, h, font.texture());
-                int lh = font.lineHeight();
-                font.drawText(batch, 24, 24, "Forge -- the LDP3 IDE", 0.918, 0.706, 0.392, 1.0);
-                font.drawText(batch, 24, 24 + lh, "rendered on the GPU via ldp3-opengl", 0.804, 0.851, 0.843, 1.0);
-                font.drawText(batch, 24, 24 + lh * 3, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0.475, 0.698, 0.729, 1.0);
-                font.drawText(batch, 24, 24 + lh * 4, "abcdefghijklmnopqrstuvwxyz 0123456789", 0.475, 0.698, 0.729, 1.0);
-                font.drawText(batch, 24, 24 + lh * 5, "{ } ( ) [ ] < > + - * / = ! & | ^ ~ ;", 0.561, 0.780, 0.624, 1.0);
+                batch.begin(w, h, screen.fontTexture());
+                screen.draw(batch, wb.active(), w, h);
                 batch.flush();
                 return;
+            }
+
+            private static method sample() returns String {
+                return "program Demo;\n\npublic bundle app {\n    public namespace demo {\n        // A tiny sample rendered by Forge itself.\n        public class Counter {\n            private mutable int value;\n\n            public constructor Counter(int start) {\n                this.value = start;\n            }\n\n            public method increment() returns void {\n                this.value = this.value + 1;\n            }\n\n            public method get() returns int {\n                return this.value;\n            }\n        }\n    }\n}";
             }
 
             // Write an RGB byte buffer as an ASCII P3 PPM, flipped in Y (GL's origin is bottom-left).

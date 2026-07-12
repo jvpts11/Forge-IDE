@@ -1,0 +1,58 @@
+import gfx.Batch2D;
+import gfx.Font;
+import app.Controller;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Draws an editor Controller's visible state on the GPU -- the graphical counterpart of the text
+        // ScreenRenderer. It reads the same render queries (visibleRows/lineNumberAt/renderLine, and later
+        // the spans, caret and selection) and paints them as Batch2D quads. This slice draws the gutter,
+        // right-aligned line numbers, and the code text of every visible line, monospace-aligned. It owns no
+        // model state; the caller passes the active Controller each frame.
+        public class GpuScreen {
+            private mutable Font* font;
+            private mutable int gutterChars;
+            private mutable int topPad;
+
+            public constructor GpuScreen(Font* font) {
+                this.font = font;
+                this.gutterChars = 6;
+                this.topPad = 8;
+            }
+
+            // The gutter width, and the viewport size (rows/cols) that fit the code area of a pixel window,
+            // so the caller can size the Controller's viewport to match what is drawn.
+            public method fontTexture() returns int { return this.font.texture(); }
+            public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
+            public method rowsFor(int screenH) returns int {
+                return (screenH - this.topPad) / this.font.lineHeight();
+            }
+            public method colsFor(int screenW) returns int {
+                return (screenW - this.gutterPx() - 8) / this.font.advance();
+            }
+
+            public method draw(Batch2D* batch, Controller* c, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int gpx = this.gutterPx();
+
+                // gutter background band
+                batch.rect(0, 0, gpx, screenH, 0.039, 0.078, 0.086, 1.0);
+
+                int visible = c.visibleRows();
+                mutable int r = 0;
+                while (r < visible) {
+                    int y = this.topPad + r * ch;
+                    String num = (c.lineNumberAt(r) + 1).toString();
+                    int nx = gpx - 8 - num.length() * cw;
+                    this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);   // gutter fg
+                    this.font.drawText(batch, gpx + 6, y, c.renderLine(r), 0.804, 0.851, 0.843, 1.0);
+                    r = r + 1;
+                }
+            }
+        }
+    }
+}
