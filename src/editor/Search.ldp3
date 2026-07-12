@@ -1,0 +1,106 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // One hit of a search needle in the buffer: the line, the starting column, and the match length
+        // (equal to the needle's length for plain text). Positions are 0-based into the buffer.
+        public class Match {
+            public mutable int row;
+            public mutable int col;
+            public mutable int length;
+            public constructor Match(int row, int col, int length) {
+                this.row = row;
+                this.col = col;
+                this.length = length;
+            }
+            // A negative row is the "no match" sentinel (findNext/findPrev return one instead of null, so
+            // callers never deref a nullable). valid() distinguishes a real hit from the sentinel.
+            public method valid() returns boolean { return this.row >= 0; }
+        }
+
+        // Plain-text search over a TextBuffer. Case-sensitive by default; setCaseSensitive(false) folds both
+        // sides to lower case. It does not own the buffer -- the Editor passes its own. Matches never span a
+        // line break (an IDE search is line-oriented) and never overlap (the scan advances past each hit).
+        public class Search {
+            private mutable TextBuffer* buf;
+            private mutable boolean caseSensitive;
+
+            public constructor Search(TextBuffer* buf) {
+                this.buf = buf;
+                this.caseSensitive = true;
+            }
+            public method setCaseSensitive(boolean enabled) returns void { this.caseSensitive = enabled; }
+            public method isCaseSensitive() returns boolean { return this.caseSensitive; }
+
+            // First index of `needle` in `hay` at or after `from`, by a plain forward scan. -1 if none.
+            // Both strings are assumed already case-folded by the caller.
+            private method indexIn(String hay, String needle, int from) returns int {
+                int n = hay.length();
+                int m = needle.length();
+                if (m == 0) { return -1; }
+                mutable int i = from;
+                while (i + m <= n) {
+                    mutable int j = 0;
+                    while (j < m && hay.charAt(i + j) == needle.charAt(j)) { j = j + 1; }
+                    if (j == m) { return i; }
+                    i = i + 1;
+                }
+                return -1;
+            }
+
+            private method fold(String s) returns String {
+                if (this.caseSensitive) { return s; }
+                return s.toLower();
+            }
+
+            // Every match, top-to-bottom then left-to-right. Empty needle yields an empty list.
+            public method findAll(String needle) returns ArrayList<Match>* {
+                ArrayList<Match>* out = new ArrayList<Match>() on heap;
+                if (needle.length() == 0) { return out; }
+                String pat = this.fold(needle);
+                int len = needle.length();
+                for (mutable int r = 0; r < this.buf.lineCount(); r++) {
+                    String hay = this.fold(this.buf.line(r));
+                    mutable int hit = this.indexIn(hay, pat, 0);
+                    while (hit >= 0) {
+                        out.add(new Match(r, hit, len) on heap);
+                        hit = this.indexIn(hay, pat, hit + len);
+                    }
+                }
+                return out;
+            }
+
+            public method count(String needle) returns int { return this.findAll(needle).size(); }
+
+            private method noMatch() returns Match* { return new Match(-1, -1, 0) on heap; }
+
+            // The first match at or after (row, col), wrapping to the top when none is below. Returns the
+            // no-match sentinel (valid() == false) when there are no matches at all. "At or after" (not
+            // "strictly after") so a caret sitting on a match finds it; the Editor parks the caret past the
+            // match after a find, so repeated find-next still walks forward.
+            public method findNext(String needle, int row, int col) returns Match* {
+                ArrayList<Match>* all = this.findAll(needle);
+                if (all.size() == 0) { return this.noMatch(); }
+                for (mutable int i = 0; i < all.size(); i++) {
+                    Match* m = all.get(i);
+                    if (m.row > row || (m.row == row && m.col >= col)) { return m; }
+                }
+                return all.get(0);
+            }
+
+            // The last match strictly before (row, col), wrapping to the bottom when none is above.
+            public method findPrev(String needle, int row, int col) returns Match* {
+                ArrayList<Match>* all = this.findAll(needle);
+                if (all.size() == 0) { return this.noMatch(); }
+                for (mutable int i = all.size() - 1; i >= 0; i--) {
+                    Match* m = all.get(i);
+                    if (m.row < row || (m.row == row && m.col < col)) { return m; }
+                }
+                return all.get(all.size() - 1);
+            }
+        }
+    }
+}

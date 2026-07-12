@@ -159,6 +159,41 @@ public bundle forge {
                 el.dedent();
                 a.eqStr(el.document().line(1), "two", "line.dedent");
 
+                // --- find / replace (plain text) ---
+                Editor ef = new Editor(new TextBuffer() on heap) on heap;
+                ef.document().loadText("foo bar foo\nbaz foo\nqux");
+                a.eqInt(ef.matchCount("foo"), 3, "find.count");
+                a.eqInt(ef.matchCount("nope"), 0, "find.count-none");
+                a.eqBool(ef.find("foo"), true, "find.first");     // (0,0) -> caret (0,3), selected
+                a.eqInt(ef.cursorRow(), 0, "find.first-row");
+                a.eqInt(ef.cursorCol(), 3, "find.first-col");
+                a.eqStr(ef.selectionText(), "foo", "find.first-sel");
+                ef.find("foo");                                    // (0,8) -> caret (0,11)
+                a.eqInt(ef.cursorCol(), 11, "find.second-col");
+                ef.find("foo");                                    // (1,4) -> caret (1,7)
+                a.eqInt(ef.cursorRow(), 1, "find.third-row");
+                a.eqInt(ef.cursorCol(), 7, "find.third-col");
+                ef.find("foo");                                    // wraps to (0,0)
+                a.eqInt(ef.cursorRow(), 0, "find.wrap-row");
+                a.eqInt(ef.cursorCol(), 3, "find.wrap-col");
+                a.eqBool(ef.find("zzz"), false, "find.miss");
+
+                Editor er = new Editor(new TextBuffer() on heap) on heap;
+                er.document().loadText("a foo b foo\nfoo end");
+                a.eqInt(er.replaceAll("foo", "X"), 3, "replace.count");
+                a.eqStr(er.document().line(0), "a X b X", "replace.l0");
+                a.eqStr(er.document().line(1), "X end", "replace.l1");
+                er.undo();
+                a.eqStr(er.document().line(0), "a foo b foo", "replace.undo");
+
+                Editor eci = new Editor(new TextBuffer() on heap) on heap;
+                eci.document().loadText("Foo FOO foo");
+                a.eqInt(eci.matchCount("foo"), 1, "find.case-sensitive");
+                eci.setSearchCase(false);
+                a.eqInt(eci.matchCount("foo"), 3, "find.case-insensitive");
+                a.eqInt(eci.replaceAll("foo", "x"), 3, "replace.ci-count");
+                a.eqStr(eci.document().line(0), "x x x", "replace.ci-result");
+
                 a.summary("editor tests");
                 return a.failCount();
             }

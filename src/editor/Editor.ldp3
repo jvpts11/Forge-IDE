@@ -17,6 +17,7 @@ public bundle forge {
             private mutable int selCol;
             private mutable boolean hasSel;
             private mutable Clipboard* clip;
+            private mutable Search* search;
             private mutable ArrayList<Snapshot>* undoStack;
             private mutable ArrayList<Snapshot>* redoStack;
 
@@ -28,8 +29,55 @@ public bundle forge {
                 this.selCol = 0;
                 this.hasSel = false;
                 this.clip = new Clipboard() on heap;
+                this.search = new Search(doc) on heap;
                 this.undoStack = new ArrayList<Snapshot>() on heap;
                 this.redoStack = new ArrayList<Snapshot>() on heap;
+            }
+
+            // --- find / replace (plain text, case-sensitivity via setSearchCase) ---
+            public method setSearchCase(boolean caseSensitive) returns void {
+                this.search.setCaseSensitive(caseSensitive);
+            }
+            public method matchCount(String needle) returns int { return this.search.count(needle); }
+
+            // Move to and select the next/previous occurrence of `needle`. Returns false (leaving the caret
+            // put) when there is no match. The match is selected so a following type()/paste() replaces it.
+            public method find(String needle) returns boolean {
+                Match* m = this.search.findNext(needle, this.row, this.col);
+                if (!m.valid()) { return false; }
+                this.selectMatch(m);
+                return true;
+            }
+            public method findPrevious(String needle) returns boolean {
+                Match* m = this.search.findPrev(needle, this.row, this.col);
+                if (!m.valid()) { return false; }
+                this.selectMatch(m);
+                return true;
+            }
+            private method selectMatch(Match* m) returns void {
+                this.selRow = m.row;
+                this.selCol = m.col;
+                this.hasSel = true;
+                this.row = m.row;
+                this.col = m.col + m.length;
+            }
+
+            // Replace every occurrence of `needle` with `replacement`. Returns how many were replaced. One
+            // undo step covers the whole sweep. Applied bottom-up so earlier match columns stay valid.
+            public method replaceAll(String needle, String replacement) returns int {
+                if (needle.length() == 0) { return 0; }
+                ArrayList<Match>* all = this.search.findAll(needle);
+                if (all.size() == 0) { return 0; }
+                this.saveUndo();
+                this.clearSelection();
+                for (mutable int i = all.size() - 1; i >= 0; i--) {
+                    Match* m = all.get(i);
+                    String cur = this.buf.line(m.row);
+                    this.buf.setLine(m.row,
+                        cur.substring(0, m.col) + replacement + cur.substring(m.col + m.length, cur.length()));
+                }
+                this.clampCaret();
+                return all.size();
             }
 
             // --- clipboard: copy/cut the selection, paste at the caret (replacing any selection) ---
@@ -240,6 +288,13 @@ public bundle forge {
             private method clampCol() returns void {
                 int len = this.buf.line(this.row).length();
                 if (this.col > len) { this.col = len; }
+            }
+
+            // Clamp both coordinates back into the buffer after a bulk edit (e.g. replaceAll).
+            private method clampCaret() returns void {
+                if (this.row >= this.buf.lineCount()) { this.row = this.buf.lineCount() - 1; }
+                if (this.row < 0) { this.row = 0; }
+                this.clampCol();
             }
         }
     }
