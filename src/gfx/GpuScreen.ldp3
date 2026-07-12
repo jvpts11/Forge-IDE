@@ -656,6 +656,28 @@ public bundle forge {
                     r = r + 1;
                 }
 
+                // sticky scroll: pin the enclosing class/method headers that scrolled off above the top line,
+                // so you always see what scope the code belongs to. Draws the innermost few over the top rows.
+                ArrayList<int>* sticky = Breadcrumbs.stickyLines(c, firstLine);
+                mutable int sc = sticky.size();
+                if (sc > 3) { sc = 3; }
+                int startIdx = sticky.size() - sc;
+                mutable int s = 0;
+                while (s < sc) {
+                    int hl = sticky.get(startIdx + s);
+                    int sy = oy + this.topPad + s * ch;
+                    batch.rect(ox, sy, pw, ch, 0.075, 0.129, 0.141, 1.0);
+                    String hnum = (hl + 1).toString();
+                    this.font.drawText(batch, ox + gpx - 8 - hnum.length() * cw, sy, hnum,
+                                       0.376, 0.478, 0.475, 1.0);
+                    this.font.drawText(batch, textX, sy, c.editor().document().line(hl),
+                                       0.804, 0.851, 0.843, 1.0);
+                    s = s + 1;
+                }
+                if (sc > 0) {
+                    batch.rect(ox, oy + this.topPad + sc * ch, pw, 1, 0.918, 0.706, 0.392, 0.35);
+                }
+
                 // matching-bracket highlight (both the bracket at the caret and its partner)
                 Match* bm = c.editor().matchingBracket();
                 if (bm.valid()) {
