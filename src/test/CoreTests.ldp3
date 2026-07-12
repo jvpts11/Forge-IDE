@@ -516,6 +516,23 @@ public bundle forge {
                 a.eqBool(screen.get(1).contains("ft_tree.tmp"), true, "screen.tree-col");
                 a.eqBool(screen.get(screen.size() - 1).contains("Ln 1"), true, "screen.status");
 
+                // --- line-comment toggle (single line + multi-line selection) ---
+                Editor cm = new Editor(new TextBuffer() on heap) on heap;
+                cm.document().loadText("    int x = 1;");
+                cm.toggleComment();
+                a.eqStr(cm.document().line(0), "    // int x = 1;", "comment.add");
+                cm.toggleComment();
+                a.eqStr(cm.document().line(0), "    int x = 1;", "comment.remove");
+
+                Editor cm2 = new Editor(new TextBuffer() on heap) on heap;
+                cm2.document().loadText("a\nb\nc");
+                cm2.selectDown(); cm2.selectDown();            // select all three lines
+                cm2.toggleComment();
+                a.eqStr(cm2.document().line(0), "// a", "comment.multi-0");
+                a.eqStr(cm2.document().line(2), "// c", "comment.multi-2");
+                cm2.toggleComment();
+                a.eqStr(cm2.document().line(0), "a", "comment.multi-uncomment");
+
                 a.summary("editor tests");
                 return a.failCount();
             }

@@ -74,6 +74,7 @@ public bundle forge {
                 if (ch == 'y') { c.redo(); return true; }
                 if (ch == 'a') { c.selectAll(); return true; }
                 if (ch == 'd') { c.duplicateLine(); return true; }
+                if (ch == '/') { c.toggleComment(); return true; }
                 return false;
             }
         }

@@ -307,6 +307,49 @@ public bundle forge {
                 this.col = end;
             }
 
+            // --- line-comment toggle (Ctrl+/): comment the caret line, or every line a selection touches.
+            // If every non-blank line in range is already commented, uncomment; otherwise comment. Blank
+            // lines are left alone. The marker is "// " inserted at each line's first non-blank column.
+            private method firstNonBlank(String s) returns int {
+                mutable int i = 0;
+                while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t')) { i = i + 1; }
+                return i;
+            }
+            private method lineIsCommented(String s) returns boolean {
+                int at = this.firstNonBlank(s);
+                return at + 1 < s.length() && s.charAt(at) == '/' && s.charAt(at + 1) == '/';
+            }
+            private method commentLine(int row) returns void {
+                String s = this.buf.line(row);
+                int at = this.firstNonBlank(s);
+                this.buf.setLine(row, s.substring(0, at) + "// " + s.substring(at, s.length()));
+            }
+            private method uncommentLine(int row) returns void {
+                String s = this.buf.line(row);
+                int at = this.firstNonBlank(s);
+                mutable int rm = at + 2;                       // past the "//"
+                if (rm < s.length() && s.charAt(rm) == ' ') { rm = rm + 1; }   // and one space
+                this.buf.setLine(row, s.substring(0, at) + s.substring(rm, s.length()));
+            }
+            public method toggleComment() returns void {
+                this.saveUndo();
+                mutable int a = this.row;
+                mutable int b = this.row;
+                if (this.hasSelection()) { a = this.selMinRow(); b = this.selMaxRow(); }
+                mutable boolean allCommented = true;
+                for (mutable int r = a; r <= b; r++) {
+                    String s = this.buf.line(r);
+                    if (this.firstNonBlank(s) < s.length() && !this.lineIsCommented(s)) {
+                        allCommented = false;
+                    }
+                }
+                for (mutable int r = a; r <= b; r++) {
+                    String s = this.buf.line(r);
+                    if (this.firstNonBlank(s) >= s.length()) { continue; }   // skip blank lines
+                    if (allCommented) { this.uncommentLine(r); } else { this.commentLine(r); }
+                }
+            }
+
             // --- selection ---
             private method anchorSelection() returns void {
                 if (!this.hasSel) {

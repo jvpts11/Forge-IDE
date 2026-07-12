@@ -64,6 +64,7 @@ public bundle forge {
                 if (this.ed.hasSelection()) { this.ed.dedentSelection(); } else { this.ed.dedent(); }
                 this.edited();
             }
+            public method toggleComment() returns void { this.ed.toggleComment(); this.edited(); }
             public method duplicateLine() returns void { this.ed.duplicateLine(); this.edited(); }
             public method deleteLine() returns void { this.ed.deleteLine(); this.edited(); }
             public method moveLineUp() returns void { this.ed.moveLineUp(); this.edited(); }
