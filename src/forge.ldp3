@@ -1,9 +1,13 @@
 import System.IO.Console;
 import System.Collections.ArrayList;
+import System.Collections.HashSet;
 import System.Text.Strings;
 import System.Text.StringBuilder;
 import editor.TextBuffer;
 import editor.Editor;
+import syntax.Tok;
+import syntax.Span;
+import syntax.Highlighter;
 import harness.Asserts;
 
 program Forge;
@@ -176,6 +180,108 @@ public bundle forge {
         }
     }
 
+    public namespace syntax {
+        // Token classes a line is broken into for colouring.
+        public enum Tok { WS, IDENT, KEYWORD, NUMBER, STRING, CHAR, COMMENT, PUNCT }
+
+        // A coloured run over [start, end) of a line.
+        public class Span {
+            public mutable int start;
+            public mutable int end;
+            public mutable Tok kind;
+            public constructor Span(int start, int end, Tok kind) {
+                this.start = start;
+                this.end = end;
+                this.kind = kind;
+            }
+        }
+
+        // A tiny LDP3 tokenizer for syntax highlighting: it tiles a line into Spans (whitespace, comments,
+        // string/char literals, numbers, keywords vs identifiers, punctuation). Line-local -- no multi-line
+        // (block comment / string) state yet; that comes with the incremental highlighter.
+        public class Highlighter {
+            private mutable HashSet<String> keywords;
+
+            public constructor Highlighter() {
+                this.keywords = new HashSet<String>() on heap;
+                String[] kw = new String[74]();
+                kw[0]="program"; kw[1]="bundle"; kw[2]="namespace"; kw[3]="class"; kw[4]="interface";
+                kw[5]="enum"; kw[6]="struct"; kw[7]="record"; kw[8]="union"; kw[9]="catalog";
+                kw[10]="method"; kw[11]="constructor"; kw[12]="destructor"; kw[13]="public"; kw[14]="private";
+                kw[15]="protected"; kw[16]="internal"; kw[17]="static"; kw[18]="abstract"; kw[19]="final";
+                kw[20]="override"; kw[21]="sealed"; kw[22]="permits"; kw[23]="mutable"; kw[24]="var";
+                kw[25]="return"; kw[26]="returns"; kw[27]="if"; kw[28]="else"; kw[29]="while";
+                kw[30]="do"; kw[31]="for"; kw[32]="foreach"; kw[33]="switch"; kw[34]="case";
+                kw[35]="default"; kw[36]="break"; kw[37]="continue"; kw[38]="match"; kw[39]="try";
+                kw[40]="catch"; kw[41]="finally"; kw[42]="throw"; kw[43]="throws"; kw[44]="new";
+                kw[45]="delete"; kw[46]="on"; kw[47]="stack"; kw[48]="heap"; kw[49]="in";
+                kw[50]="region"; kw[51]="unique"; kw[52]="movable"; kw[53]="move"; kw[54]="cascade";
+                kw[55]="defer"; kw[56]="using"; kw[57]="import"; kw[58]="extends"; kw[59]="implements";
+                kw[60]="this"; kw[61]="super"; kw[62]="true"; kw[63]="false"; kw[64]="null";
+                kw[65]="boolean"; kw[66]="char"; kw[67]="int"; kw[68]="long"; kw[69]="void";
+                kw[70]="async"; kw[71]="await"; kw[72]="lambda"; kw[73]="step";
+                for (mutable int i = 0; i < 74; i++) { this.keywords.add(kw[i]); }
+                delete kw;
+            }
+
+            public method isKeyword(String word) returns boolean { return this.keywords.contains(word); }
+
+            private method isDigit(char c) returns boolean { return c >= '0' && c <= '9'; }
+            private method isAlpha(char c) returns boolean {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+            }
+            private method isAlnum(char c) returns boolean { return this.isAlpha(c) || this.isDigit(c); }
+
+            // Break `line` into a complete, gap-free sequence of Spans.
+            public method tokenize(String line) returns ArrayList<Span> {
+                ArrayList<Span> spans = new ArrayList<Span>() on heap;
+                int n = line.length();
+                mutable int i = 0;
+                while (i < n) {
+                    char c = line.charAt(i);
+                    int start = i;
+                    if (c == ' ' || c == '\t') {
+                        while (i < n && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) { i = i + 1; }
+                        spans.add(new Span(start, i, Tok.WS) on heap);
+                    } else if (c == '/' && i + 1 < n && line.charAt(i + 1) == '/') {
+                        spans.add(new Span(start, n, Tok.COMMENT) on heap);
+                        i = n;                                   // line comment runs to the end
+                    } else if (c == '"') {
+                        i = i + 1;
+                        while (i < n && line.charAt(i) != '"') {
+                            if (line.charAt(i) == '\\' && i + 1 < n) { i = i + 1; }
+                            i = i + 1;
+                        }
+                        if (i < n) { i = i + 1; }                // closing quote
+                        spans.add(new Span(start, i, Tok.STRING) on heap);
+                    } else if (c == '\'') {
+                        i = i + 1;
+                        while (i < n && line.charAt(i) != '\'') {
+                            if (line.charAt(i) == '\\' && i + 1 < n) { i = i + 1; }
+                            i = i + 1;
+                        }
+                        if (i < n) { i = i + 1; }
+                        spans.add(new Span(start, i, Tok.CHAR) on heap);
+                    } else if (this.isDigit(c)) {
+                        while (i < n && (this.isAlnum(line.charAt(i)) || line.charAt(i) == '.')) {
+                            i = i + 1;                           // digits + '.' + a literal suffix
+                        }
+                        spans.add(new Span(start, i, Tok.NUMBER) on heap);
+                    } else if (this.isAlpha(c)) {
+                        while (i < n && this.isAlnum(line.charAt(i))) { i = i + 1; }
+                        String word = line.substring(start, i);
+                        if (this.keywords.contains(word)) { spans.add(new Span(start, i, Tok.KEYWORD) on heap); }
+                        else { spans.add(new Span(start, i, Tok.IDENT) on heap); }
+                    } else {
+                        i = i + 1;
+                        spans.add(new Span(start, i, Tok.PUNCT) on heap);
+                    }
+                }
+                return spans;
+            }
+        }
+    }
+
     public namespace app {
         public class Main {
             public static method main(string[] args) returns void {
@@ -213,6 +319,18 @@ public bundle forge {
                 // --- cursor movement with clamping / line wrap ---
                 ed.moveLeft();  a.eqInt(ed.cursorCol(), 1, "moveLeft");
                 ed.moveRight(); ed.moveRight();  a.eqInt(ed.cursorCol(), 2, "moveRight-clamp");
+
+                // --- syntax highlighting ---
+                Highlighter hl = new Highlighter() on heap;
+                ArrayList<Span> sp = hl.tokenize("public int x = 42; // hi");
+                a.eqInt(sp.size(), 12, "hl.spanCount");
+                a.eqInt(cast<int>(sp.get(0).kind), cast<int>(Tok.KEYWORD), "hl.public-kw");
+                a.eqInt(cast<int>(sp.get(2).kind), cast<int>(Tok.KEYWORD), "hl.int-kw");
+                a.eqInt(cast<int>(sp.get(4).kind), cast<int>(Tok.IDENT), "hl.x-ident");
+                a.eqInt(cast<int>(sp.get(8).kind), cast<int>(Tok.NUMBER), "hl.42-number");
+                a.eqInt(cast<int>(sp.get(11).kind), cast<int>(Tok.COMMENT), "hl.comment");
+                ArrayList<Span> sp2 = hl.tokenize("s = \"hi\";");
+                a.eqInt(cast<int>(sp2.get(4).kind), cast<int>(Tok.STRING), "hl.string");
 
                 a.summary("editor tests");
                 return;
