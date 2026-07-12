@@ -86,11 +86,20 @@ public bundle forge {
             private method reset() returns String { return this.esc("0"); }
             // Foreground colour code per token class; empty means "leave default".
             private method colorFor(Tok kind) returns String {
-                if (kind == Tok.KEYWORD) { return this.esc("38;5;204"); }   // pink/red
-                if (kind == Tok.NUMBER)  { return this.esc("38;5;180"); }   // amber
-                if (kind == Tok.STRING)  { return this.esc("38;5;114"); }   // green
-                if (kind == Tok.CHAR)    { return this.esc("38;5;114"); }
-                if (kind == Tok.COMMENT) { return this.esc("38;5;245"); }   // grey
+                if (kind == Tok.DECL)     { return this.esc("38;5;179"); }   // amber
+                if (kind == Tok.CONTROL)  { return this.esc("38;5;176"); }   // magenta
+                if (kind == Tok.MODIFIER) { return this.esc("38;5;75"); }    // blue
+                if (kind == Tok.TYPE)     { return this.esc("38;5;79"); }    // teal
+                if (kind == Tok.TYPENAME) { return this.esc("38;5;115"); }   // light teal
+                if (kind == Tok.OPWORD)   { return this.esc("38;5;173"); }   // coral
+                if (kind == Tok.SELFKW)   { return this.esc("38;5;174"); }   // rose
+                if (kind == Tok.CONSTANT) { return this.esc("38;5;180"); }   // gold
+                if (kind == Tok.FUNC)     { return this.esc("38;5;187"); }   // yellow
+                if (kind == Tok.KEYWORD)  { return this.esc("38;5;179"); }   // amber (fallback)
+                if (kind == Tok.NUMBER)   { return this.esc("38;5;151"); }   // light green
+                if (kind == Tok.STRING)   { return this.esc("38;5;114"); }   // green
+                if (kind == Tok.CHAR)     { return this.esc("38;5;114"); }
+                if (kind == Tok.COMMENT)  { return this.esc("38;5;65"); }    // grey-green
                 return "";
             }
             private method colorize(String text) returns String {

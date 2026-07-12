@@ -66,8 +66,8 @@ public bundle forge {
                 Highlighter hl = new Highlighter() on heap;
                 ArrayList<Span> sp = hl.tokenize("public int x = 42; // hi");
                 a.eqInt(sp.size(), 12, "hl.spanCount");
-                a.eqInt(cast<int>(sp.get(0).kind), cast<int>(Tok.KEYWORD), "hl.public-kw");
-                a.eqInt(cast<int>(sp.get(2).kind), cast<int>(Tok.KEYWORD), "hl.int-kw");
+                a.eqInt(cast<int>(sp.get(0).kind), cast<int>(Tok.MODIFIER), "hl.public-modifier");
+                a.eqInt(cast<int>(sp.get(2).kind), cast<int>(Tok.TYPE), "hl.int-type");
                 a.eqInt(cast<int>(sp.get(4).kind), cast<int>(Tok.IDENT), "hl.x-ident");
                 a.eqInt(cast<int>(sp.get(8).kind), cast<int>(Tok.NUMBER), "hl.42-number");
                 a.eqInt(cast<int>(sp.get(11).kind), cast<int>(Tok.COMMENT), "hl.comment");

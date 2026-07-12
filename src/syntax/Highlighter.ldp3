@@ -1,5 +1,6 @@
 import System.Collections.ArrayList;
 import System.Collections.HashSet;
+import System.Text.Strings;
 
 program Forge;
 
@@ -7,35 +8,77 @@ public bundle forge {
     public namespace syntax {
 
         // A small LDP3 tokenizer for syntax highlighting: it tiles a line into coloured Spans (whitespace,
-        // line comments, string/char literals with escapes, numbers, keywords vs identifiers, punctuation).
-        // Line-local for now -- no multi-line (block comment / string) state. Tok and Span share this
-        // namespace, so no import is needed for them.
+        // line comments, string/char literals with escapes, numbers, and words classified into semantic
+        // keyword groups vs identifiers, plus punctuation). Keyword groups mirror the LDP3 VS Code grammar's
+        // token scopes so each renders in its own colour. Line-local for now -- no multi-line state.
         public class Highlighter {
-            private mutable HashSet<String> keywords;
+            private mutable HashSet<String>* control;
+            private mutable HashSet<String>* modifier;
+            private mutable HashSet<String>* decl;
+            private mutable HashSet<String>* types;
+            private mutable HashSet<String>* opword;
+            private mutable HashSet<String>* constant;
+            private mutable HashSet<String>* selfkw;
 
             public constructor Highlighter() {
-                this.keywords = new HashSet<String>() on heap;
-                String[] kw = new String[74]();
-                kw[0]="program"; kw[1]="bundle"; kw[2]="namespace"; kw[3]="class"; kw[4]="interface";
-                kw[5]="enum"; kw[6]="struct"; kw[7]="record"; kw[8]="union"; kw[9]="catalog";
-                kw[10]="method"; kw[11]="constructor"; kw[12]="destructor"; kw[13]="public"; kw[14]="private";
-                kw[15]="protected"; kw[16]="internal"; kw[17]="static"; kw[18]="abstract"; kw[19]="final";
-                kw[20]="override"; kw[21]="sealed"; kw[22]="permits"; kw[23]="mutable"; kw[24]="var";
-                kw[25]="return"; kw[26]="returns"; kw[27]="if"; kw[28]="else"; kw[29]="while";
-                kw[30]="do"; kw[31]="for"; kw[32]="foreach"; kw[33]="switch"; kw[34]="case";
-                kw[35]="default"; kw[36]="break"; kw[37]="continue"; kw[38]="match"; kw[39]="try";
-                kw[40]="catch"; kw[41]="finally"; kw[42]="throw"; kw[43]="throws"; kw[44]="new";
-                kw[45]="delete"; kw[46]="on"; kw[47]="stack"; kw[48]="heap"; kw[49]="in";
-                kw[50]="region"; kw[51]="unique"; kw[52]="movable"; kw[53]="move"; kw[54]="cascade";
-                kw[55]="defer"; kw[56]="using"; kw[57]="import"; kw[58]="extends"; kw[59]="implements";
-                kw[60]="this"; kw[61]="super"; kw[62]="true"; kw[63]="false"; kw[64]="null";
-                kw[65]="boolean"; kw[66]="char"; kw[67]="int"; kw[68]="long"; kw[69]="void";
-                kw[70]="async"; kw[71]="await"; kw[72]="lambda"; kw[73]="step";
-                for (mutable int i = 0; i < 74; i++) { this.keywords.add(kw[i]); }
-                delete kw;
+                this.control = new HashSet<String>() on heap;
+                this.modifier = new HashSet<String>() on heap;
+                this.decl = new HashSet<String>() on heap;
+                this.types = new HashSet<String>() on heap;
+                this.opword = new HashSet<String>() on heap;
+                this.constant = new HashSet<String>() on heap;
+                this.selfkw = new HashSet<String>() on heap;
+                this.addAll(this.control, "if else while do for foreach switch match case default break "
+                    + "continue return yield try catch finally throw throws goto comefrom abstainfrom "
+                    + "reinstate step defer using await async synchronized expecting onFailure");
+                this.addAll(this.modifier, "public private protected internal static abstract final override "
+                    + "mutable nullable sealed permits var move movable unique partitionable extern cdecl "
+                    + "stdcall fastcall freestanding persistent eternal transient comptime literal fixed "
+                    + "volatile cascade lazy external release reimport unimport requires ensures invariant "
+                    + "static_assert extends implements");
+                this.addAll(this.decl, "program bundle namespace class interface struct record union enum "
+                    + "catalog byCatalog method operator constructor destructor returns import annotation "
+                    + "typealias newtype region label lambda function methodref");
+                this.addAll(this.types, "void boolean char string String int8 int16 int32 int64 int uint8 "
+                    + "uint16 uint32 uint64 short long byte ubyte ushort uint ulong float32 float64 float "
+                    + "double Decimal smallfloat quadruple address vec2 vec3 vec4");
+                this.addAll(this.opword, "new delete on in is as cast of accepts rejects stack heap");
+                this.addAll(this.constant, "true false null");
+                this.addAll(this.selfkw, "this super itself");
             }
 
-            public method isKeyword(String word) returns boolean { return this.keywords.contains(word); }
+            // Add every space-separated word of `words` to `set`.
+            private method addAll(HashSet<String>* set, String words) returns void {
+                ArrayList<String> parts = Strings.split(words, " ");
+                for (mutable int i = 0; i < parts.size(); i++) {
+                    if (parts.get(i).length() > 0) { set.add(parts.get(i)); }
+                }
+            }
+
+            // The colour group of a word (Tok.IDENT if it isn't a keyword). TYPENAME/FUNC are decided by the
+            // tokenizer from context (CamelCase / a following '(').
+            private method classify(String word) returns Tok {
+                if (this.control.contains(word)) { return Tok.CONTROL; }
+                if (this.modifier.contains(word)) { return Tok.MODIFIER; }
+                if (this.decl.contains(word)) { return Tok.DECL; }
+                if (this.types.contains(word)) { return Tok.TYPE; }
+                if (this.opword.contains(word)) { return Tok.OPWORD; }
+                if (this.constant.contains(word)) { return Tok.CONSTANT; }
+                if (this.selfkw.contains(word)) { return Tok.SELFKW; }
+                return Tok.IDENT;
+            }
+
+            public method isKeyword(String word) returns boolean {
+                return this.classify(word) != Tok.IDENT;
+            }
+
+            // True when the next non-space character at or after `i` in `line` is `target`.
+            private method nextNonSpaceIs(String line, int i, char target) returns boolean {
+                mutable int j = i;
+                while (j < line.length() && (line.charAt(j) == ' ' || line.charAt(j) == '\t')) { j = j + 1; }
+                return j < line.length() && line.charAt(j) == target;
+            }
+            private method isUpper(char c) returns boolean { return c >= 'A' && c <= 'Z'; }
 
             private method isDigit(char c) returns boolean { return c >= '0' && c <= '9'; }
             private method isAlpha(char c) returns boolean {
@@ -79,8 +122,13 @@ public bundle forge {
                     } else if (this.isAlpha(c)) {
                         while (i < n && this.isAlnum(line.charAt(i))) { i = i + 1; }
                         String word = line.substring(start, i);
-                        if (this.keywords.contains(word)) { spans.add(new Span(start, i, Tok.KEYWORD) on heap); }
-                        else { spans.add(new Span(start, i, Tok.IDENT) on heap); }
+                        mutable Tok kind = this.classify(word);
+                        if (kind == Tok.IDENT) {
+                            // an identifier: a call site (name followed by '(') or a CamelCase type reference
+                            if (this.nextNonSpaceIs(line, i, '(')) { kind = Tok.FUNC; }
+                            else if (this.isUpper(word.charAt(0))) { kind = Tok.TYPENAME; }
+                        }
+                        spans.add(new Span(start, i, kind) on heap);
                     } else {
                         i = i + 1;
                         spans.add(new Span(start, i, Tok.PUNCT) on heap);
