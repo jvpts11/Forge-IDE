@@ -6,6 +6,7 @@ import syntax.Span;
 import syntax.Highlighter;
 import io.Document;
 import view.Viewport;
+import app.Controller;
 import test.Asserts;
 
 program Forge;
@@ -275,6 +276,26 @@ public bundle forge {
                 en3.document().loadText("xy\nz");
                 en3.selectAll();
                 a.eqStr(en3.selectionText(), "xy\nz", "nav.select-all");
+
+                // --- Controller: editor + viewport + document + highlighter, driven by commands ---
+                Controller ctrl = new Controller(5, 10) on heap;   // 5 rows x 10 cols
+                ctrl.insertText("line0\nline1\nline2\nline3\nline4\nline5\nline6");
+                a.eqInt(ctrl.editor().cursorRow(), 6, "ctrl.caret-row");
+                a.eqBool(ctrl.viewport().isLineVisible(6), true, "ctrl.caret-visible");
+                a.eqBool(ctrl.document().isModified(), true, "ctrl.modified");
+                a.eqBool(ctrl.caretScreenRow() >= 0 && ctrl.caretScreenRow() < 5, true, "ctrl.caret-in-view");
+                ctrl.moveDocStart(false);
+                a.eqInt(ctrl.firstLine(), 0, "ctrl.docstart-scroll");
+                a.eqStr(ctrl.renderLine(0), "line0", "ctrl.render0");
+                a.eqInt(ctrl.caretScreenRow(), 0, "ctrl.caret-top");
+                a.eqInt(ctrl.lineNumberAt(2), 2, "ctrl.line-number");
+                ctrl.moveRight(true); ctrl.moveRight(true);
+                a.eqStr(ctrl.editor().selectionText(), "li", "ctrl.shift-select");
+                ArrayList<Span> rs = ctrl.renderSpans(0);
+                a.eqBool(rs.size() >= 1, true, "ctrl.spans");
+                ctrl.moveDocEnd(false);
+                a.eqBool(ctrl.firstLine() > 0, true, "ctrl.docend-scrolled");
+                a.eqBool(ctrl.viewport().isLineVisible(6), true, "ctrl.docend-caret-visible");
 
                 a.summary("editor tests");
                 return a.failCount();

@@ -1,0 +1,172 @@
+import System.Collections.ArrayList;
+import editor.Editor;
+import editor.TextBuffer;
+import view.Viewport;
+import syntax.Highlighter;
+import syntax.Span;
+import io.Document;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // The editor "brain": owns the Document, the caret/editing model (Editor), the scrolling window
+        // (Viewport), and the syntax Highlighter, and keeps them consistent. A UI layer -- terminal or GUI
+        // -- translates key/mouse events into these commands and reads back the render state (visible lines,
+        // spans, caret, selection). Nothing here touches pixels or the terminal, so it is unit-testable.
+        public class Controller {
+            private mutable Document* doc;
+            private mutable Editor* ed;
+            private mutable Viewport* view;
+            private mutable Highlighter* hl;
+            private mutable int scrollMargin;
+
+            public constructor Controller(int rows, int cols) {
+                this.doc = new Document(new TextBuffer() on heap) on heap;
+                this.ed = new Editor(this.doc.buffer()) on heap;
+                this.view = new Viewport(rows, cols) on heap;
+                this.hl = new Highlighter() on heap;
+                this.scrollMargin = 2;
+                this.moved();
+            }
+
+            // Refresh the viewport's line count and follow the caret. Called after every command.
+            private method moved() returns void {
+                this.view.setTotalLines(this.ed.document().lineCount());
+                this.view.scrollToCaret(this.ed.cursorRow(), this.ed.cursorCol(), this.scrollMargin);
+            }
+            // Same, plus flag the document dirty -- used by the commands that change text.
+            private method edited() returns void {
+                this.doc.markModified();
+                this.moved();
+            }
+
+            public method editor() returns Editor* { return this.ed; }
+            public method viewport() returns Viewport* { return this.view; }
+            public method document() returns Document* { return this.doc; }
+            public method setScrollMargin(int m) returns void { this.scrollMargin = m; }
+
+            // --- text-changing commands ---
+            public method insertChar(char c) returns void { this.ed.type(c); this.edited(); }
+            public method insertText(String s) returns void {
+                for (mutable int i = 0; i < s.length(); i++) {
+                    char c = s.charAt(i);
+                    if (c == '\n') { this.ed.enter(); } else { this.ed.type(c); }
+                }
+                this.edited();
+            }
+            public method newline() returns void { this.ed.enter(); this.edited(); }
+            public method backspace() returns void { this.ed.backspace(); this.edited(); }
+            public method deleteForward() returns void { this.ed.deleteForward(); this.edited(); }
+            public method deleteWordLeft() returns void { this.ed.deleteWordLeft(); this.edited(); }
+            public method deleteWordRight() returns void { this.ed.deleteWordRight(); this.edited(); }
+            public method indent() returns void { this.ed.indent(); this.edited(); }
+            public method dedent() returns void { this.ed.dedent(); this.edited(); }
+            public method duplicateLine() returns void { this.ed.duplicateLine(); this.edited(); }
+            public method deleteLine() returns void { this.ed.deleteLine(); this.edited(); }
+            public method moveLineUp() returns void { this.ed.moveLineUp(); this.edited(); }
+            public method moveLineDown() returns void { this.ed.moveLineDown(); this.edited(); }
+            public method cut() returns void { this.ed.cut(); this.edited(); }
+            public method paste() returns void { this.ed.paste(); this.edited(); }
+            public method copy() returns void { this.ed.copy(); }
+
+            public method undo() returns boolean { boolean r = this.ed.undo(); this.edited(); return r; }
+            public method redo() returns boolean { boolean r = this.ed.redo(); this.edited(); return r; }
+
+            // --- caret motion (extend == Shift held: extend the selection instead of clearing it) ---
+            public method moveLeft(boolean extend) returns void {
+                if (extend) { this.ed.selectLeft(); } else { this.ed.moveLeft(); }
+                this.moved();
+            }
+            public method moveRight(boolean extend) returns void {
+                if (extend) { this.ed.selectRight(); } else { this.ed.moveRight(); }
+                this.moved();
+            }
+            public method moveUp(boolean extend) returns void {
+                if (extend) { this.ed.selectUp(); } else { this.ed.moveUp(); }
+                this.moved();
+            }
+            public method moveDown(boolean extend) returns void {
+                if (extend) { this.ed.selectDown(); } else { this.ed.moveDown(); }
+                this.moved();
+            }
+            public method moveWordLeft(boolean extend) returns void {
+                if (extend) { this.ed.selectWordLeft(); } else { this.ed.moveWordLeft(); }
+                this.moved();
+            }
+            public method moveWordRight(boolean extend) returns void {
+                if (extend) { this.ed.selectWordRight(); } else { this.ed.moveWordRight(); }
+                this.moved();
+            }
+            public method moveLineStart(boolean extend) returns void {
+                if (extend) { this.ed.selectLineStart(); } else { this.ed.moveLineStart(); }
+                this.moved();
+            }
+            public method moveLineEnd(boolean extend) returns void {
+                if (extend) { this.ed.selectLineEnd(); } else { this.ed.moveLineEnd(); }
+                this.moved();
+            }
+            public method moveDocStart(boolean extend) returns void {
+                if (extend) { this.ed.selectDocStart(); } else { this.ed.moveDocStart(); }
+                this.moved();
+            }
+            public method moveDocEnd(boolean extend) returns void {
+                if (extend) { this.ed.selectDocEnd(); } else { this.ed.moveDocEnd(); }
+                this.moved();
+            }
+            public method selectAll() returns void { this.ed.selectAll(); this.moved(); }
+
+            // Paging moves the caret by (height - 1) lines; following the caret does the scroll.
+            public method pageDown(boolean extend) returns void {
+                int amount = this.view.height() - 1;
+                for (mutable int i = 0; i < amount; i++) {
+                    if (extend) { this.ed.selectDown(); } else { this.ed.moveDown(); }
+                }
+                this.moved();
+            }
+            public method pageUp(boolean extend) returns void {
+                int amount = this.view.height() - 1;
+                for (mutable int i = 0; i < amount; i++) {
+                    if (extend) { this.ed.selectUp(); } else { this.ed.moveUp(); }
+                }
+                this.moved();
+            }
+
+            // --- search / file ---
+            public method find(String needle) returns boolean {
+                boolean r = this.ed.find(needle); this.moved(); return r;
+            }
+            public method findPrevious(String needle) returns boolean {
+                boolean r = this.ed.findPrevious(needle); this.moved(); return r;
+            }
+            public method replaceAll(String needle, String replacement) returns int {
+                int n = this.ed.replaceAll(needle, replacement); this.edited(); return n;
+            }
+            public method openFile(String path) returns void {
+                this.doc.openFile(path);
+                this.ed.moveDocStart();
+                this.moved();
+            }
+            public method save() returns void { this.doc.save(); }
+            public method saveAs(String path) returns void { this.doc.saveAs(path); }
+
+            // --- render queries (the UI reads these to paint one frame) ---
+            public method visibleRows() returns int { return this.view.lastLine() - this.view.firstLine(); }
+            public method firstLine() returns int { return this.view.firstLine(); }
+            public method firstColumn() returns int { return this.view.firstColumn(); }
+            // The document row currently drawn at screen row `screenRow` (0-based within the viewport).
+            public method lineNumberAt(int screenRow) returns int { return this.view.firstLine() + screenRow; }
+            public method renderLine(int screenRow) returns String {
+                return this.ed.document().line(this.view.firstLine() + screenRow);
+            }
+            public method renderSpans(int screenRow) returns ArrayList<Span> {
+                return this.hl.tokenize(this.ed.document().line(this.view.firstLine() + screenRow));
+            }
+            // Caret position relative to the viewport's top-left (may be off-screen horizontally if a very
+            // long line isn't scrolled; the caller clips).
+            public method caretScreenRow() returns int { return this.ed.cursorRow() - this.view.firstLine(); }
+            public method caretScreenCol() returns int { return this.ed.cursorCol() - this.view.firstColumn(); }
+        }
+    }
+}
