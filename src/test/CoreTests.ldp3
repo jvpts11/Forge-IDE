@@ -5,6 +5,7 @@ import syntax.Tok;
 import syntax.Span;
 import syntax.Highlighter;
 import io.Document;
+import view.Viewport;
 import test.Asserts;
 
 program Forge;
@@ -221,6 +222,32 @@ public bundle forge {
                 ew4.document().loadText("alpha beta");
                 ew4.deleteWordRight();                          // caret at 0 -> removes "alpha"
                 a.eqStr(ew4.document().line(0), " beta", "word.del-right");
+
+                // --- viewport scrolling model ---
+                Viewport vp = new Viewport(10, 20) on heap;     // 10 rows x 20 cols
+                vp.setTotalLines(100);
+                a.eqInt(vp.firstLine(), 0, "vp.init-top");
+                a.eqBool(vp.scrollToCaret(5, 0, 0), false, "vp.no-scroll");
+                a.eqBool(vp.scrollToCaret(30, 0, 0), true, "vp.scrolled");
+                a.eqInt(vp.firstLine(), 21, "vp.top-after-down");
+                a.eqBool(vp.isLineVisible(30), true, "vp.30-visible");
+                a.eqBool(vp.isLineVisible(20), false, "vp.20-hidden");
+                vp.scrollToCaret(0, 0, 0);
+                a.eqInt(vp.firstLine(), 0, "vp.top-back");
+                vp.scrollToCaret(0, 50, 0);                     // horizontal scroll
+                a.eqInt(vp.firstColumn(), 31, "vp.left-after");
+
+                Viewport vp2 = new Viewport(10, 20) on heap;
+                vp2.setTotalLines(100);
+                vp2.scrollToCaret(8, 0, 2);                     // scrolloff margin at bottom
+                a.eqInt(vp2.firstLine(), 1, "vp.margin-bottom");
+                vp2.pageDown();
+                a.eqInt(vp2.firstLine(), 10, "vp.pagedown");
+
+                Viewport vp3 = new Viewport(10, 20) on heap;
+                vp3.setTotalLines(5);                           // fewer lines than the viewport
+                vp3.scrollToCaret(4, 0, 0);
+                a.eqInt(vp3.firstLine(), 0, "vp.clamp-small");
 
                 a.summary("editor tests");
                 return a.failCount();
