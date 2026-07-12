@@ -12,6 +12,7 @@ import app.Completion;
 import app.MenuBar;
 import app.Menu;
 import app.MenuItem;
+import app.Breadcrumbs;
 import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
@@ -45,15 +46,18 @@ public bundle forge {
             public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
             public method menuH() returns int { return this.font.lineHeight() + 8; }
             public method tabH() returns int { return this.font.lineHeight() + 12; }
+            public method crumbH() returns int { return this.font.lineHeight() + 6; }
             public method statusH() returns int { return this.font.lineHeight() + 8; }
-            // Pixel y where the tab bar / tree / editor begin, below the menu bar.
+            // Pixel y where the tab bar / tree / breadcrumb bar begin, below the menu bar.
             public method contentTop() returns int { return this.menuH() + this.tabH(); }
+            // Pixel y where the editor code begins, below the breadcrumb bar.
+            public method editorTop() returns int { return this.contentTop() + this.crumbH(); }
             public method treeWidth() returns int { return this.treeW; }
             public method charW() returns int { return this.font.advance(); }
             public method lineH() returns int { return this.font.lineHeight(); }
             // Pixel origin of the code text (for mouse hit-testing).
             public method textOx() returns int { return this.treeW + this.gutterPx() + 6; }
-            public method textOy() returns int { return this.contentTop() + this.topPad; }
+            public method textOy() returns int { return this.editorTop() + this.topPad; }
             // Which tab index is under pixel x in the tab bar (-1 if none) -- mirrors drawTabBar's layout.
             public method tabAtX(DocumentManager* docs, int mx) returns int {
                 int cw = this.font.advance();
@@ -73,7 +77,7 @@ public bundle forge {
             }
             // Viewport rows/cols that fit the editor pane of a pixel window (window minus chrome).
             public method paneRowsFor(int screenH) returns int {
-                return (screenH - this.contentTop() - this.statusH() - this.topPad) / this.font.lineHeight();
+                return (screenH - this.editorTop() - this.statusH() - this.topPad) / this.font.lineHeight();
             }
             public method paneColsFor(int screenW) returns int {
                 return (screenW - this.treeW - this.gutterPx() - 8) / this.font.advance();
@@ -85,6 +89,7 @@ public bundle forge {
                 int mh = this.menuH();
                 int tabh = this.tabH();
                 int ctop = mh + tabh;
+                int etop = ctop + this.crumbH();
                 int tw = this.treeW;
                 // chrome panel backgrounds
                 batch.rect(0, mh, screenW, tabh, 0.027, 0.055, 0.063, 1.0);             // tab bar
@@ -95,11 +100,45 @@ public bundle forge {
                 if (wb.output().visible) { panelH = 220; }
                 this.drawTabBar(batch, wb.documents(), mh, tabh);
                 this.drawTree(batch, tree, ctop, screenH - sh);
-                this.drawEditor(batch, wb, tw, ctop, screenW - tw, screenH - ctop - sh - panelH);
+                this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
+                this.drawEditor(batch, wb, tw, etop, screenW - tw, screenH - etop - sh - panelH);
                 if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH);
                 }
                 this.drawStatusBar(batch, wb, screenW, screenH, sh);
+            }
+
+            // The breadcrumb bar above the editor: the caret's scope trail (bundle > namespace > class >
+            // method), the last segment brightest -- so you always see where in the structure you are.
+            private method drawBreadcrumbs(Batch2D* batch, Workbench* wb, int ox, int oy, int pw) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int h = this.crumbH();
+                batch.rect(ox, oy, pw, h, 0.043, 0.082, 0.090, 1.0);
+                batch.rect(ox, oy + h - 1, pw, 1, 0.016, 0.035, 0.039, 1.0);      // bottom hairline
+                int ty = oy + (h - ch) / 2;
+                ArrayList<String>* trail = Breadcrumbs.trail(wb.active());
+                if (trail.size() == 0) {
+                    this.font.drawText(batch, ox + 12, ty, "(top level)", 0.376, 0.478, 0.475, 1.0);
+                    return;
+                }
+                mutable int x = ox + 12;
+                mutable int i = 0;
+                while (i < trail.size()) {
+                    boolean last = i == trail.size() - 1;
+                    String seg = trail.get(i);
+                    mutable float r = 0.502;
+                    mutable float g = 0.588;
+                    mutable float b = 0.584;
+                    if (last) { r = 0.804; g = 0.851; b = 0.843; }
+                    this.font.drawText(batch, x, ty, seg, r, g, b, 1.0);
+                    x = x + (seg.length() + 1) * cw;
+                    if (!last) {
+                        this.font.drawText(batch, x, ty, ">", 0.376, 0.478, 0.475, 1.0);
+                        x = x + 2 * cw;
+                    }
+                    i = i + 1;
+                }
             }
 
             // The top menu bar (File / Edit / View / Run / Help). Drawn on top of the frame so the open menu's
@@ -422,7 +461,7 @@ public bundle forge {
                 int ch = this.font.lineHeight();
                 int ox = this.treeW;
                 int cx = ox + this.gutterPx() + 6 + c.caretScreenCol() * cw;
-                int cy = this.contentTop() + this.topPad + c.caretScreenRow() * ch;
+                int cy = this.editorTop() + this.topPad + c.caretScreenRow() * ch;
                 int px = cx - comp.prefix.length() * cw;
                 int py = cy + ch;
                 mutable int shown = comp.items.size();

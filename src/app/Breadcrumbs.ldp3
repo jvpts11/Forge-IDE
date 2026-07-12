@@ -1,0 +1,98 @@
+import app.Controller;
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // Computes the scope trail for the caret line -- bundle > namespace > class > method -- the way an
+        // IDE's breadcrumb bar shows where you are. It scans the buffer from the top down to the caret,
+        // tracking brace depth: each declaration (namespace/bundle/class/interface/enum/record/struct/
+        // method/constructor/destructor) is pushed when its `{` opens and popped when the matching `}`
+        // closes, so what's left on the stack at the caret is exactly the enclosing scopes, outermost first.
+        // A best-effort heuristic (it strips line comments but doesn't fully parse strings), which is all a
+        // breadcrumb needs.
+        public class Breadcrumbs {
+
+            public static method trail(Controller* c) returns ArrayList<String>* {
+                int caret = c.editor().cursorRow();
+                ArrayList<String>* names = new ArrayList<String>() on heap;
+                ArrayList<int>* depths = new ArrayList<int>() on heap;
+                mutable String pending = "";
+                mutable int depth = 0;
+                mutable int row = 0;
+                while (row <= caret) {
+                    String raw = c.editor().document().line(row);
+                    String line = Breadcrumbs.stripComment(raw);
+                    String d = Breadcrumbs.declName(line);
+                    if (d.length() > 0) { pending = d; }
+                    mutable int i = 0;
+                    int n = line.length();
+                    while (i < n) {
+                        char ch = line.charAt(i);
+                        if (ch == '{') {
+                            depth = depth + 1;
+                            if (pending.length() > 0) {
+                                names.add(pending);
+                                depths.add(depth);
+                                pending = "";
+                            }
+                        } else if (ch == '}') {
+                            depth = depth - 1;
+                            while (names.size() > 0 && depths.get(depths.size() - 1) > depth) {
+                                names.removeAt(names.size() - 1);
+                                depths.removeAt(depths.size() - 1);
+                            }
+                        }
+                        i = i + 1;
+                    }
+                    row = row + 1;
+                }
+                return names;
+            }
+
+            // The declared name on a line: the identifier that follows a declaration keyword (the first
+            // `class Foo` / `method bar` / ... pattern), or "" if the line declares nothing.
+            private static method declName(String line) returns String {
+                mutable String prev = "";
+                mutable int i = 0;
+                int n = line.length();
+                while (i < n) {
+                    while (i < n && !Breadcrumbs.isIdentChar(line.charAt(i))) { i = i + 1; }
+                    mutable int start = i;
+                    while (i < n && Breadcrumbs.isIdentChar(line.charAt(i))) { i = i + 1; }
+                    if (i > start) {
+                        String word = line.substring(start, i);
+                        if (Breadcrumbs.isDeclKeyword(prev)) { return word; }
+                        prev = word;
+                    }
+                }
+                return "";
+            }
+
+            private static method isDeclKeyword(String w) returns boolean {
+                return w.equals("namespace") || w.equals("bundle") || w.equals("class")
+                    || w.equals("interface") || w.equals("enum") || w.equals("record")
+                    || w.equals("struct") || w.equals("union") || w.equals("method")
+                    || w.equals("constructor") || w.equals("destructor");
+            }
+
+            private static method isIdentChar(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
+
+            // Drop an end-of-line // comment so its braces and words don't confuse the scan.
+            private static method stripComment(String line) returns String {
+                int n = line.length();
+                mutable int i = 0;
+                while (i + 1 < n) {
+                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') { return line.substring(0, i); }
+                    i = i + 1;
+                }
+                return line;
+            }
+        }
+    }
+}
