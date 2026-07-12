@@ -19,6 +19,7 @@ public bundle forge {
             private mutable Clipboard* clip;
             private mutable Search* search;
             private mutable Brackets* brackets;
+            private mutable int tabWidth;
             private mutable ArrayList<Snapshot>* undoStack;
             private mutable ArrayList<Snapshot>* redoStack;
 
@@ -32,9 +33,15 @@ public bundle forge {
                 this.clip = new Clipboard() on heap;
                 this.search = new Search(doc) on heap;
                 this.brackets = new Brackets(doc) on heap;
+                this.tabWidth = 4;
                 this.undoStack = new ArrayList<Snapshot>() on heap;
                 this.redoStack = new ArrayList<Snapshot>() on heap;
             }
+
+            // Indentation width (spaces per level), configurable. indentUnit() is one level of spaces.
+            public method setTabWidth(int n) returns void { if (n > 0) { this.tabWidth = n; } }
+            public method tabSize() returns int { return this.tabWidth; }
+            private method indentUnit() returns String { return " ".repeat(this.tabWidth); }
 
             // --- bracket auto-close + matching ---
             private method closerFor(char c) returns char {
@@ -181,13 +188,13 @@ public bundle forge {
             }
             public method indent() returns void {
                 this.saveUndo();
-                this.buf.setLine(this.row, "    " + this.buf.line(this.row));   // four spaces
-                this.col = this.col + 4;
+                this.buf.setLine(this.row, this.indentUnit() + this.buf.line(this.row));
+                this.col = this.col + this.tabWidth;
             }
             public method dedent() returns void {
                 String cur = this.buf.line(this.row);
                 mutable int remove = 0;
-                while (remove < 4 && remove < cur.length() && cur.charAt(remove) == ' ') {
+                while (remove < this.tabWidth && remove < cur.length() && cur.charAt(remove) == ' ') {
                     remove = remove + 1;
                 }
                 if (remove == 0) { return; }
@@ -211,10 +218,10 @@ public bundle forge {
                 int a = this.selMinRow();
                 int b = this.selMaxRow();
                 for (mutable int r = a; r <= b; r++) {
-                    this.buf.setLine(r, "    " + this.buf.line(r));
+                    this.buf.setLine(r, this.indentUnit() + this.buf.line(r));
                 }
-                this.selCol = this.selCol + 4;
-                this.col = this.col + 4;
+                this.selCol = this.selCol + this.tabWidth;
+                this.col = this.col + this.tabWidth;
             }
             public method dedentSelection() returns void {
                 this.saveUndo();
@@ -223,7 +230,7 @@ public bundle forge {
                 for (mutable int r = a; r <= b; r++) {
                     String s = this.buf.line(r);
                     mutable int rm = 0;
-                    while (rm < 4 && rm < s.length() && s.charAt(rm) == ' ') { rm = rm + 1; }
+                    while (rm < this.tabWidth && rm < s.length() && s.charAt(rm) == ' ') { rm = rm + 1; }
                     this.buf.setLine(r, s.substring(rm, s.length()));
                 }
                 this.clampCaret();
@@ -454,8 +461,8 @@ public bundle forge {
                     this.col = ind;
                 }
                 if (opensBlock) {
-                    this.buf.insertText(this.row, this.col, "    ");
-                    this.col = this.col + 4;
+                    this.buf.insertText(this.row, this.col, this.indentUnit());
+                    this.col = this.col + this.tabWidth;
                 }
             }
 

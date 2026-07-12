@@ -533,6 +533,16 @@ public bundle forge {
                 cm2.toggleComment();
                 a.eqStr(cm2.document().line(0), "a", "comment.multi-uncomment");
 
+                // --- configurable tab width ---
+                Editor tw = new Editor(new TextBuffer() on heap) on heap;
+                tw.document().loadText("x");
+                tw.setTabWidth(2);
+                a.eqInt(tw.tabSize(), 2, "tab.size");
+                tw.indent();
+                a.eqStr(tw.document().line(0), "  x", "tab.indent-2");
+                tw.dedent();
+                a.eqStr(tw.document().line(0), "x", "tab.dedent-2");
+
                 a.summary("editor tests");
                 return a.failCount();
             }

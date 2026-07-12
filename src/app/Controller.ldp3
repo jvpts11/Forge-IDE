@@ -47,6 +47,7 @@ public bundle forge {
             public method document() returns Document* { return this.doc; }
             public method lineCount() returns int { return this.ed.document().lineCount(); }
             public method setScrollMargin(int m) returns void { this.scrollMargin = m; }
+            public method setTabWidth(int n) returns void { this.ed.setTabWidth(n); }
 
             // --- text-changing commands ---
             public method insertChar(char c) returns void { this.ed.typeWithPairs(c); this.edited(); }
