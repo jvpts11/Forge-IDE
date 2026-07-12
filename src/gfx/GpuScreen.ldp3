@@ -786,6 +786,38 @@ public bundle forge {
                 }
             }
 
+            // Signature help: a tooltip above the caret with the declaration of the call it's inside.
+            public method drawSignatureHelp(Batch2D* batch, Workbench* wb, int screenW) returns void {
+                Controller* c = wb.active();
+                String sig = c.signatureAtCaret();
+                if (sig.length() == 0) {
+                    return;
+                }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int ccr = c.caretScreenRow();
+                if (ccr < 0) {
+                    return;
+                }
+                int cx = this.treeW + this.gutterPx() + 6 + c.caretScreenCol() * cw;
+                int cy = this.editorTop() + this.topPad + ccr * ch;
+                int tw = (sig.length() + 2) * cw;
+                mutable int tx = cx;
+                if (tx + tw > screenW) {
+                    tx = screenW - tw - 4;
+                }
+                if (tx < this.treeW) {
+                    tx = this.treeW;
+                }
+                mutable int ty = cy - ch - 8;
+                if (ty < this.editorTop()) {
+                    ty = cy + ch;
+                }
+                batch.rect(tx, ty, tw, ch + 8, 0.027, 0.055, 0.063, 1.0);
+                batch.rect(tx, ty, tw, 2, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, tx + cw, ty + 4, sig, 0.804, 0.851, 0.843, 1.0);
+            }
+
             // --- modal overlays (drawn on top of the frame) ---
             public method drawOverlay(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW, int screenH)
                     returns void {

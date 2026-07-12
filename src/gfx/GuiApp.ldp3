@@ -431,6 +431,8 @@ public bundle forge {
                 } else if (cmd.equals("refs")) {
                     int n = wb.findReferences();
                     System.IO.Console.println("ok " + n.toString() + " references");
+                } else if (cmd.equals("sigat")) {
+                    System.IO.Console.println("sig: " + wb.active().signatureAtCaret());
                 } else if (cmd.equals("gotodef")) {
                     boolean found = wb.active().goToDefinition();
                     mutable String r = "not-found";
@@ -893,7 +895,11 @@ public bundle forge {
                 int my = win.cursorY();
                 batch.begin(w, h, screen.fontTexture());
                 screen.drawWorkbench(batch, wb, tree, ov, mx, my, w, h);
-                if (comp.active) { screen.drawCompletion(batch, comp, wb, w, h); }
+                if (comp.active) {
+                    screen.drawCompletion(batch, comp, wb, w, h);
+                } else if (!ov.isOpen()) {
+                    screen.drawSignatureHelp(batch, wb, w);
+                }
                 screen.drawMenuBar(batch, menu, w);
                 screen.drawMenuDropdown(batch, menu, mx, my);
                 if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
