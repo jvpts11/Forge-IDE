@@ -361,6 +361,41 @@ public bundle forge {
                 rc2.moveDocEnd(false);                            // scroll right to follow the caret
                 a.eqBool(tr.renderPlain(rc2).get(0).contains("ghij"), true, "render.clip-scrolled");
 
+                // --- auto-indent on Enter ---
+                Editor ai = new Editor(new TextBuffer() on heap) on heap;
+                ai.type(' '); ai.type(' '); ai.type(' '); ai.type(' ');
+                ai.type('x'); ai.type(' '); ai.type('{');          // line "    x {"
+                ai.enter();
+                a.eqStr(ai.document().line(1), "        ", "autoindent.brace");   // 4 inherited + 4 for '{'
+                a.eqInt(ai.cursorCol(), 8, "autoindent.brace-caret");
+
+                Editor ai2 = new Editor(new TextBuffer() on heap) on heap;
+                ai2.type(' '); ai2.type(' '); ai2.type('a'); ai2.type('b');       // "  ab"
+                ai2.enter();
+                a.eqStr(ai2.document().line(1), "  ", "autoindent.inherit");
+                a.eqInt(ai2.cursorCol(), 2, "autoindent.inherit-caret");
+
+                // --- block indent / dedent over a multi-line selection ---
+                Editor bi = new Editor(new TextBuffer() on heap) on heap;
+                bi.document().loadText("a\nb\nc");
+                bi.selectDown(); bi.selectDown();                  // select lines 0..2
+                bi.indentSelection();
+                a.eqStr(bi.document().line(0), "    a", "blockindent.0");
+                a.eqStr(bi.document().line(1), "    b", "blockindent.1");
+                a.eqStr(bi.document().line(2), "    c", "blockindent.2");
+                bi.dedentSelection();
+                a.eqStr(bi.document().line(0), "a", "blockdedent.0");
+                a.eqStr(bi.document().line(2), "c", "blockdedent.2");
+
+                // Tab with a selection block-indents through the Controller
+                Controller tc = new Controller(10, 40) on heap;
+                tc.insertText("x\ny");
+                tc.moveDocStart(false);
+                tc.moveDown(true);                                 // extend selection to line 1
+                tc.indent();
+                a.eqStr(tc.editor().document().line(0), "    x", "ctrl.block-indent-0");
+                a.eqStr(tc.editor().document().line(1), "    y", "ctrl.block-indent-1");
+
                 a.summary("editor tests");
                 return a.failCount();
             }

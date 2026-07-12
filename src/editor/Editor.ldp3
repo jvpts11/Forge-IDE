@@ -152,6 +152,41 @@ public bundle forge {
                 if (this.col >= remove) { this.col = this.col - remove; } else { this.col = 0; }
             }
 
+            // Block indent/dedent: shift every line the selection touches by four spaces. The caret and the
+            // anchor stay on their lines; their columns are clamped afterward.
+            private method selMinRow() returns int {
+                if (this.selRow < this.row) { return this.selRow; }
+                return this.row;
+            }
+            private method selMaxRow() returns int {
+                if (this.selRow > this.row) { return this.selRow; }
+                return this.row;
+            }
+            public method indentSelection() returns void {
+                this.saveUndo();
+                int a = this.selMinRow();
+                int b = this.selMaxRow();
+                for (mutable int r = a; r <= b; r++) {
+                    this.buf.setLine(r, "    " + this.buf.line(r));
+                }
+                this.selCol = this.selCol + 4;
+                this.col = this.col + 4;
+            }
+            public method dedentSelection() returns void {
+                this.saveUndo();
+                int a = this.selMinRow();
+                int b = this.selMaxRow();
+                for (mutable int r = a; r <= b; r++) {
+                    String s = this.buf.line(r);
+                    mutable int rm = 0;
+                    while (rm < 4 && rm < s.length() && s.charAt(rm) == ' ') { rm = rm + 1; }
+                    this.buf.setLine(r, s.substring(rm, s.length()));
+                }
+                this.clampCaret();
+                int selLen = this.buf.line(this.selRow).length();
+                if (this.selCol > selLen) { this.selCol = selLen; }
+            }
+
             // --- word-wise motion & deletion (Ctrl+Arrows, Ctrl+Backspace / Ctrl+Delete) ---
             private method isWordChar(char c) returns boolean {
                 return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
@@ -306,12 +341,50 @@ public bundle forge {
                 this.col = this.col + 1;
             }
 
+            // Count of leading whitespace on `s`, not looking past column `upTo` (so a caret inside the
+            // indentation doesn't over-count).
+            private method leadingIndent(String s, int upTo) returns int {
+                mutable int i = 0;
+                while (i < s.length() && i < upTo && (s.charAt(i) == ' ' || s.charAt(i) == '\t')) {
+                    i = i + 1;
+                }
+                return i;
+            }
+
+            // Enter with auto-indent: the new line inherits the current line's leading whitespace, plus one
+            // level (four spaces) when the caret follows an opening brace.
             public method enter() returns void {
                 this.saveUndo();
                 if (this.hasSelection()) { this.deleteSelection(); }
+                String cur = this.buf.line(this.row);
+                int ind = this.leadingIndent(cur, this.col);
+                boolean opensBlock = this.col > 0 && cur.charAt(this.col - 1) == '{';
                 this.buf.splitLine(this.row, this.col);
                 this.row = this.row + 1;
                 this.col = 0;
+                if (ind > 0) {
+                    this.buf.insertText(this.row, 0, cur.substring(0, ind));
+                    this.col = ind;
+                }
+                if (opensBlock) {
+                    this.buf.insertText(this.row, this.col, "    ");
+                    this.col = this.col + 4;
+                }
+            }
+
+            // Insert `text` (possibly multi-line) verbatim at the caret -- no auto-indent, unlike enter().
+            // This is the path for pasting and bulk loading, so pre-formatted code lands exactly as given.
+            public method insertText(String text) returns void {
+                this.saveUndo();
+                if (this.hasSelection()) { this.deleteSelection(); }
+                int added = this.buf.insertText(this.row, this.col, text);
+                if (added == 0) {
+                    this.col = this.col + text.length();
+                } else {
+                    ArrayList<String> parts = Strings.split(text, "\n");
+                    this.row = this.row + added;
+                    this.col = parts.get(parts.size() - 1).length();
+                }
             }
 
             public method backspace() returns void {

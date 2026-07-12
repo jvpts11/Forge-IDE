@@ -50,20 +50,20 @@ public bundle forge {
 
             // --- text-changing commands ---
             public method insertChar(char c) returns void { this.ed.type(c); this.edited(); }
-            public method insertText(String s) returns void {
-                for (mutable int i = 0; i < s.length(); i++) {
-                    char c = s.charAt(i);
-                    if (c == '\n') { this.ed.enter(); } else { this.ed.type(c); }
-                }
-                this.edited();
-            }
+            public method insertText(String s) returns void { this.ed.insertText(s); this.edited(); }
             public method newline() returns void { this.ed.enter(); this.edited(); }
             public method backspace() returns void { this.ed.backspace(); this.edited(); }
             public method deleteForward() returns void { this.ed.deleteForward(); this.edited(); }
             public method deleteWordLeft() returns void { this.ed.deleteWordLeft(); this.edited(); }
             public method deleteWordRight() returns void { this.ed.deleteWordRight(); this.edited(); }
-            public method indent() returns void { this.ed.indent(); this.edited(); }
-            public method dedent() returns void { this.ed.dedent(); this.edited(); }
+            public method indent() returns void {
+                if (this.ed.hasSelection()) { this.ed.indentSelection(); } else { this.ed.indent(); }
+                this.edited();
+            }
+            public method dedent() returns void {
+                if (this.ed.hasSelection()) { this.ed.dedentSelection(); } else { this.ed.dedent(); }
+                this.edited();
+            }
             public method duplicateLine() returns void { this.ed.duplicateLine(); this.edited(); }
             public method deleteLine() returns void { this.ed.deleteLine(); this.edited(); }
             public method moveLineUp() returns void { this.ed.moveLineUp(); this.edited(); }
