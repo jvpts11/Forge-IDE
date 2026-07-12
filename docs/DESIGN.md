@@ -105,21 +105,48 @@ write — and proves the language can build a real GUI application.
 
 ## Progress
 
-**Editor core — built and headless-tested (LDP3 `src/forge.ldp3`).** The heart of the IDE
-was built first, decoupled from graphics so it is unit-testable without a window:
+**Editor engine — built and headless-tested, multi-file LDP3 under `src/`.** The heart of
+the IDE was built first, decoupled from graphics so it is unit-testable without a window.
+Every module is its own `.ldp3` file in a namespaced package; `ldp3 build` (via `ldp3.toml`)
+compiles them into one program, and `build.ps1` runs the self-check (**"editor tests: OK
+(154 checks)"**). Running `Forge.exe` also prints one rendered frame of the engine.
 
-- **`editor.TextBuffer`** — a line-based text model (one String per line): insertChar,
-  splitLine (Enter), backspace (delete-left, or join lines at a line start), load/serialize.
-- **`editor.Editor`** — a caret over a TextBuffer: type/enter/backspace, arrow moves with
-  column clamping and line-wrap, and **snapshot-based undo/redo**.
-- **`syntax.Highlighter`** — a small LDP3 tokenizer that tiles a line into coloured Spans
-  (keyword/ident/number/string/char/comment/punct), the language-aware highlighting.
+Layered as a clean MVC:
+
+- **Model — `editor/`**
+  - **`TextBuffer`** — a line-based text model (one String per line): insertChar, splitLine
+    (Enter), backspace, multi-line getRange/deleteRange/insertText, whole-line set/insert/
+    remove, load/serialize.
+  - **`Editor`** — a caret over a TextBuffer: type/enter/backspace/delete-forward; arrow,
+    word, smart-Home/End, and document moves (each with a select variant); selection with
+    anchor; **clipboard** (copy/cut/paste, multi-line); **line ops** (duplicate/delete/
+    move/indent/dedent); **snapshot-based undo/redo**; and plain-text **find/replace**.
+  - **`Search`** — line-oriented plain-text search (findAll/next/prev/count, case folding)
+    with a `Match` sentinel so callers never touch a nullable.
+  - **`Snapshot` / `Clipboard`** — small value/holder classes for undo and cut-paste.
+- **View — `view/` + `syntax/`**
+  - **`Viewport`** — a cell-based scrolling window: keep-caret-visible with a scrolloff
+    margin, paging, clamping.
+  - **`syntax.Highlighter`** — a small LDP3 tokenizer that tiles a line into coloured Spans
+    (keyword/ident/number/string/char/comment/punct).
+  - **`TextRenderer`** — paints the visible state into text rows (line-number gutter +
+    horizontal clipping), a status bar, and an ANSI-coloured variant for a real terminal.
+- **Controller & input — `app/` + `input/`**
+  - **`Controller`** — the brain: owns Document + Editor + Viewport + Highlighter, keeps
+    the viewport following the caret, tracks the dirty flag, and exposes a flat command +
+    render-query surface for any front-end.
+  - **`input.Key` / `input.KeyMap`** — a decoded key model and all editor key bindings in
+    one place (Shift = extend selection, Ctrl = word/document scope, Alt = line moves,
+    Ctrl+C/X/V/Z/Y/A/D shortcuts).
+  - **`app.Demo`** — prints one rendered frame so `Forge.exe` demonstrates the whole
+    pipeline end to end.
 - **`io.Document`** — open/save a file from disk (Files.readLines/writeLines) with a
-  modified flag.
-- **`harness.Asserts`** — a tiny self-test harness; `build.ps1` compiles and runs the suite
-  (currently "editor tests: OK (36 checks)").
+  modified flag; **`test/`** — the `Asserts` harness + `CoreTests` suite.
 
-Found and fixed one stdlib gap on the way: `ArrayList.insertAt` (LDP3 repo).
+Found and fixed stdlib/language gaps on the way: `ArrayList.insertAt` (LDP3 repo); confirmed
+the reserved-word set (`on`, `step`) and the nullable/no-narrowing model shape the API design
+(sentinel returns over nullable pointers).
 
 **Next:** the graphics/UI layer (windowing + `ldp3-opengl` text rendering), which needs
-visual verification. The editor core above is the model it renders and drives.
+visual verification. The engine above is the model it will render and drive; the
+`TextRenderer` already proves the exact frame the GPU layer must reproduce.
