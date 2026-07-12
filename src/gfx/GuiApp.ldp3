@@ -16,6 +16,7 @@ import System.IO.Console;
 import System.IO.File;
 import System.IO.Paths;
 import System.Text.StringBuilder;
+import System.Memory;
 
 program Forge;
 
@@ -30,6 +31,7 @@ public bundle forge {
         public class Win32 {
             public extern stdcall static method PostMessageA(long hwnd, int msg, long wp, long lp) returns int;
             public extern stdcall static method fflush(long stream) returns int;
+            public extern stdcall static method GetModuleFileNameA(long hModule, long buf, int size) returns int;
         }
 
         // A one-shot request from a menu command back to the run loop to open a project folder. The loop owns
@@ -332,6 +334,9 @@ public bundle forge {
                     return;
                 }
                 if (id.equals("app.quit")) { Win32.PostMessageA(win.hwnd, 16, 0, 0); return; }   // WM_CLOSE
+                if (id.equals("help.stdlib")) { GuiApp.openReference(wb, "stdlib.ldp3"); return; }
+                if (id.equals("help.langref")) { GuiApp.openReference(wb, "language-reference.md"); return; }
+                if (id.equals("help.keywords")) { GuiApp.openReference(wb, "keywords.md"); return; }
                 if (id.equals("help.about")) {
                     wb.output().banner("About Forge", "Forge -- the LDP3 IDE, written in LDP3.");
                     return;
@@ -349,6 +354,34 @@ public bundle forge {
                 String path = NativeDialog.saveFile(win.hwnd, suggested);
                 if (path.length() > 0) {
                     c.saveAs(path);
+                }
+                return;
+            }
+
+            // The directory Forge.exe lives in (via GetModuleFileNameA), so bundled resources resolve
+            // relative to the install location rather than the current working directory.
+            private static method exeDir() returns String {
+                address buf = Memory.alloc(520);
+                int n = Win32.GetModuleFileNameA(0, cast<long>(buf), 520);
+                mutable String full = "";
+                if (n > 0) { full = Memory.readString(buf, n); }
+                Memory.free(buf);
+                return Paths.dirname(full);
+            }
+            // Full path to a bundled reference file (reference/<name> next to the exe).
+            private static method referencePath(String name) returns String {
+                return GuiApp.exeDir() + "/reference/" + name;
+            }
+            // Open a bundled reference document (the real stdlib, the spec) in a browsable tab. Reuses the
+            // full editor -- syntax highlighting, folding, Ctrl+Shift+O symbol navigation -- so the standard
+            // library is browsed "down to the class" with the same tools as any source file.
+            private static method openReference(Workbench* wb, String name) returns void {
+                String p = GuiApp.referencePath(name);
+                if (File.exists(p)) {
+                    wb.openFile(p);
+                } else {
+                    wb.output().banner("Reference not found",
+                        "Could not find " + name + " next to Forge (looked in " + GuiApp.exeDir() + "/reference).");
                 }
                 return;
             }
@@ -747,6 +780,8 @@ public bundle forge {
                         ov.open(2);
                     } else if (e.isKey() && ctrl && e.vk == 87) {            // Ctrl+W -> close tab
                         wb.closeActiveTab();
+                    } else if (e.isKey() && e.vk == 112) {                   // F1 -> standard library reference
+                        GuiApp.openReference(wb, "stdlib.ldp3");
                     } else if (e.isKey() && e.vk == 123) {                   // F12 def, Shift+F12 references
                         if (shift) {
                             wb.findReferences();

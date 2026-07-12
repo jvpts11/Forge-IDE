@@ -82,6 +82,10 @@ public bundle forge {
                 this.menus.add(run);
 
                 Menu* help = new Menu("Help") on heap;
+                help.add("Standard Library", "help.stdlib");
+                help.add("Language Reference", "help.langref");
+                help.add("Keyword Catalog", "help.keywords");
+                help.sep();
                 help.add("About Forge", "help.about");
                 this.menus.add(help);
             }
