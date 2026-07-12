@@ -17,3 +17,6 @@ packages/
 *.swp
 .DS_Store
 Thumbs.db
+
+# self-test scratch file
+*.tmp
