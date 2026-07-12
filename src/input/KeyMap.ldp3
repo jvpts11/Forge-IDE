@@ -1,0 +1,81 @@
+import app.Controller;
+
+program Forge;
+
+public bundle forge {
+    public namespace input {
+
+        // The editor's key bindings, in one place: translate decoded Key events into Controller commands so
+        // they can be tested and later remapped. dispatch() returns true when the key was handled. The
+        // Shift flag becomes the "extend selection" argument; Ctrl scopes motion to words/document; Alt+Up/
+        // Down move the whole line.
+        public class KeyMap {
+
+            private method lower(char c) returns char {
+                if (c >= 'A' && c <= 'Z') { return cast<char>(cast<int>(c) + 32); }
+                return c;
+            }
+
+            public method dispatch(Controller* c, Key* k) returns boolean {
+                if (k.code == KeyCode.CHAR) {
+                    if (k.ctrl) { return this.shortcut(c, this.lower(k.ch)); }
+                    if (k.alt) { return false; }              // no Alt+char bindings yet
+                    c.insertChar(k.ch);
+                    return true;
+                }
+                if (k.code == KeyCode.ENTER) { c.newline(); return true; }
+                if (k.code == KeyCode.BACKSPACE) {
+                    if (k.ctrl) { c.deleteWordLeft(); } else { c.backspace(); }
+                    return true;
+                }
+                if (k.code == KeyCode.DELETE) {
+                    if (k.ctrl) { c.deleteWordRight(); } else { c.deleteForward(); }
+                    return true;
+                }
+                if (k.code == KeyCode.TAB) {
+                    if (k.shift) { c.dedent(); } else { c.indent(); }
+                    return true;
+                }
+                if (k.code == KeyCode.LEFT) {
+                    if (k.ctrl) { c.moveWordLeft(k.shift); } else { c.moveLeft(k.shift); }
+                    return true;
+                }
+                if (k.code == KeyCode.RIGHT) {
+                    if (k.ctrl) { c.moveWordRight(k.shift); } else { c.moveRight(k.shift); }
+                    return true;
+                }
+                if (k.code == KeyCode.UP) {
+                    if (k.alt) { c.moveLineUp(); } else { c.moveUp(k.shift); }
+                    return true;
+                }
+                if (k.code == KeyCode.DOWN) {
+                    if (k.alt) { c.moveLineDown(); } else { c.moveDown(k.shift); }
+                    return true;
+                }
+                if (k.code == KeyCode.HOME) {
+                    if (k.ctrl) { c.moveDocStart(k.shift); } else { c.moveLineStart(k.shift); }
+                    return true;
+                }
+                if (k.code == KeyCode.END) {
+                    if (k.ctrl) { c.moveDocEnd(k.shift); } else { c.moveLineEnd(k.shift); }
+                    return true;
+                }
+                if (k.code == KeyCode.PAGE_UP) { c.pageUp(k.shift); return true; }
+                if (k.code == KeyCode.PAGE_DOWN) { c.pageDown(k.shift); return true; }
+                return false;
+            }
+
+            // Ctrl+letter shortcuts. `ch` is already lower-cased.
+            private method shortcut(Controller* c, char ch) returns boolean {
+                if (ch == 'c') { c.copy(); return true; }
+                if (ch == 'x') { c.cut(); return true; }
+                if (ch == 'v') { c.paste(); return true; }
+                if (ch == 'z') { c.undo(); return true; }
+                if (ch == 'y') { c.redo(); return true; }
+                if (ch == 'a') { c.selectAll(); return true; }
+                if (ch == 'd') { c.duplicateLine(); return true; }
+                return false;
+            }
+        }
+    }
+}

@@ -7,6 +7,9 @@ import syntax.Highlighter;
 import io.Document;
 import view.Viewport;
 import app.Controller;
+import input.Key;
+import input.KeyCode;
+import input.KeyMap;
 import test.Asserts;
 
 program Forge;
@@ -296,6 +299,43 @@ public bundle forge {
                 ctrl.moveDocEnd(false);
                 a.eqBool(ctrl.firstLine() > 0, true, "ctrl.docend-scrolled");
                 a.eqBool(ctrl.viewport().isLineVisible(6), true, "ctrl.docend-caret-visible");
+
+                // --- input: KeyMap dispatch (typing, editing, navigation, shortcuts) ---
+                Controller kc = new Controller(10, 40) on heap;
+                KeyMap km = new KeyMap() on heap;
+                km.dispatch(kc, Key.ch('h'));
+                km.dispatch(kc, Key.ch('i'));
+                a.eqStr(kc.editor().document().line(0), "hi", "key.type");
+                km.dispatch(kc, Key.key(KeyCode.ENTER));
+                km.dispatch(kc, Key.ch('y'));
+                a.eqInt(kc.editor().document().lineCount(), 2, "key.enter-count");
+                a.eqStr(kc.editor().document().line(1), "y", "key.enter-line");
+                km.dispatch(kc, Key.key(KeyCode.LEFT));
+                a.eqInt(kc.editor().cursorCol(), 0, "key.left");
+                km.dispatch(kc, Key.key(KeyCode.END));
+                a.eqInt(kc.editor().cursorCol(), 1, "key.end");
+                km.dispatch(kc, Key.key(KeyCode.BACKSPACE));
+                a.eqStr(kc.editor().document().line(1), "", "key.backspace");
+                a.eqBool(km.dispatch(kc, Key.ctrlCh('Z')), true, "key.ctrl-handled");  // undo (case-fold)
+
+                // shift+arrow builds a selection; a following typed char replaces it
+                Controller kc2 = new Controller(10, 40) on heap;
+                km.dispatch(kc2, Key.ch('a'));
+                km.dispatch(kc2, Key.ch('b'));
+                km.dispatch(kc2, Key.ch('c'));
+                km.dispatch(kc2, Key.key(KeyCode.HOME));
+                km.dispatch(kc2, Key.shiftKey(KeyCode.END));
+                a.eqStr(kc2.editor().selectionText(), "abc", "key.shift-select");
+                km.dispatch(kc2, Key.ch('Q'));
+                a.eqStr(kc2.editor().document().line(0), "Q", "key.replace-selection");
+
+                // Ctrl+word navigation and Alt+Up line move
+                Controller kc3 = new Controller(10, 40) on heap;
+                km.dispatch(kc3, Key.key(KeyCode.TAB));               // indent -> 4 spaces
+                a.eqStr(kc3.editor().document().line(0), "    ", "key.tab-indent");
+                a.eqBool(km.dispatch(kc3, Key.ctrlKey(KeyCode.HOME)), true, "key.ctrl-home");
+                a.eqInt(kc3.editor().cursorCol(), 0, "key.ctrl-home-col");
+                a.eqBool(km.dispatch(kc3, Key.ch('~')), true, "key.printable");
 
                 a.summary("editor tests");
                 return a.failCount();
