@@ -44,6 +44,38 @@ public bundle forge {
 
             public method root() returns FileNode* { return this.rootNode; }
 
+            // Every file under the project root (recursive), skipping build/vcs dirs -- powers quick-open.
+            // Bounded in depth and count so a huge tree doesn't stall the picker.
+            public method allFiles() returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                this.walk(this.rootNode.path, out, 0);
+                return out;
+            }
+            private method walk(String dir, ArrayList<String>* out, int depth) returns void {
+                if (depth > 10 || out.size() > 4000) {
+                    return;
+                }
+                ArrayList<String> entries = Files.listDir(dir);
+                mutable int i = 0;
+                while (i < entries.size()) {
+                    String name = entries.get(i);
+                    if (!FileTree.ignored(name)) {
+                        String full = Paths.join(dir, name);
+                        if (File.isDir(full)) {
+                            this.walk(full, out, depth + 1);
+                        } else {
+                            out.add(full);
+                        }
+                    }
+                    i = i + 1;
+                }
+            }
+            private static method ignored(String name) returns boolean {
+                return name.equals(".git") || name.equals("build-output") || name.equals("node_modules")
+                    || name.equals(".vs") || name.equals("target") || name.equals("dist")
+                    || name.equals("obj") || name.equals("bin");
+            }
+
             // Populate a directory node's children (idempotent). Each entry's kind comes from File.isDir.
             private method load(FileNode* node) returns void {
                 if (node.loaded || !node.isDir) { return; }

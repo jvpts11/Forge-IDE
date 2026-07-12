@@ -46,6 +46,13 @@ public bundle forge {
                 this.items = labels;
                 this.targets = lines;
             }
+            // Open the quick-file picker over a list of file paths (mode 4). items holds the full paths.
+            public method openFiles(ArrayList<String>* paths) returns void {
+                this.mode = 4;
+                this.query = "";
+                this.sel = 0;
+                this.items = paths;
+            }
 
             // Indices of items whose label contains the query (case-insensitive), in order. When the query is
             // empty, every item matches.

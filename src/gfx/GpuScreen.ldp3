@@ -824,6 +824,61 @@ public bundle forge {
                 if (ov.mode == 1) { this.drawPalette(batch, ov, wb, screenW, screenH); }
                 else if (ov.mode == 2) { this.drawFindBar(batch, ov, wb, screenW); }
                 else if (ov.mode == 3) { this.drawSymbols(batch, ov, screenW, screenH); }
+                else if (ov.mode == 4) { this.drawQuickOpen(batch, ov, screenW, screenH); }
+                else if (ov.mode == 5) { this.drawGoToLine(batch, ov, screenW); }
+            }
+
+            // Go-to-line box (Ctrl+G): a small centered input for a line number.
+            private method drawGoToLine(Batch2D* batch, Overlay* ov, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 320;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                int bh = ch + 14;
+                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
+                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "line: ", 0.502, 0.588, 0.584, 1.0);
+                this.font.drawText(batch, bx + 12 + 6 * cw, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                int qx = bx + 12 + (6 + ov.query.length()) * cw;
+                batch.rect(qx, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+            }
+
+            // The quick-open file picker (Ctrl+P): a centered list of project files filtered by the query,
+            // basename bright with the path dim beside it, the selected row highlighted.
+            private method drawQuickOpen(Batch2D* batch, Overlay* ov, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 640;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                ArrayList<int>* m = ov.matches();
+                mutable int shown = m.size();
+                if (shown > 14) {
+                    shown = 14;
+                }
+                int bh = ch + 12 + shown * (ch + 4) + 8;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);
+                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
+                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "> ", 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                int qx = bx + 12 + (2 + ov.query.length()) * cw;
+                batch.rect(qx, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                mutable int i = 0;
+                while (i < shown) {
+                    int orig = m.get(i);
+                    int ry = by + ch + 12 + i * (ch + 4);
+                    if (i == ov.sel) {
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18);
+                    }
+                    String path = ov.items.get(orig);
+                    String name = Paths.basename(path);
+                    this.font.drawText(batch, bx + 16, ry, name, 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, bx + 16 + (name.length() + 2) * cw, ry, path,
+                                       0.376, 0.478, 0.475, 1.0);
+                    i = i + 1;
+                }
             }
 
             // The go-to-symbol navigator (Ctrl+Shift+O): a centered list of the file's declarations filtered by

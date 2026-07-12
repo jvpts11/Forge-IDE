@@ -111,7 +111,7 @@ public bundle forge {
                         win.sleep(8);
                         continue;
                     }
-                    GuiApp.processInput(win, wb, ov, comp, menu);
+                    GuiApp.processInput(win, wb, ov, comp, menu, tree);
                     // left click -> menu bar / tab / tree / caret (edge-triggered); ignored while an overlay
                     // is open, but menu clicks still work because the menu isn't a modal overlay
                     boolean down = win.keyDown(1);   // VK_LBUTTON
@@ -403,6 +403,18 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
+                } else if (cmd.equals("quickopen")) {
+                    ov.openFiles(tree.allFiles());
+                    mutable int i = 0;
+                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    System.IO.Console.println("ok " + ov.matches().size().toString() + " files");
+                } else if (cmd.equals("gotoline")) {
+                    ov.open(5);
+                    mutable int i = 0;
+                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    GuiApp.runGoToLine(ov, wb);
+                    ov.close();
+                    System.IO.Console.println("ok ln=" + (wb.active().editor().cursorRow() + 1).toString());
                 } else if (cmd.equals("welcomeshot")) {
                     GuiApp.drawWelcomeFrame(win, batch, screen, WorkspaceStore.loadRecent());
                     Wgl.glFinish();
@@ -510,6 +522,8 @@ public bundle forge {
                     else if (vk == 13) {
                         if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
                         else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
+                        else if (ov.mode == 4) { GuiApp.runQuickOpen(ov, wb); }
+                        else if (ov.mode == 5) { GuiApp.runGoToLine(ov, wb); }
                         else { wb.active().find(ov.query); }
                         ov.close();
                     }
@@ -605,7 +619,7 @@ public bundle forge {
                     i = i + 1;
                 }
                 win.pump();
-                GuiApp.processInput(win, wb, ov, comp, menu);
+                GuiApp.processInput(win, wb, ov, comp, menu, tree);
 
                 GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
                 Wgl.glFinish();
@@ -626,7 +640,7 @@ public bundle forge {
             // keys navigate/edit, Ctrl+letter runs a shortcut -- exactly the CHAR-vs-special split the KeyMap
             // expects. Typed text comes via WM_CHAR; Ctrl combos and named keys via WM_KEYDOWN.
             private static method processInput(GlWindow* win, Workbench* wb, Overlay* ov, Completion* comp,
-                                               MenuBar* menu) returns void {
+                                               MenuBar* menu, FileTree* tree) returns void {
                 while (win.hasEvent()) {
                     InputEvent* e = win.nextEvent();
                     boolean ctrl = win.modCtrl();
@@ -640,6 +654,10 @@ public bundle forge {
                         // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
                     } else if (e.isKey() && ctrl && shift && e.vk == 80) {   // Ctrl+Shift+P -> palette
                         ov.open(1);
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 80) {  // Ctrl+P -> quick open file
+                        ov.openFiles(tree.allFiles());
+                    } else if (e.isKey() && ctrl && e.vk == 71) {            // Ctrl+G -> go to line
+                        ov.open(5);
                     } else if (e.isKey() && ctrl && shift && e.vk == 79) {   // Ctrl+Shift+O -> go-to-symbol
                         GuiApp.openSymbols(ov, wb);
                     } else if (e.isKey() && ctrl && shift && e.vk == 219) {  // Ctrl+Shift+[ -> fold at caret
@@ -715,6 +733,8 @@ public bundle forge {
                     if (vk == 13) {                                     // Enter
                         if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
                         else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
+                        else if (ov.mode == 4) { GuiApp.runQuickOpen(ov, wb); }
+                        else if (ov.mode == 5) { GuiApp.runGoToLine(ov, wb); }
                         else { wb.active().find(ov.query); }
                         ov.close();
                     }
@@ -770,6 +790,22 @@ public bundle forge {
                     int orig = m.get(ov.sel);
                     int line = ov.targets.get(orig);
                     wb.active().placeCaret(line - 1, 0);
+                }
+                return;
+            }
+            // Open the selected file from the quick-open picker.
+            private static method runQuickOpen(Overlay* ov, Workbench* wb) returns void {
+                ArrayList<int>* m = ov.matches();
+                if (ov.sel >= 0 && ov.sel < m.size()) {
+                    wb.openFile(ov.items.get(m.get(ov.sel)));
+                }
+                return;
+            }
+            // Jump to the 1-based line number typed into the go-to-line box.
+            private static method runGoToLine(Overlay* ov, Workbench* wb) returns void {
+                int ln = ov.query.toInt();
+                if (ln > 0) {
+                    wb.active().placeCaret(ln - 1, 0);
                 }
                 return;
             }
