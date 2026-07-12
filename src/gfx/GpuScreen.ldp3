@@ -409,7 +409,7 @@ public bundle forge {
                         this.drawFoldMarker(batch, ox + gpx - 3, y + ch / 2, c.isFolded(docLine));
                     }
                     String line = c.renderLine(r);
-                    this.drawIndentGuides(batch, line, textX, y, cw, ch);
+                    this.drawIndentGuides(batch, c.guideIndent(docLine), textX, y, cw, ch);
                     ArrayList<Span> spans = c.renderSpans(r);
                     mutable int si = 0;
                     while (si < spans.size()) {
@@ -751,12 +751,10 @@ public bundle forge {
                 }
             }
 
-            // Faint vertical guides at each indent level of a line -- the "where does this block sit" cue.
-            private method drawIndentGuides(Batch2D* batch, String line, int textX, int y, int cw, int ch)
+            // Faint vertical guides at each indent level up to `lead` spaces -- the "where does this block
+            // sit" cue. `lead` is the fold/blank-aware effective indent so the guides stay continuous.
+            private method drawIndentGuides(Batch2D* batch, int lead, int textX, int y, int cw, int ch)
                     returns void {
-                int n = line.length();
-                mutable int lead = 0;
-                while (lead < n && line.charAt(lead) == ' ') { lead = lead + 1; }
                 mutable int col = 4;
                 while (col < lead) {
                     batch.rect(textX + col * cw, y, 1, ch, 0.239, 0.353, 0.373, 0.5);

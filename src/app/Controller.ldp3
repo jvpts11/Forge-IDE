@@ -224,6 +224,55 @@ public bundle forge {
             public method caretScreenRow() returns int { return this.screenRowForDocLine(this.ed.cursorRow()); }
             public method caretScreenCol() returns int { return this.ed.cursorCol() - this.view.firstColumn(); }
 
+            // Effective indentation (in leading spaces) for the indent guides at a line. A blank line carries
+            // the guides of its surrounding block -- the deeper of the nearest non-blank line above and below
+            // -- so the vertical guides stay continuous through empty lines instead of breaking.
+            public method guideIndent(int docLine) returns int {
+                String line = this.ed.document().line(docLine);
+                if (!Controller.isBlankLine(line)) {
+                    return Controller.leadingSpaces(line);
+                }
+                int total = this.ed.document().lineCount();
+                mutable int up = docLine - 1;
+                while (up >= 0 && Controller.isBlankLine(this.ed.document().line(up))) {
+                    up = up - 1;
+                }
+                mutable int down = docLine + 1;
+                while (down < total && Controller.isBlankLine(this.ed.document().line(down))) {
+                    down = down + 1;
+                }
+                mutable int pv = 0;
+                if (up >= 0) {
+                    pv = Controller.leadingSpaces(this.ed.document().line(up));
+                }
+                mutable int nx = 0;
+                if (down < total) {
+                    nx = Controller.leadingSpaces(this.ed.document().line(down));
+                }
+                if (pv > nx) {
+                    return pv;
+                }
+                return nx;
+            }
+            private static method isBlankLine(String s) returns boolean {
+                mutable int i = 0;
+                while (i < s.length()) {
+                    char ch = s.charAt(i);
+                    if (ch != ' ' && ch != '\t') {
+                        return false;
+                    }
+                    i = i + 1;
+                }
+                return true;
+            }
+            private static method leadingSpaces(String s) returns int {
+                mutable int i = 0;
+                while (i < s.length() && s.charAt(i) == ' ') {
+                    i = i + 1;
+                }
+                return i;
+            }
+
             // --- folding ---
             public method isFoldable(int docLine) returns boolean { return this.folds.isFoldable(docLine); }
             public method isFolded(int docLine) returns boolean { return this.folds.isFolded(docLine); }
