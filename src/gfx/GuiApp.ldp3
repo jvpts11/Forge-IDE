@@ -22,8 +22,12 @@ public bundle forge {
 
         // Post synthetic input to a window, so the real WM_CHAR/WM_KEYDOWN decode path can be exercised
         // offscreen (the uitest mode) rather than only the scripted handleKey proxy.
+        // Win32/CRT entry points used by the automation modes. fflush(NULL) flushes stdout after every
+        // serve reply -- when stdout is a pipe (the MCP transport) the CRT fully buffers it, so without
+        // this the client blocks waiting for an ack stuck in the buffer.
         public class Win32 {
             public extern stdcall static method PostMessageA(long hwnd, int msg, long wp, long lp) returns int;
+            public extern stdcall static method fflush(long stream) returns int;
         }
 
         // The graphics front-end: opens a real OpenGL window, loads the Consolas glyph atlas onto the GPU,
@@ -124,13 +128,17 @@ public bundle forge {
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 System.IO.Console.println("forge-serve ready");
+                Win32.fflush(0);
                 mutable boolean running = true;
                 while (running) {
                     win.pump();
                     String line = System.IO.Console.read();
                     if (line.length() == 0) { running = false; }
                     else if (GuiApp.firstWord(line).equals("quit")) { running = false; }
-                    else { GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov); }
+                    else {
+                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov);
+                        Win32.fflush(0);
+                    }
                 }
                 return;
             }
