@@ -125,7 +125,7 @@ public bundle forge {
                 this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
                 this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
                 this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
-                this.drawEditor(batch, wb, ov, tw, etop, screenW - tw, screenH - etop - sh - panelH);
+                this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw, screenH - etop - sh - panelH);
                 if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH);
                 }
@@ -500,8 +500,8 @@ public bundle forge {
             }
 
             // The editor pane at (ox, oy), size (pw, ph).
-            private method drawEditor(Batch2D* batch, Workbench* wb, Overlay* ov, int ox, int oy, int pw, int ph)
-                    returns void {
+            private method drawEditor(Batch2D* batch, Workbench* wb, Overlay* ov, int mx, int my, int ox, int oy,
+                                      int pw, int ph) returns void {
                 Controller* c = wb.active();
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
@@ -613,6 +613,30 @@ public bundle forge {
 
                 // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
                 this.drawOverviewRuler(batch, wb, ox + pw, oy, ph);
+
+                // hover tooltip: the declaration of the identifier under the mouse (only when no overlay covers it)
+                if (!ov.isOpen() && mx >= textX && my >= oy + this.topPad && my < oy + ph) {
+                    int hsr = (my - (oy + this.topPad)) / ch;
+                    if (hsr >= 0 && hsr < visible) {
+                        int hdoc = c.lineNumberAt(hsr);
+                        int hcol = c.firstColumn() + (mx - textX) / cw;
+                        String info = c.hoverInfo(hdoc, hcol);
+                        if (info.length() > 0) {
+                            int tw2 = (info.length() + 2) * cw;
+                            mutable int tx = mx;
+                            if (tx + tw2 > ox + pw) {
+                                tx = ox + pw - tw2;
+                            }
+                            if (tx < ox) {
+                                tx = ox;
+                            }
+                            int tyt = my + ch;
+                            batch.rect(tx, tyt, tw2, ch + 8, 0.027, 0.055, 0.063, 1.0);
+                            batch.rect(tx, tyt, tw2, 2, 0.918, 0.706, 0.392, 1.0);
+                            this.font.drawText(batch, tx + cw, tyt + 4, info, 0.804, 0.851, 0.843, 1.0);
+                        }
+                    }
+                }
             }
 
             // A JetBrains/VS Code-style overview ruler down the right edge of the editor: a faint scroll thumb

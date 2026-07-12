@@ -130,11 +130,15 @@ public bundle forge {
             public method matchingBracket() returns Match* { return this.ed.matchingBracket(); }
 
             // --- code intelligence ---
-            // The identifier the caret sits on/in (empty when the caret isn't on a word).
-            public method wordAtCaret() returns String {
-                int row = this.ed.cursorRow();
-                int col = this.ed.cursorCol();
+            // The identifier at document position (row, col), or "" if none.
+            public method wordAt(int row, int col) returns String {
+                if (row < 0 || row >= this.ed.document().lineCount()) {
+                    return "";
+                }
                 String line = this.ed.document().line(row);
+                if (col < 0 || col > line.length()) {
+                    return "";
+                }
                 mutable int start = col;
                 while (start > 0 && Controller.isIdentChar(line.charAt(start - 1))) {
                     start = start - 1;
@@ -147,6 +151,23 @@ public bundle forge {
                     return "";
                 }
                 return line.substring(start, end);
+            }
+            // The identifier the caret sits on/in (empty when the caret isn't on a word).
+            public method wordAtCaret() returns String {
+                return this.wordAt(this.ed.cursorRow(), this.ed.cursorCol());
+            }
+            // A hover string for the identifier at (row, col): the trimmed declaration line of the symbol it
+            // names, or "" if it isn't a known declaration.
+            public method hoverInfo(int row, int col) returns String {
+                String w = this.wordAt(row, col);
+                if (w.length() == 0) {
+                    return "";
+                }
+                int line = Symbols.definitionLine(this, w);
+                if (line < 0) {
+                    return "";
+                }
+                return this.ed.document().line(line).trim();
             }
             private static method isIdentChar(char ch) returns boolean {
                 return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')

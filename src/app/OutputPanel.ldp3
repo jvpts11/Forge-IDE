@@ -32,6 +32,12 @@ public bundle forge {
                 this.lines = out;
                 this.visible = true;
             }
+            // Show a prepared list of lines (e.g. find-references results).
+            public method showLines(String caption, ArrayList<String>* body) returns void {
+                this.title = caption;
+                this.lines = body;
+                this.visible = true;
+            }
             public method lineCount() returns int { return this.lines.size(); }
             public method line(int i) returns String { return this.lines.get(i); }
 

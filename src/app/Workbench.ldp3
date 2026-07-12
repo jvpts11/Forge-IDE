@@ -97,6 +97,56 @@ public bundle forge {
             public method closeActiveTab() returns void {
                 this.closeTab(this.docs.activeIndex());
             }
+
+            // Find all references to the identifier under the caret in the active file and list them in the
+            // output panel (whole-word matches). Returns the number found.
+            public method findReferences() returns int {
+                Controller* c = this.docs.active();
+                String w = c.wordAtCaret();
+                if (w.length() == 0) {
+                    return 0;
+                }
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int count = 0;
+                int total = c.editor().document().lineCount();
+                mutable int row = 0;
+                while (row < total) {
+                    String line = c.editor().document().line(row);
+                    int here = Workbench.countWholeWord(line, w);
+                    if (here > 0) {
+                        body.add("  L" + (row + 1).toString() + ":  " + line.trim());
+                        count = count + here;
+                    }
+                    row = row + 1;
+                }
+                this.out.showLines(count.toString() + " references to '" + w + "'", body);
+                return count;
+            }
+            private static method countWholeWord(String line, String w) returns int {
+                int m = w.length();
+                int n = line.length();
+                mutable int count = 0;
+                mutable int i = 0;
+                while (i + m <= n) {
+                    if (line.substring(i, i + m).equals(w)) {
+                        boolean leftOk = i == 0 || !Workbench.isIdentChar(line.charAt(i - 1));
+                        boolean rightOk = i + m == n || !Workbench.isIdentChar(line.charAt(i + m));
+                        if (leftOk && rightOk) {
+                            count = count + 1;
+                            i = i + m;
+                        } else {
+                            i = i + 1;
+                        }
+                    } else {
+                        i = i + 1;
+                    }
+                }
+                return count;
+            }
+            private static method isIdentChar(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
             public method output() returns OutputPanel* { return this.out; }
             // Run a shell command on the project and show its output in the bottom panel.
             public method runShell(String caption, String cmd) returns void { this.out.run(caption, cmd); }

@@ -424,6 +424,13 @@ public bundle forge {
                 } else if (cmd.equals("addrecent")) {
                     WorkspaceStore.addRecent(arg);
                     System.IO.Console.println("ok last=" + WorkspaceStore.lastProject());
+                } else if (cmd.equals("hoverat")) {
+                    Controller* hc = wb.active();
+                    String info = hc.hoverInfo(hc.editor().cursorRow(), hc.editor().cursorCol());
+                    System.IO.Console.println("hover: " + info);
+                } else if (cmd.equals("refs")) {
+                    int n = wb.findReferences();
+                    System.IO.Console.println("ok " + n.toString() + " references");
                 } else if (cmd.equals("gotodef")) {
                     boolean found = wb.active().goToDefinition();
                     mutable String r = "not-found";
@@ -639,8 +646,12 @@ public bundle forge {
                         ov.open(2);
                     } else if (e.isKey() && ctrl && e.vk == 87) {            // Ctrl+W -> close tab
                         wb.closeActiveTab();
-                    } else if (e.isKey() && e.vk == 123) {                   // F12 -> go to definition
-                        wb.active().goToDefinition();
+                    } else if (e.isKey() && e.vk == 123) {                   // F12 def, Shift+F12 references
+                        if (shift) {
+                            wb.findReferences();
+                        } else {
+                            wb.active().goToDefinition();
+                        }
                     } else if (e.isKey() && GuiApp.caretHotkey(wb, e.vk, ctrl, shift, alt)) {
                         // consumed by a multi-cursor hotkey (Ctrl+Alt+Up/Down add a caret; Esc collapses)
                     } else if (e.isChar()) {
