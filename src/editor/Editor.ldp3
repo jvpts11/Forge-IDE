@@ -18,6 +18,7 @@ public bundle forge {
             private mutable boolean hasSel;
             private mutable Clipboard* clip;
             private mutable Search* search;
+            private mutable Brackets* brackets;
             private mutable ArrayList<Snapshot>* undoStack;
             private mutable ArrayList<Snapshot>* redoStack;
 
@@ -30,8 +31,51 @@ public bundle forge {
                 this.hasSel = false;
                 this.clip = new Clipboard() on heap;
                 this.search = new Search(doc) on heap;
+                this.brackets = new Brackets(doc) on heap;
                 this.undoStack = new ArrayList<Snapshot>() on heap;
                 this.redoStack = new ArrayList<Snapshot>() on heap;
+            }
+
+            // --- bracket auto-close + matching ---
+            private method closerFor(char c) returns char {
+                if (c == '(') { return ')'; }
+                if (c == '[') { return ']'; }
+                if (c == '{') { return '}'; }
+                if (c == cast<char>(34)) { return cast<char>(34); }   // "
+                if (c == cast<char>(39)) { return cast<char>(39); }   // '
+                return cast<char>(0);
+            }
+            private method isCloserChar(char c) returns boolean {
+                return c == ')' || c == ']' || c == '}'
+                    || c == cast<char>(34) || c == cast<char>(39);
+            }
+            private method nextCharIs(char c) returns boolean {
+                String line = this.buf.line(this.row);
+                return this.col < line.length() && line.charAt(this.col) == c;
+            }
+
+            // Type a character with auto-pairing: an opener also inserts its closer (caret stays between);
+            // typing a closer that already sits under the caret just steps over it. With a selection it
+            // falls back to a plain replace.
+            public method typeWithPairs(char c) returns void {
+                if (this.hasSelection()) { this.type(c); return; }
+                if (this.isCloserChar(c) && this.nextCharIs(c)) {
+                    this.rawRight();
+                    return;
+                }
+                char closer = this.closerFor(c);
+                this.type(c);
+                if (closer != cast<char>(0)) {
+                    this.buf.insertChar(this.row, this.col, closer);   // after caret, no caret move
+                }
+            }
+
+            // The matching bracket for a bracket at or just before the caret, or an invalid Match.
+            public method matchingBracket() returns Match* {
+                Match* m = this.brackets.matchAt(this.row, this.col);
+                if (m.valid()) { return m; }
+                if (this.col > 0) { return this.brackets.matchAt(this.row, this.col - 1); }
+                return m;
             }
 
             // --- find / replace (plain text, case-sensitivity via setSearchCase) ---

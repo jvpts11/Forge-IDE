@@ -49,7 +49,7 @@ public bundle forge {
             public method setScrollMargin(int m) returns void { this.scrollMargin = m; }
 
             // --- text-changing commands ---
-            public method insertChar(char c) returns void { this.ed.type(c); this.edited(); }
+            public method insertChar(char c) returns void { this.ed.typeWithPairs(c); this.edited(); }
             public method insertText(String s) returns void { this.ed.insertText(s); this.edited(); }
             public method newline() returns void { this.ed.enter(); this.edited(); }
             public method backspace() returns void { this.ed.backspace(); this.edited(); }

@@ -1,6 +1,7 @@
 import System.Collections.ArrayList;
 import editor.TextBuffer;
 import editor.Editor;
+import editor.Match;
 import syntax.Tok;
 import syntax.Span;
 import syntax.Highlighter;
@@ -444,6 +445,29 @@ public bundle forge {
                 File.remove("ft_tree.tmp/sub/c.txt");
                 File.remove("ft_tree.tmp/a.txt");
                 File.remove("ft_tree.tmp/b.txt");
+
+                // --- auto-close pairs + bracket matching ---
+                Editor bp = new Editor(new TextBuffer() on heap) on heap;
+                bp.typeWithPairs('(');
+                a.eqStr(bp.document().line(0), "()", "pair.insert");
+                a.eqInt(bp.cursorCol(), 1, "pair.caret-inside");
+                bp.typeWithPairs(')');                          // step over the auto-inserted ')'
+                a.eqStr(bp.document().line(0), "()", "pair.typeover");
+                a.eqInt(bp.cursorCol(), 2, "pair.typeover-caret");
+
+                Editor bp2 = new Editor(new TextBuffer() on heap) on heap;
+                bp2.document().loadText("foo(bar(x))");
+                bp2.moveRight(); bp2.moveRight(); bp2.moveRight();   // caret on the first '('
+                Match* mm = bp2.matchingBracket();
+                a.eqBool(mm.valid(), true, "match.open-valid");
+                a.eqInt(mm.col, 10, "match.open-close");
+
+                Editor bp3 = new Editor(new TextBuffer() on heap) on heap;
+                bp3.document().loadText("(a(b)c)");
+                bp3.moveDocEnd();                               // caret just past the closing ')'
+                Match* mm3 = bp3.matchingBracket();
+                a.eqBool(mm3.valid(), true, "match.close-valid");
+                a.eqInt(mm3.col, 0, "match.close-open");
 
                 a.summary("editor tests");
                 return a.failCount();
