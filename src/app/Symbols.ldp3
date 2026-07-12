@@ -52,6 +52,37 @@ public bundle forge {
                 return out;
             }
 
+            // Same extraction as list(), but over raw file lines (no Controller) -- powers workspace-wide
+            // symbol search across files that aren't open. Appends to `out`.
+            public static method scan(ArrayList<String> lines, ArrayList<Symbol>* out) returns void {
+                int n = lines.size();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = Symbols.stripComment(lines.get(row));
+                    mutable String kind = "";
+                    mutable String name = "";
+                    mutable String prev = "";
+                    mutable int i = 0;
+                    int len = line.length();
+                    while (i < len) {
+                        while (i < len && !Symbols.isIdentChar(line.charAt(i))) { i = i + 1; }
+                        mutable int start = i;
+                        while (i < len && Symbols.isIdentChar(line.charAt(i))) { i = i + 1; }
+                        if (i > start) {
+                            String word = line.substring(start, i);
+                            if (kind.length() == 0 && Symbols.isDeclKeyword(prev)) {
+                                kind = prev;
+                                name = word;
+                            }
+                            prev = word;
+                        }
+                    }
+                    if (name.length() > 0) { out.add(new Symbol(kind + " " + name, row + 1) on heap); }
+                    row = row + 1;
+                }
+                return;
+            }
+
             // The 0-based line where `name` is declared (the first class/method/etc whose name matches), or
             // -1. Powers go-to-definition: the identifier under the caret is looked up here.
             public static method definitionLine(Controller* c, String name) returns int {

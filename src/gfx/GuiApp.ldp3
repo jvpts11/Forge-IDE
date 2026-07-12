@@ -647,6 +647,12 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
+                } else if (cmd.equals("wsymbols")) {
+                    GuiApp.openWorkspaceSymbols(ov, wb, tree);
+                    mutable int i = 0;
+                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    System.IO.Console.println("ok " + ov.matches().size().toString() + " of "
+                        + ov.items.size().toString() + " workspace symbols");
                 } else if (cmd.equals("quickopen")) {
                     ov.openFiles(tree.allFiles());
                     mutable int i = 0;
@@ -908,6 +914,8 @@ public bundle forge {
                         ov.open(5);
                     } else if (e.isKey() && ctrl && shift && e.vk == 79) {   // Ctrl+Shift+O -> go-to-symbol
                         GuiApp.openSymbols(ov, wb);
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 84) {  // Ctrl+T -> workspace symbols
+                        GuiApp.openWorkspaceSymbols(ov, wb, tree);
                     } else if (e.isKey() && ctrl && shift && e.vk == 219) {  // Ctrl+Shift+[ -> fold at caret
                         wb.active().toggleFoldAtCaret();
                     } else if (e.isKey() && ctrl && shift && e.vk == 70) {   // Ctrl+Shift+F -> find in files
@@ -1046,9 +1054,40 @@ public bundle forge {
                 ArrayList<int>* m = ov.matches();
                 if (ov.sel >= 0 && ov.sel < m.size()) {
                     int orig = m.get(ov.sel);
+                    // workspace symbols carry a file to open first; file-local symbols don't
+                    if (orig < ov.itemFiles.size()) {
+                        wb.openFile(ov.itemFiles.get(orig));
+                    }
                     int line = ov.targets.get(orig);
                     wb.active().placeCaret(line - 1, 0);
                 }
+                return;
+            }
+            // Gather every declaration in every project .ldp3 file into the symbol navigator (Ctrl+T), each
+            // labelled with its file, so you can jump to any class/method in the workspace.
+            private static method openWorkspaceSymbols(Overlay* ov, Workbench* wb, FileTree* tree) returns void {
+                ArrayList<String>* files = tree.allFiles();
+                ArrayList<String>* labels = new ArrayList<String>() on heap;
+                ArrayList<int>* lines = new ArrayList<int>() on heap;
+                ArrayList<String>* symFiles = new ArrayList<String>() on heap;
+                mutable int fi = 0;
+                while (fi < files.size() && labels.size() < 3000) {
+                    String path = files.get(fi);
+                    if (path.endsWith(".ldp3")) {
+                        ArrayList<Symbol>* syms = new ArrayList<Symbol>() on heap;
+                        Symbols.scan(Files.readLines(path), syms);
+                        String base = Paths.basename(path);
+                        mutable int si = 0;
+                        while (si < syms.size()) {
+                            labels.add(syms.get(si).caption + "  (" + base + ")");
+                            lines.add(syms.get(si).line);
+                            symFiles.add(path);
+                            si = si + 1;
+                        }
+                    }
+                    fi = fi + 1;
+                }
+                ov.openWorkspaceSymbols(labels, lines, symFiles);
                 return;
             }
             // Open the selected file from the quick-open picker.

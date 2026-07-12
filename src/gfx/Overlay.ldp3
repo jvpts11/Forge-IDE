@@ -16,6 +16,7 @@ public bundle forge {
             public mutable int sel;     // highlighted result (palette / symbol)
             public mutable ArrayList<String>* items;    // symbol labels (mode 3)
             public mutable ArrayList<int>* targets;     // 1-based target line per item (mode 3)
+            public mutable ArrayList<String>* itemFiles;  // per-item file to open first (workspace symbols)
             public mutable String replace;         // replacement text (mode 2)
             public mutable boolean focusReplace;   // in mode 2, whether typing edits the replace field
 
@@ -25,6 +26,7 @@ public bundle forge {
                 this.sel = 0;
                 this.items = new ArrayList<String>() on heap;
                 this.targets = new ArrayList<int>() on heap;
+                this.itemFiles = new ArrayList<String>() on heap;
                 this.replace = "";
                 this.focusReplace = false;
             }
@@ -38,13 +40,24 @@ public bundle forge {
             // Mode 2: Tab moves focus between the find and replace fields.
             public method toggleField() returns void { this.focusReplace = !this.focusReplace; }
 
-            // Open the symbol navigator over a prepared label/line list.
+            // Open the symbol navigator over a prepared label/line list (current file; no per-item file).
             public method openSymbols(ArrayList<String>* labels, ArrayList<int>* lines) returns void {
                 this.mode = 3;
                 this.query = "";
                 this.sel = 0;
                 this.items = labels;
                 this.targets = lines;
+                this.itemFiles = new ArrayList<String>() on heap;
+            }
+            // Open the workspace symbol navigator: each item also carries the file to open before jumping.
+            public method openWorkspaceSymbols(ArrayList<String>* labels, ArrayList<int>* lines,
+                                               ArrayList<String>* files) returns void {
+                this.mode = 3;
+                this.query = "";
+                this.sel = 0;
+                this.items = labels;
+                this.targets = lines;
+                this.itemFiles = files;
             }
             // Open the quick-file picker over a list of file paths (mode 4). items holds the full paths.
             public method openFiles(ArrayList<String>* paths) returns void {
