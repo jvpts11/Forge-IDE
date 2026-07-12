@@ -106,7 +106,9 @@ public bundle forge {
                     boolean down = win.keyDown(1);   // VK_LBUTTON
                     if (down && !prevDown && !ov.isOpen()) {
                         GuiApp.handleClick(win, screen, wb, tree, ov, menu, win.modAlt());
-                        dragging = GuiApp.overEditor(screen, win, ov, win.height()) && !win.modAlt();
+                        // start a drag-select only over the text (not the gutter, where a click folds)
+                        dragging = GuiApp.overEditor(screen, win, ov, win.height()) && !win.modAlt()
+                            && win.cursorX() >= screen.textOx();
                     } else if (down && prevDown && dragging && !ov.isOpen()) {
                         GuiApp.dragExtend(screen, wb, win);                   // extend the selection
                     }
@@ -432,6 +434,12 @@ public bundle forge {
                         + wb.warningCount().toString() + " warnings");
                 } else if (cmd.equals("state")) {
                     GuiApp.serveState(wb);
+                } else if (cmd.equals("metrics")) {
+                    mutable String m = "metrics treeW=" + screen.treeWidth().toString();
+                    m = m + " textOx=" + screen.textOx().toString();
+                    m = m + " textOy=" + screen.textOy().toString();
+                    m = m + " lineH=" + screen.lineH().toString();
+                    System.IO.Console.println(m);
                 } else {
                     System.IO.Console.println("err: unknown " + cmd);
                 }

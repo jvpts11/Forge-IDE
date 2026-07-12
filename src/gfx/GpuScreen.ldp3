@@ -811,18 +811,21 @@ public bundle forge {
                 }
             }
 
-            // A small chevron in the gutter for a foldable line: right-pointing when the block is collapsed,
-            // down-pointing (dimmer) when it's expanded. Drawn from rects since the atlas has no glyph for it.
+            // A chevron in the gutter for a foldable line: a bright amber right-pointing triangle when the
+            // block is collapsed, a clear down-pointing one when it's expanded. Drawn from rects (no glyph in
+            // the atlas). The whole gutter is the click target, so this is just the visual affordance.
             private method drawFoldMarker(Batch2D* batch, int cx, int cy, boolean folded) returns void {
                 mutable int k = 0;
                 if (folded) {
-                    while (k < 4) {
-                        batch.rect(cx + k, cy - (4 - k), 1, (4 - k) * 2, 0.804, 0.639, 0.408, 0.95);
+                    // right-pointing filled triangle
+                    while (k < 6) {
+                        batch.rect(cx + k, cy - (6 - k), 1, (6 - k) * 2, 0.918, 0.706, 0.392, 1.0);
                         k = k + 1;
                     }
                 } else {
-                    while (k < 4) {
-                        batch.rect(cx - (4 - k) - 1, cy - 2 + k, (4 - k) * 2, 1, 0.42, 0.53, 0.52, 0.7);
+                    // down-pointing filled triangle
+                    while (k < 6) {
+                        batch.rect(cx - (6 - k), cy - 3 + k, (6 - k) * 2, 1, 0.639, 0.71, 0.70, 0.95);
                         k = k + 1;
                     }
                 }
