@@ -13,6 +13,7 @@ public bundle forge {
                 if (args.length() > 0) {
                     if (args[0].equals("test")) { CoreTests.run(); return; }
                     if (args[0].equals("shot")) { GuiApp.shot("frame.ppm"); return; }
+                    if (args[0].equals("uitest")) { GuiApp.uitest("frame.ppm"); return; }
                 }
                 GuiApp.run();
                 return;

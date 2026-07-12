@@ -17,6 +17,12 @@ program Forge;
 public bundle forge {
     public namespace gfx {
 
+        // Post synthetic input to a window, so the real WM_CHAR/WM_KEYDOWN decode path can be exercised
+        // offscreen (the uitest mode) rather than only the scripted handleKey proxy.
+        public class Win32 {
+            public extern stdcall static method PostMessageA(long hwnd, int msg, long wp, long lp) returns int;
+        }
+
         // The graphics front-end: opens a real OpenGL window, loads the Consolas glyph atlas onto the GPU,
         // builds the editor Workbench sized to the window, and runs the frame loop that draws the document
         // through GpuScreen. run() is the live interactive window; shot() renders one frame to a PPM for
@@ -75,6 +81,48 @@ public bundle forge {
                 if (col < 0) { col = 0; }
                 Controller* c = wb.active();
                 c.placeCaret(c.firstLine() + screenRow, c.firstColumn() + col);
+                return;
+            }
+
+            // Offscreen verification of the REAL input path: post WM_CHAR/WM_KEYDOWN to the window, let
+            // pump() decode them into the event queue, drain them through processInput (the same code the
+            // live loop runs), then render one frame to a PPM.
+            public static method uitest(String path) returns void {
+                GlWindow* win = new GlWindow() on heap;
+                if (win.open("Forge", 1100, 720, 4, 6) == 0) {
+                    System.IO.Console.printf("Forge: could not open a GL 4.6 window\n");
+                    return;
+                }
+                Font* font = GuiApp.loadFont(win, 18);
+                Batch2D* batch = new Batch2D(win.gl) on heap;
+                GpuScreen* screen = new GpuScreen(font) on heap;
+                Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
+                FileTree* tree = new FileTree("src") on heap;
+
+                String typed = "// live keystrokes via WM_CHAR ->";
+                mutable int i = 0;
+                while (i < typed.length()) {
+                    GuiApp.post(win, 258, cast<int>(typed.charAt(i)));   // WM_CHAR
+                    i = i + 1;
+                }
+                GuiApp.post(win, 256, 13);    // WM_KEYDOWN VK_RETURN
+                GuiApp.post(win, 256, 36);    // WM_KEYDOWN VK_HOME
+
+                win.pump();                   // decode posted messages into the event queue
+                GuiApp.processInput(win, wb); // drain through the real handleKey path
+
+                GuiApp.drawFrame(win, batch, screen, wb, tree);
+                Wgl.glFinish();
+                int w = win.width();
+                int h = win.height();
+                byte[] px = win.gl.readPixelsRgb(0, 0, w, h);
+                GuiApp.writePpm(path, px, w, h);
+                win.swap();
+                System.IO.Console.printf("Forge: uitest wrote %s\n", path);
+                return;
+            }
+            private static method post(GlWindow* win, int msg, int wp) returns void {
+                Win32.PostMessageA(win.hwnd, msg, cast<long>(wp), 0);
                 return;
             }
 
