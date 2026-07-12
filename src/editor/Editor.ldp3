@@ -12,6 +12,9 @@ public bundle forge {
             private mutable TextBuffer* buf;
             private mutable int row;
             private mutable int col;
+            private mutable int selRow;             // selection anchor; the caret (row,col) is the active end
+            private mutable int selCol;
+            private mutable boolean hasSel;
             private mutable ArrayList<Snapshot>* undoStack;
             private mutable ArrayList<Snapshot>* redoStack;
 
@@ -19,8 +22,48 @@ public bundle forge {
                 this.buf = doc;
                 this.row = 0;
                 this.col = 0;
+                this.selRow = 0;
+                this.selCol = 0;
+                this.hasSel = false;
                 this.undoStack = new ArrayList<Snapshot>() on heap;
                 this.redoStack = new ArrayList<Snapshot>() on heap;
+            }
+
+            // --- selection ---
+            private method anchorSelection() returns void {
+                if (!this.hasSel) {
+                    this.selRow = this.row;
+                    this.selCol = this.col;
+                    this.hasSel = true;
+                }
+            }
+            public method clearSelection() returns void { this.hasSel = false; }
+            public method hasSelection() returns boolean {
+                return this.hasSel && !(this.selRow == this.row && this.selCol == this.col);
+            }
+            private method anchorBeforeCaret() returns boolean {
+                if (this.selRow < this.row) { return true; }
+                if (this.selRow > this.row) { return false; }
+                return this.selCol <= this.col;
+            }
+            public method selectionText() returns String {
+                if (!this.hasSelection()) { return ""; }
+                if (this.anchorBeforeCaret()) {
+                    return this.buf.getRange(this.selRow, this.selCol, this.row, this.col);
+                }
+                return this.buf.getRange(this.row, this.col, this.selRow, this.selCol);
+            }
+            // Delete the selection and put the caret at its start. Does NOT snapshot undo -- callers wrap it.
+            public method deleteSelection() returns void {
+                if (!this.hasSelection()) { this.hasSel = false; return; }
+                if (this.anchorBeforeCaret()) {
+                    this.buf.deleteRange(this.selRow, this.selCol, this.row, this.col);
+                    this.row = this.selRow;
+                    this.col = this.selCol;
+                } else {
+                    this.buf.deleteRange(this.row, this.col, this.selRow, this.selCol);
+                }
+                this.hasSel = false;
             }
 
             public method cursorRow() returns int { return this.row; }
@@ -59,18 +102,25 @@ public bundle forge {
 
             public method type(char c) returns void {
                 this.saveUndo();
+                if (this.hasSelection()) { this.deleteSelection(); }
                 this.buf.insertChar(this.row, this.col, c);
                 this.col = this.col + 1;
             }
 
             public method enter() returns void {
                 this.saveUndo();
+                if (this.hasSelection()) { this.deleteSelection(); }
                 this.buf.splitLine(this.row, this.col);
                 this.row = this.row + 1;
                 this.col = 0;
             }
 
             public method backspace() returns void {
+                if (this.hasSelection()) {
+                    this.saveUndo();
+                    this.deleteSelection();
+                    return;
+                }
                 if (this.col == 0 && this.row == 0) { return; }
                 this.saveUndo();
                 boolean joining = this.col == 0;
@@ -79,35 +129,38 @@ public bundle forge {
                 this.col = newCol;
             }
 
-            public method moveLeft() returns void {
+            // Raw caret moves (no selection side effect). The public moveX clear the selection first; the
+            // selectX anchor it and extend -- that's Shift+arrow.
+            private method rawLeft() returns void {
                 if (this.col > 0) { this.col = this.col - 1; }
                 else if (this.row > 0) {
                     this.row = this.row - 1;
                     this.col = this.buf.line(this.row).length();
                 }
             }
-
-            public method moveRight() returns void {
+            private method rawRight() returns void {
                 if (this.col < this.buf.line(this.row).length()) { this.col = this.col + 1; }
                 else if (this.row < this.buf.lineCount() - 1) {
                     this.row = this.row + 1;
                     this.col = 0;
                 }
             }
-
-            public method moveUp() returns void {
-                if (this.row > 0) {
-                    this.row = this.row - 1;
-                    this.clampCol();
-                }
+            private method rawUp() returns void {
+                if (this.row > 0) { this.row = this.row - 1; this.clampCol(); }
+            }
+            private method rawDown() returns void {
+                if (this.row < this.buf.lineCount() - 1) { this.row = this.row + 1; this.clampCol(); }
             }
 
-            public method moveDown() returns void {
-                if (this.row < this.buf.lineCount() - 1) {
-                    this.row = this.row + 1;
-                    this.clampCol();
-                }
-            }
+            public method moveLeft()  returns void { this.clearSelection(); this.rawLeft(); }
+            public method moveRight() returns void { this.clearSelection(); this.rawRight(); }
+            public method moveUp()    returns void { this.clearSelection(); this.rawUp(); }
+            public method moveDown()  returns void { this.clearSelection(); this.rawDown(); }
+
+            public method selectLeft()  returns void { this.anchorSelection(); this.rawLeft(); }
+            public method selectRight() returns void { this.anchorSelection(); this.rawRight(); }
+            public method selectUp()    returns void { this.anchorSelection(); this.rawUp(); }
+            public method selectDown()  returns void { this.anchorSelection(); this.rawDown(); }
 
             private method clampCol() returns void {
                 int len = this.buf.line(this.row).length();

@@ -85,6 +85,28 @@ public bundle forge {
                 a.eqStr(doc2.buffer().line(2), "line3", "doc.reload-l2");
                 a.eqStr(doc2.path(), "forge_doc_test.tmp", "doc.path");
 
+                // --- selection: extend, read, replace, multi-line delete ---
+                Editor es = new Editor(new TextBuffer() on heap) on heap;
+                es.document().loadText("hello world");
+                es.selectRight(); es.selectRight(); es.selectRight(); es.selectRight(); es.selectRight();
+                a.eqBool(es.hasSelection(), true, "sel.has");
+                a.eqStr(es.selectionText(), "hello", "sel.text");
+                es.type('H'); es.type('i');                    // replace the selection with "Hi"
+                a.eqStr(es.document().line(0), "Hi world", "sel.replace");
+                a.eqBool(es.hasSelection(), false, "sel.cleared");
+
+                Editor es2 = new Editor(new TextBuffer() on heap) on heap;
+                es2.document().loadText("aaa\nbbb\nccc");
+                es2.moveRight();                                // caret (0,1)
+                es2.selectDown();                               // anchor (0,1), caret (1,1)
+                es2.selectRight();                              // caret (1,2)
+                a.eqStr(es2.selectionText(), "aa\nbb", "sel.multiline-text");
+                es2.deleteSelection();
+                a.eqStr(es2.document().line(0), "ab", "sel.multiline-deleted");
+                a.eqInt(es2.document().lineCount(), 2, "sel.multiline-count");
+                a.eqInt(es2.cursorRow(), 0, "sel.caret-row");
+                a.eqInt(es2.cursorCol(), 1, "sel.caret-col");
+
                 a.summary("editor tests");
                 return a.failCount();
             }
