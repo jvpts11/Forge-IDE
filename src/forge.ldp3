@@ -1,4 +1,5 @@
 import System.IO.Console;
+import System.IO.Files;
 import System.Collections.ArrayList;
 import System.Collections.HashSet;
 import System.Text.Strings;
@@ -8,6 +9,7 @@ import editor.Editor;
 import syntax.Tok;
 import syntax.Span;
 import syntax.Highlighter;
+import io.Document;
 import harness.Asserts;
 
 program Forge;
@@ -237,6 +239,46 @@ public bundle forge {
         }
     }
 
+    public namespace io {
+        // An open document: a TextBuffer plus the file it came from and whether it has unsaved edits. This
+        // is what the file tree and tab bar will hand around; the editor edits its buffer.
+        public class Document {
+            private mutable TextBuffer* buf;
+            private mutable String path;
+            private mutable boolean modified;
+
+            public constructor Document(TextBuffer* buffer) {
+                this.buf = buffer;
+                this.path = "";
+                this.modified = false;
+            }
+
+            public method buffer() returns TextBuffer* { return this.buf; }
+            public method path() returns String { return this.path; }
+            public method isModified() returns boolean { return this.modified; }
+            public method markModified() returns void { this.modified = true; }
+
+            // Read a file from disk into the buffer, replacing its contents.
+            public method openFile(String p) returns void {
+                ArrayList<String> ls = Files.readLines(p);
+                this.buf.loadText(Strings.join(ls, "\n"));
+                this.path = p;
+                this.modified = false;
+            }
+
+            // Write the buffer's lines back to `path`.
+            public method save() returns void {
+                Files.writeLines(this.path, Strings.split(this.buf.text(), "\n"));
+                this.modified = false;
+            }
+
+            public method saveAs(String p) returns void {
+                this.path = p;
+                this.save();
+            }
+        }
+    }
+
     public namespace syntax {
         // Token classes a line is broken into for colouring.
         public enum Tok { WS, IDENT, KEYWORD, NUMBER, STRING, CHAR, COMMENT, PUNCT }
@@ -404,6 +446,18 @@ public bundle forge {
                 a.eqStr(ed2.document().line(0), "ho", "ur.new-edit");
                 boolean r = ed2.redo();
                 a.eqBool(r, false, "ur.redo-cleared");
+
+                // --- file I/O (Document): save to disk and read it back into a fresh document ---
+                Document doc = new Document(new TextBuffer() on heap) on heap;
+                doc.buffer().loadText("line1\nline2\nline3");
+                doc.saveAs("forge_doc_test.tmp");
+                a.eqBool(doc.isModified(), false, "doc.saved-clean");
+                Document doc2 = new Document(new TextBuffer() on heap) on heap;
+                doc2.openFile("forge_doc_test.tmp");
+                a.eqStr(doc2.buffer().line(0), "line1", "doc.reload-l0");
+                a.eqStr(doc2.buffer().line(1), "line2", "doc.reload-l1");
+                a.eqStr(doc2.buffer().line(2), "line3", "doc.reload-l2");
+                a.eqStr(doc2.path(), "forge_doc_test.tmp", "doc.path");
 
                 a.summary("editor tests");
                 return;
