@@ -89,8 +89,8 @@ public bundle forge {
             }
 
             // Compose the full IDE frame.
-            public method drawWorkbench(Batch2D* batch, Workbench* wb, FileTree* tree, int screenW, int screenH)
-                    returns void {
+            public method drawWorkbench(Batch2D* batch, Workbench* wb, FileTree* tree, Overlay* ov,
+                                        int screenW, int screenH) returns void {
                 int mh = this.menuH();
                 int tabh = this.tabH();
                 int ctop = mh + tabh;
@@ -106,7 +106,7 @@ public bundle forge {
                 this.drawTabBar(batch, wb.documents(), mh, tabh);
                 this.drawTree(batch, tree, ctop, screenH - sh);
                 this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
-                this.drawEditor(batch, wb, tw, etop, screenW - tw, screenH - etop - sh - panelH);
+                this.drawEditor(batch, wb, ov, tw, etop, screenW - tw, screenH - etop - sh - panelH);
                 if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH);
                 }
@@ -366,7 +366,7 @@ public bundle forge {
             }
 
             // The editor pane at (ox, oy), size (pw, ph).
-            private method drawEditor(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph)
+            private method drawEditor(Batch2D* batch, Workbench* wb, Overlay* ov, int ox, int oy, int pw, int ph)
                     returns void {
                 Controller* c = wb.active();
                 int cw = this.font.advance();
@@ -378,6 +378,11 @@ public bundle forge {
                 int firstLine = c.firstLine();
 
                 batch.rect(ox, oy, gpx, ph, 0.039, 0.078, 0.086, 1.0);   // gutter band
+
+                // find: highlight every occurrence of the query in the visible lines
+                if (ov.mode == 2 && ov.query.length() > 0) {
+                    this.drawFindMatches(batch, c, ov.query, textX, oy, cw, ch, visible, firstLine);
+                }
 
                 if (c.editor().hasSelection()) {
                     this.drawSelection(batch, c, textX, oy, cw, ch, visible, firstLine);
@@ -496,6 +501,47 @@ public bundle forge {
                 }
             }
 
+            // Highlight every occurrence of `query` (case-insensitive) in the visible lines -- the "find all"
+            // feel while the find bar is open.
+            private method drawFindMatches(Batch2D* batch, Controller* c, String query, int textX, int oy,
+                                           int cw, int ch, int visible, int firstLine) returns void {
+                int qlen = query.length();
+                int total = c.lineCount();
+                mutable int r = 0;
+                while (r < visible) {
+                    int docRow = firstLine + r;
+                    if (docRow < total) {
+                        String line = c.editor().document().line(docRow);
+                        int n = line.length();
+                        mutable int i = 0;
+                        while (i + qlen <= n) {
+                            if (this.matchAt(line, query, i)) {
+                                batch.rect(textX + i * cw, oy + this.topPad + r * ch, qlen * cw, ch,
+                                           0.918, 0.706, 0.392, 0.26);
+                                i = i + qlen;
+                            } else {
+                                i = i + 1;
+                            }
+                        }
+                    }
+                    r = r + 1;
+                }
+            }
+            private method matchAt(String line, String q, int pos) returns boolean {
+                int m = q.length();
+                if (pos + m > line.length()) { return false; }
+                mutable int j = 0;
+                while (j < m) {
+                    if (this.lc(line.charAt(pos + j)) != this.lc(q.charAt(j))) { return false; }
+                    j = j + 1;
+                }
+                return true;
+            }
+            private method lc(char c) returns char {
+                if (c >= 'A' && c <= 'Z') { return cast<char>(cast<int>(c) + 32); }
+                return c;
+            }
+
             // The autocomplete popup, anchored below the caret at the prefix start.
             public method drawCompletion(Batch2D* batch, Completion* comp, Workbench* wb, int screenW,
                                          int screenH) returns void {
@@ -594,21 +640,47 @@ public bundle forge {
                 }
             }
 
+            // Find & replace panel (Ctrl+F): a find row with a live match count and a replace row. Tab moves
+            // focus between the two fields (the focused one shows the caret and a brighter label).
             private method drawFindBar(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW) returns void {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
-                int bw = 420;
+                int bw = 480;
                 int bx = screenW - bw - 24;
                 int by = this.contentTop() + 10;
-                int bh = ch + 12;
+                int rowH = ch + 9;
+                int bh = rowH * 2 + 10;
                 batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
                 batch.rect(bx, by, 3, bh, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12, by + 6, "find ", 0.502, 0.588, 0.584, 1.0);
-                this.font.drawText(batch, bx + 12 + 5 * cw, by + 6, ov.query, 0.804, 0.851, 0.843, 1.0);
-                int qx = bx + 12 + (5 + ov.query.length()) * cw;
-                batch.rect(qx, by + 6, 2, ch, 0.918, 0.706, 0.392, 1.0);
-                String cnt = wb.active().matchCount(ov.query).toString() + " matches";
-                this.font.drawText(batch, bx + bw - (cnt.length() + 1) * cw, by + 6, cnt, 0.502, 0.588, 0.584, 1.0);
+                // find row
+                int fy = by + 6;
+                this.drawField(batch, bx, fy, cw, ch, "find", ov.query, !ov.focusReplace);
+                int total = wb.active().matchCount(ov.query);
+                mutable String cnt = total.toString() + " found";
+                if (ov.query.length() == 0) { cnt = ""; }
+                this.font.drawText(batch, bx + bw - (cnt.length() + 1) * cw, fy, cnt, 0.502, 0.588, 0.584, 1.0);
+                // replace row
+                int ry = by + 6 + rowH;
+                this.drawField(batch, bx, ry, cw, ch, "repl", ov.replace, ov.focusReplace);
+                // hint
+                String hint = "Enter next  Shift+Enter prev  Tab field  ^A all";
+                if (bw - 24 > hint.length() * cw) {
+                    this.font.drawText(batch, bx + bw - (hint.length() + 1) * cw, ry, hint, 0.302, 0.416, 0.427, 1.0);
+                }
+            }
+            // One labelled input row of the find panel; draws the caret when it is the focused field.
+            private method drawField(Batch2D* batch, int bx, int y, int cw, int ch, String caption, String text,
+                                     boolean focused) returns void {
+                mutable float lr = 0.376;
+                mutable float lg = 0.478;
+                mutable float lb = 0.475;
+                if (focused) { lr = 0.918; lg = 0.706; lb = 0.392; }
+                this.font.drawText(batch, bx + 12, y, caption, lr, lg, lb, 1.0);
+                this.font.drawText(batch, bx + 12 + 5 * cw, y, text, 0.804, 0.851, 0.843, 1.0);
+                if (focused) {
+                    int qx = bx + 12 + (5 + text.length()) * cw;
+                    batch.rect(qx, y, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                }
             }
 
             private method drawSpan(Batch2D* batch, int textX, int y, int cw, String line, Span* sp)

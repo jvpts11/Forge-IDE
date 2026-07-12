@@ -11,11 +11,13 @@ public bundle forge {
         // one and routes input to it when isOpen(). Kept tiny -- the drawing lives in GpuScreen, the actions in
         // GuiApp. Mode 3 (go-to-symbol) carries a label list and a parallel target-line list.
         public class Overlay {
-            public mutable int mode;    // 0 = none, 1 = command palette, 2 = find, 3 = go-to-symbol
+            public mutable int mode;    // 0 = none, 1 = command palette, 2 = find/replace, 3 = go-to-symbol
             public mutable String query;
             public mutable int sel;     // highlighted result (palette / symbol)
             public mutable ArrayList<String>* items;    // symbol labels (mode 3)
             public mutable ArrayList<int>* targets;     // 1-based target line per item (mode 3)
+            public mutable String replace;         // replacement text (mode 2)
+            public mutable boolean focusReplace;   // in mode 2, whether typing edits the replace field
 
             public constructor Overlay() {
                 this.mode = 0;
@@ -23,11 +25,18 @@ public bundle forge {
                 this.sel = 0;
                 this.items = new ArrayList<String>() on heap;
                 this.targets = new ArrayList<int>() on heap;
+                this.replace = "";
+                this.focusReplace = false;
             }
 
             public method isOpen() returns boolean { return this.mode != 0; }
-            public method open(int m) returns void { this.mode = m; this.query = ""; this.sel = 0; }
+            public method open(int m) returns void {
+                this.mode = m; this.query = ""; this.sel = 0;
+                this.replace = ""; this.focusReplace = false;
+            }
             public method close() returns void { this.mode = 0; }
+            // Mode 2: Tab moves focus between the find and replace fields.
+            public method toggleField() returns void { this.focusReplace = !this.focusReplace; }
 
             // Open the symbol navigator over a prepared label/line list.
             public method openSymbols(ArrayList<String>* labels, ArrayList<int>* lines) returns void {
@@ -65,12 +74,24 @@ public bundle forge {
 
             public method typeChar(char c) returns void {
                 StringBuilder sb = new StringBuilder() on heap;
+                if (this.focusReplace) {
+                    sb.append(this.replace);
+                    sb.appendChar(c);
+                    this.replace = sb.toString();
+                    return;
+                }
                 sb.append(this.query);
                 sb.appendChar(c);
                 this.query = sb.toString();
                 this.sel = 0;
             }
             public method backspace() returns void {
+                if (this.focusReplace) {
+                    if (this.replace.length() > 0) {
+                        this.replace = this.replace.substring(0, this.replace.length() - 1);
+                    }
+                    return;
+                }
                 if (this.query.length() > 0) {
                     this.query = this.query.substring(0, this.query.length() - 1);
                     this.sel = 0;
