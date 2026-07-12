@@ -117,6 +117,16 @@ def _build_server():
         return _send("esc")
 
     @mcp.tool()
+    def build() -> str:
+        """Run `ldp3 build` on the project and show the output in the bottom panel."""
+        return _send("build")
+
+    @mcp.tool()
+    def run_shell(command: str) -> str:
+        """Run an arbitrary shell command and show its output in the bottom panel."""
+        return _send("run " + command)
+
+    @mcp.tool()
     def state() -> str:
         """Read the editor state: active file, caret line/col, line count, open-tab count, dirty flag."""
         return _send("state")

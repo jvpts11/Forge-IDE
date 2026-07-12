@@ -28,6 +28,8 @@ MCP client  ⇄  forge_mcp.py  ⇄  Forge.exe serve  (window + GL 4.6)
 | `palette(query)`       | Open the command palette and type a query (then `press("enter")`) |
 | `find(query)`          | Open the find bar and jump to the first match |
 | `escape()`             | Close any open overlay |
+| `build()`              | Run `ldp3 build` and show the output in the bottom panel |
+| `run_shell(command)`   | Run any shell command and show its output in the bottom panel |
 | `state()`              | Active file, caret line/col, line/tab count, dirty flag |
 | `screenshot()`         | Render the current frame and return it as a PNG image |
 
