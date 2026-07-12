@@ -159,6 +159,28 @@ Found and fixed stdlib/language gaps on the way: `ArrayList.insertAt` (LDP3 repo
 the reserved-word set (`on`, `step`) and the nullable/no-narrowing model shape the API design
 (sentinel returns over nullable pointers).
 
-**Next:** the graphics/UI layer (windowing + `ldp3-opengl` text rendering), which needs
-visual verification. The engine above is the model it will render and drive; the
-`TextRenderer` already proves the exact frame the GPU layer must reproduce.
+**Graphics layer — built and verified (`src/gfx/`).** Forge is now a real graphical IDE
+rendered entirely on the GPU by LDP3, on top of `ldp3-opengl`. It is a second view backend
+over the same `Controller`/`Workbench` (the editor engine is unchanged), reusing the `KeyMap`
+for input. Slices L1–L2 (in `ldp3-opengl`: a GDI-rasterized Consolas glyph atlas, a keyboard
+event queue, RGBA texture upload) and G1–G8:
+
+- **`gfx.Batch2D`** — a pixel-space orthographic quad batcher (pos + uv + colour + texFlag),
+  one `glDrawArrays` per frame; a single shader draws solid rects and tints glyph coverage.
+- **`gfx.Font`** — the uploaded atlas + metrics; draws text/spans with no per-glyph allocation.
+- **`gfx.GpuScreen`** — composes the whole IDE frame: tab bar, project tree panel, and the
+  editor pane (gutter, line numbers, per-token syntax colours, current-line band, selection,
+  caret), all from live state.
+- **`gfx.GuiApp`** — opens a native GL 4.6 window and runs the frame loop: pump OS events →
+  translate to `input.Key` → drive the `Workbench` → draw. `Forge.exe` opens the window;
+  `Forge.exe shot` renders one frame to a PPM for offscreen verification; `Forge.exe test`
+  runs the headless engine checks.
+
+Each slice was verified by reading the frame back from the GPU (`glReadPixels` → PPM → PNG).
+Live mouse and OS-keyboard input are wired and await interactive verification. See
+`docs/superpowers/specs/2026-07-12-forge-graphics-design.md`.
+
+**Next:** live-window polish (tab/tree clicks, scrollbar, minimap, save/open), then the
+LDP3-native tool windows (Regions & Memory, Bundles) and the LSP/build-runner integration —
+and, per the product vision, a render-preview window and build/run panel, evolving toward a
+lightweight multi-language IDE.
