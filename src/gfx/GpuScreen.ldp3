@@ -34,6 +34,7 @@ public bundle forge {
             public method fontTexture() returns int { return this.font.texture(); }
             public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
             public method tabH() returns int { return this.font.lineHeight() + 12; }
+            public method statusH() returns int { return this.font.lineHeight() + 8; }
             public method treeWidth() returns int { return this.treeW; }
             public method charW() returns int { return this.font.advance(); }
             public method lineH() returns int { return this.font.lineHeight(); }
@@ -42,7 +43,7 @@ public bundle forge {
             public method textOy() returns int { return this.tabH() + this.topPad; }
             // Viewport rows/cols that fit the editor pane of a pixel window (window minus chrome).
             public method paneRowsFor(int screenH) returns int {
-                return (screenH - this.tabH() - this.topPad) / this.font.lineHeight();
+                return (screenH - this.tabH() - this.statusH() - this.topPad) / this.font.lineHeight();
             }
             public method paneColsFor(int screenW) returns int {
                 return (screenW - this.treeW - this.gutterPx() - 8) / this.font.advance();
@@ -57,9 +58,37 @@ public bundle forge {
                 batch.rect(0, 0, screenW, tabh, 0.027, 0.055, 0.063, 1.0);              // tab bar
                 batch.rect(0, tabh, tw, screenH - tabh, 0.035, 0.070, 0.078, 1.0);      // tree panel
                 batch.rect(tw, tabh, 1, screenH - tabh, 0.016, 0.035, 0.039, 1.0);      // tree/editor divider
+                int sh = this.statusH();
                 this.drawTabBar(batch, wb.documents(), tabh);
-                this.drawTree(batch, tree, tabh, screenH);
-                this.drawEditor(batch, wb.active(), tw, tabh, screenW - tw, screenH - tabh);
+                this.drawTree(batch, tree, tabh, screenH - sh);
+                this.drawEditor(batch, wb.active(), tw, tabh, screenW - tw, screenH - tabh - sh);
+                this.drawStatusBar(batch, wb, screenW, screenH, sh);
+            }
+
+            // Bottom status bar: an amber mode chip, the file, the caret position, and the line count.
+            private method drawStatusBar(Batch2D* batch, Workbench* wb, int screenW, int screenH, int sh)
+                    returns void {
+                int cw = this.font.advance();
+                int y0 = screenH - sh;
+                int ty = y0 + 4;
+                batch.rect(0, y0, screenW, sh, 0.027, 0.055, 0.063, 1.0);
+                batch.rect(0, y0, screenW, 1, 0.016, 0.035, 0.039, 1.0);   // top hairline
+                Controller* c = wb.active();
+                // amber mode chip
+                int chipW = 6 * cw;
+                batch.rect(0, y0, chipW, sh, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, cw, ty, "LDP3", 0.125, 0.086, 0.043, 1.0);
+                // file name + dirty marker
+                mutable String name = c.document().path();
+                if (name.length() == 0) { name = "untitled"; }
+                if (c.document().isModified()) { name = name + " *"; }
+                this.font.drawText(batch, chipW + cw, ty, name, 0.804, 0.851, 0.843, 1.0);
+                // caret position, right side
+                String pos = "Ln " + (c.editor().cursorRow() + 1).toString()
+                           + ", Col " + (c.editor().cursorCol() + 1).toString()
+                           + "    " + c.lineCount().toString() + " lines";
+                int px = screenW - (pos.length() + 2) * cw;
+                this.font.drawText(batch, px, ty, pos, 0.502, 0.588, 0.584, 1.0);
             }
 
             private method drawTabBar(Batch2D* batch, DocumentManager* docs, int tabh) returns void {
