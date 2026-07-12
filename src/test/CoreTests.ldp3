@@ -8,6 +8,7 @@ import io.Document;
 import view.Viewport;
 import view.TextRenderer;
 import app.Controller;
+import app.DocumentManager;
 import input.Key;
 import input.KeyCode;
 import input.KeyMap;
@@ -395,6 +396,26 @@ public bundle forge {
                 tc.indent();
                 a.eqStr(tc.editor().document().line(0), "    x", "ctrl.block-indent-0");
                 a.eqStr(tc.editor().document().line(1), "    y", "ctrl.block-indent-1");
+
+                // --- document manager: tabs, switching, close, titles ---
+                DocumentManager dm = new DocumentManager(20, 80) on heap;
+                a.eqInt(dm.count(), 0, "dm.empty");
+                a.eqBool(dm.hasActive(), false, "dm.no-active");
+                Controller* d1 = dm.openNew();
+                d1.insertText("hello");
+                a.eqInt(dm.count(), 1, "dm.opened1");
+                a.eqInt(dm.activeIndex(), 0, "dm.active0");
+                dm.openNew();                                      // second tab, now active
+                a.eqInt(dm.count(), 2, "dm.opened2");
+                a.eqInt(dm.activeIndex(), 1, "dm.active1");
+                a.eqStr(dm.active().editor().document().line(0), "", "dm.active-empty");
+                dm.setActive(0);
+                a.eqStr(dm.active().editor().document().line(0), "hello", "dm.switch-back");
+                a.eqStr(dm.title(0), "untitled *", "dm.title-modified");
+                a.eqStr(dm.title(1), "untitled", "dm.title-clean");
+                dm.close(0);
+                a.eqInt(dm.count(), 1, "dm.closed");
+                a.eqStr(dm.active().editor().document().line(0), "", "dm.after-close");
 
                 a.summary("editor tests");
                 return a.failCount();
