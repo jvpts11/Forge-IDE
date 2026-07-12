@@ -8,6 +8,7 @@ import app.Workbench;
 import app.Command;
 import io.FileTree;
 import io.FileNode;
+import io.WorkspaceStore;
 import input.Key;
 import input.KeyCode;
 import System.Collections.ArrayList;
@@ -46,9 +47,18 @@ public bundle forge {
                 Font* font = GuiApp.loadFont(win, 18);
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
+                // With no path argument, reopen the last project the user had open.
+                mutable String ws = openPath;
+                if (ws.length() == 0) {
+                    ws = WorkspaceStore.lastProject();
+                }
+                String treeRoot = GuiApp.treeRootFor(ws);
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
-                                                      GuiApp.fileToOpenFor(openPath));
-                FileTree* tree = new FileTree(GuiApp.treeRootFor(openPath)) on heap;
+                                                      GuiApp.fileToOpenFor(ws));
+                FileTree* tree = new FileTree(treeRoot) on heap;
+                if (ws.length() > 0) {
+                    WorkspaceStore.addRecent(treeRoot);
+                }
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 MenuBar* menu = new MenuBar() on heap;
@@ -328,6 +338,18 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
+                } else if (cmd.equals("recent")) {
+                    ArrayList<String>* r = WorkspaceStore.loadRecent();
+                    mutable String s = "";
+                    mutable int i = 0;
+                    while (i < r.size()) {
+                        s = s + r.get(i) + " | ";
+                        i = i + 1;
+                    }
+                    System.IO.Console.println("recent " + r.size().toString() + ": " + s);
+                } else if (cmd.equals("addrecent")) {
+                    WorkspaceStore.addRecent(arg);
+                    System.IO.Console.println("ok last=" + WorkspaceStore.lastProject());
                 } else if (cmd.equals("gotodef")) {
                     boolean found = wb.active().goToDefinition();
                     mutable String r = "not-found";

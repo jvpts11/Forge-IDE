@@ -1,0 +1,99 @@
+import System.Collections.ArrayList;
+import System.IO.File;
+import System.OS.Env;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // Remembers the projects the user has opened, so Forge reopens the last one on startup and can show a
+        // recent list on the welcome screen. The list lives in a small text file under the user's profile
+        // (~/.forge/recent.txt), one directory per line, most recent first. Only directories that still exist
+        // are kept.
+        public class WorkspaceStore {
+
+            private static method configDir() returns String {
+                String home = Env.get("USERPROFILE");
+                return home + "/.forge";
+            }
+            private static method recentFile() returns String {
+                return WorkspaceStore.configDir() + "/recent.txt";
+            }
+            private static method ensureConfigDir() returns void {
+                String d = WorkspaceStore.configDir();
+                if (!File.isDir(d)) {
+                    File.mkdir(d);
+                }
+            }
+            private static method has(ArrayList<String>* xs, String s) returns boolean {
+                mutable int i = 0;
+                while (i < xs.size()) {
+                    if (xs.get(i).equals(s)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+
+            // The recent workspace directories, most recent first, filtered to ones that still exist.
+            public static method loadRecent() returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                String path = WorkspaceStore.recentFile();
+                if (!File.exists(path)) {
+                    return out;
+                }
+                String text = File.readAll(path);
+                ArrayList<String> lines = Strings.split(text, "\n");
+                mutable int i = 0;
+                while (i < lines.size()) {
+                    String ln = lines.get(i).trim();
+                    if (ln.length() > 0 && File.isDir(ln) && !WorkspaceStore.has(out, ln)) {
+                        out.add(ln);
+                    }
+                    i = i + 1;
+                }
+                return out;
+            }
+
+            // Move `dir` to the front of the recent list (deduped, capped at 10) and persist it.
+            public static method addRecent(String dir) returns void {
+                if (dir.length() == 0 || !File.isDir(dir)) {
+                    return;
+                }
+                ArrayList<String>* cur = WorkspaceStore.loadRecent();
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                out.add(dir);
+                mutable int i = 0;
+                while (i < cur.size() && out.size() < 10) {
+                    String d = cur.get(i);
+                    if (!d.equals(dir)) {
+                        out.add(d);
+                    }
+                    i = i + 1;
+                }
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int j = 0;
+                while (j < out.size()) {
+                    sb.append(out.get(j));
+                    sb.append("\n");
+                    j = j + 1;
+                }
+                WorkspaceStore.ensureConfigDir();
+                File.writeAll(WorkspaceStore.recentFile(), sb.toString());
+            }
+
+            // The most recent workspace that still exists, or "" if there is none.
+            public static method lastProject() returns String {
+                ArrayList<String>* r = WorkspaceStore.loadRecent();
+                if (r.size() > 0) {
+                    return r.get(0);
+                }
+                return "";
+            }
+        }
+    }
+}
