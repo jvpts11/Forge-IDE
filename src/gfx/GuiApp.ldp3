@@ -32,6 +32,16 @@ public bundle forge {
             public extern stdcall static method fflush(long stream) returns int;
         }
 
+        // A one-shot request from a menu command back to the run loop to open a project folder. The loop owns
+        // the file tree, so a "File > Open Folder" click stashes the chosen path here and the loop swaps the
+        // tree on the next iteration.
+        public class OpenRequest {
+            public mutable String path;
+            public constructor OpenRequest() {
+                this.path = "";
+            }
+        }
+
         // The graphics front-end: opens a real OpenGL window, loads the Consolas glyph atlas onto the GPU,
         // builds the editor Workbench sized to the window, and runs the frame loop that draws the document
         // through GpuScreen. run() is the live interactive window; shot() renders one frame to a PPM for
@@ -65,6 +75,7 @@ public bundle forge {
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 MenuBar* menu = new MenuBar() on heap;
+                OpenRequest* req = new OpenRequest() on heap;
                 mutable boolean prevDown = false;
                 mutable boolean dragging = false;
                 mutable int lastW = win.width();
@@ -105,7 +116,7 @@ public bundle forge {
                     // is open, but menu clicks still work because the menu isn't a modal overlay
                     boolean down = win.keyDown(1);   // VK_LBUTTON
                     if (down && !prevDown && !ov.isOpen()) {
-                        GuiApp.handleClick(win, screen, wb, tree, ov, menu, win.modAlt());
+                        GuiApp.handleClick(win, screen, wb, tree, ov, menu, req, win.modAlt());
                         // start a drag-select only over the text (not the gutter, where a click folds)
                         dragging = GuiApp.overEditor(screen, win, ov, win.height()) && !win.modAlt()
                             && win.cursorX() >= screen.textOx();
@@ -114,6 +125,12 @@ public bundle forge {
                     }
                     if (!down) { dragging = false; }
                     prevDown = down;
+                    // a "File > Open Folder" click asked to switch projects: swap the tree live
+                    if (req.path.length() > 0) {
+                        tree = new FileTree(req.path) on heap;
+                        WorkspaceStore.addRecent(req.path);
+                        req.path = "";
+                    }
                     // mouse wheel -> scroll the view (3 lines per notch)
                     int scroll = win.takeScroll();
                     if (scroll != 0) { wb.active().scrollLines(0 - (scroll / 120) * 3); }
@@ -149,8 +166,9 @@ public bundle forge {
             }
 
             private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
-                                              Overlay* ov, MenuBar* menu, boolean alt) returns void {
-                GuiApp.clickAt(win, screen, wb, tree, ov, menu, win.cursorX(), win.cursorY(), alt);
+                                              Overlay* ov, MenuBar* menu, OpenRequest* req, boolean alt)
+                    returns void {
+                GuiApp.clickAt(win, screen, wb, tree, ov, menu, req, win.cursorX(), win.cursorY(), alt);
                 return;
             }
 
@@ -159,13 +177,14 @@ public bundle forge {
             // pane places the caret. Split out from cursor reading so it can be verified with synthetic
             // coordinates. Menu handling has top priority so its dropdown overlays the rest.
             private static method clickAt(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
-                                          Overlay* ov, MenuBar* menu, int mx, int my, boolean alt) returns void {
+                                          Overlay* ov, MenuBar* menu, OpenRequest* req, int mx, int my,
+                                          boolean alt) returns void {
                 if (menu.isOpen()) {
                     int item = screen.dropdownItemAt(menu, mx, my);
                     if (item >= 0) {
                         String id = menu.openMenu().items.get(item).commandId;
                         menu.close();
-                        GuiApp.runMenuCommand(win, wb, ov, id);
+                        GuiApp.runMenuCommand(win, wb, ov, req, id);
                         return;
                     }
                     if (my < screen.menuH()) {
@@ -237,8 +256,15 @@ public bundle forge {
             // Execute a menu item's command id. Most map straight to Workbench.runCommand; a few are shell-level
             // actions the GUI owns: opening the find/palette overlays, closing the active tab, quitting the
             // window (WM_CLOSE), and the About banner.
-            private static method runMenuCommand(GlWindow* win, Workbench* wb, Overlay* ov, String id)
-                    returns void {
+            private static method runMenuCommand(GlWindow* win, Workbench* wb, Overlay* ov, OpenRequest* req,
+                                                 String id) returns void {
+                if (id.equals("file.openFolder")) {
+                    String picked = NativeDialog.pickFolder(win.hwnd, "Open a project folder");
+                    if (picked.length() > 0) {
+                        req.path = picked;
+                    }
+                    return;
+                }
                 if (id.equals("edit.find")) { ov.open(2); return; }
                 if (id.equals("view.palette")) { ov.open(1); return; }
                 if (id.equals("view.fold")) { wb.active().toggleFoldAtCaret(); return; }
@@ -276,6 +302,7 @@ public bundle forge {
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 MenuBar* menu = new MenuBar() on heap;
+                OpenRequest* req = new OpenRequest() on heap;
                 System.IO.Console.println("forge-serve ready");
                 Win32.fflush(0);
                 mutable boolean running = true;
@@ -285,7 +312,7 @@ public bundle forge {
                     if (line.length() == 0) { running = false; }
                     else if (GuiApp.firstWord(line).equals("quit")) { running = false; }
                     else {
-                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp, menu);
+                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp, menu, req);
                         Win32.fflush(0);
                     }
                 }
@@ -294,7 +321,7 @@ public bundle forge {
 
             private static method serveCommand(String line, GlWindow* win, Batch2D* batch, GpuScreen* screen,
                                                Workbench* wb, FileTree* tree, Overlay* ov, Completion* comp,
-                                               MenuBar* menu) returns void {
+                                               MenuBar* menu, OpenRequest* req) returns void {
                 String cmd = GuiApp.firstWord(line);
                 String arg = GuiApp.rest(line);
                 if (cmd.equals("type")) {
@@ -312,12 +339,12 @@ public bundle forge {
                 } else if (cmd.equals("click")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
-                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, rx.toInt(), ry.toInt(), false);
+                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, req, rx.toInt(), ry.toInt(), false);
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("altclick")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
-                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, rx.toInt(), ry.toInt(), true);
+                    GuiApp.clickAt(win, screen, wb, tree, ov, menu, req, rx.toInt(), ry.toInt(), true);
                     System.IO.Console.println("ok carets=" + (wb.active().extraCaretCount() + 1).toString());
                 } else if (cmd.equals("dragto")) {
                     String rx = GuiApp.firstWord(arg);
@@ -336,7 +363,7 @@ public bundle forge {
                         if (mi >= 0 && mi < menu.openMenu().items.size()) {
                             String id = menu.openMenu().items.get(mi).commandId;
                             menu.close();
-                            GuiApp.runMenuCommand(win, wb, ov, id);
+                            GuiApp.runMenuCommand(win, wb, ov, req, id);
                         }
                     }
                     System.IO.Console.println("ok");

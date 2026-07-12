@@ -51,6 +51,7 @@ public bundle forge {
             private method build() returns void {
                 Menu* file = new Menu("File") on heap;
                 file.add("New File", "file.new");
+                file.add("Open Folder...", "file.openFolder");
                 file.add("Save", "file.save");
                 file.sep();
                 file.add("Close Tab", "file.close");
