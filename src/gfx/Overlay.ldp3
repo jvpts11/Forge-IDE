@@ -1,27 +1,67 @@
 import System.Text.StringBuilder;
+import System.Collections.ArrayList;
 
 program Forge;
 
 public bundle forge {
     public namespace gfx {
 
-        // A modal input overlay: the command palette or the find bar. While it is open, keystrokes edit its
-        // query string instead of the document; Enter runs it, Esc closes it. The app owns one and routes
-        // input to it when isOpen(). Kept tiny -- the drawing lives in GpuScreen, the actions in GuiApp.
+        // A modal input overlay: the command palette, the find bar, or the symbol navigator. While it is open,
+        // keystrokes edit its query string instead of the document; Enter runs it, Esc closes it. The app owns
+        // one and routes input to it when isOpen(). Kept tiny -- the drawing lives in GpuScreen, the actions in
+        // GuiApp. Mode 3 (go-to-symbol) carries a label list and a parallel target-line list.
         public class Overlay {
-            public mutable int mode;    // 0 = none, 1 = command palette, 2 = find
+            public mutable int mode;    // 0 = none, 1 = command palette, 2 = find, 3 = go-to-symbol
             public mutable String query;
-            public mutable int sel;     // highlighted result (palette)
+            public mutable int sel;     // highlighted result (palette / symbol)
+            public mutable ArrayList<String>* items;    // symbol labels (mode 3)
+            public mutable ArrayList<int>* targets;     // 1-based target line per item (mode 3)
 
             public constructor Overlay() {
                 this.mode = 0;
                 this.query = "";
                 this.sel = 0;
+                this.items = new ArrayList<String>() on heap;
+                this.targets = new ArrayList<int>() on heap;
             }
 
             public method isOpen() returns boolean { return this.mode != 0; }
             public method open(int m) returns void { this.mode = m; this.query = ""; this.sel = 0; }
             public method close() returns void { this.mode = 0; }
+
+            // Open the symbol navigator over a prepared label/line list.
+            public method openSymbols(ArrayList<String>* labels, ArrayList<int>* lines) returns void {
+                this.mode = 3;
+                this.query = "";
+                this.sel = 0;
+                this.items = labels;
+                this.targets = lines;
+            }
+
+            // Indices of items whose label contains the query (case-insensitive), in order. When the query is
+            // empty, every item matches.
+            public method matches() returns ArrayList<int>* {
+                ArrayList<int>* out = new ArrayList<int>() on heap;
+                String q = Overlay.lower(this.query);
+                mutable int i = 0;
+                while (i < this.items.size()) {
+                    if (q.length() == 0 || Overlay.lower(this.items.get(i)).indexOf(q) >= 0) { out.add(i); }
+                    i = i + 1;
+                }
+                return out;
+            }
+
+            private static method lower(String s) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i < s.length()) {
+                    mutable char c = s.charAt(i);
+                    if (c >= 'A' && c <= 'Z') { c = cast<char>(cast<int>(c) + 32); }
+                    sb.appendChar(c);
+                    i = i + 1;
+                }
+                return sb.toString();
+            }
 
             public method typeChar(char c) returns void {
                 StringBuilder sb = new StringBuilder() on heap;

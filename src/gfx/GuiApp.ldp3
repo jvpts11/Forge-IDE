@@ -247,6 +247,11 @@ public bundle forge {
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     wb.active().find(arg);
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("symbols")) {
+                    GuiApp.openSymbols(ov, wb);
+                    mutable int i = 0;
+                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
                 } else if (cmd.equals("esc")) {
                     ov.close();
                     System.IO.Console.println("ok");
@@ -283,6 +288,7 @@ public bundle forge {
                     else if (vk == 38) { ov.moveSel(0 - 1); }
                     else if (vk == 13) {
                         if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
+                        else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
                         else { wb.active().find(ov.query); }
                         ov.close();
                     }
@@ -400,6 +406,8 @@ public bundle forge {
                         // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
                     } else if (e.isKey() && ctrl && shift && e.vk == 80) {   // Ctrl+Shift+P -> palette
                         ov.open(1);
+                    } else if (e.isKey() && ctrl && shift && e.vk == 79) {   // Ctrl+Shift+O -> go-to-symbol
+                        GuiApp.openSymbols(ov, wb);
                     } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
                         ov.open(2);
                     } else if (e.isChar()) {
@@ -437,6 +445,7 @@ public bundle forge {
                     if (vk == 38) { ov.moveSel(0 - 1); return; }        // Up
                     if (vk == 13) {                                     // Enter
                         if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
+                        else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
                         else { wb.active().find(ov.query); }
                         ov.close();
                     }
@@ -453,6 +462,32 @@ public bundle forge {
                 ArrayList<Command>* results = wb.registry().filter(ov.query);
                 if (ov.sel >= 0 && ov.sel < results.size()) {
                     wb.runCommand(results.get(ov.sel).id);
+                }
+                return;
+            }
+
+            // Populate the symbol navigator from the active document's declarations and open it.
+            private static method openSymbols(Overlay* ov, Workbench* wb) returns void {
+                ArrayList<Symbol>* syms = Symbols.list(wb.active());
+                ArrayList<String>* labels = new ArrayList<String>() on heap;
+                ArrayList<int>* lines = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < syms.size()) {
+                    labels.add(syms.get(i).caption);
+                    lines.add(syms.get(i).line);
+                    i = i + 1;
+                }
+                ov.openSymbols(labels, lines);
+                return;
+            }
+
+            // Jump the caret to the selected symbol's line (the viewport follows).
+            private static method runSymbolSelection(Overlay* ov, Workbench* wb) returns void {
+                ArrayList<int>* m = ov.matches();
+                if (ov.sel >= 0 && ov.sel < m.size()) {
+                    int orig = m.get(ov.sel);
+                    int line = ov.targets.get(orig);
+                    wb.active().placeCaret(line - 1, 0);
                 }
                 return;
             }
