@@ -1,0 +1,93 @@
+import System.IO.Console;
+import System.Collections.ArrayList;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+import editor.TextBuffer;
+
+program Forge;
+
+// Forge -- the LDP3 IDE. This is the editor core: a line-based text model (one String per line) with the
+// primitive edits an editor needs -- insert a character, split a line (Enter), and backspace (delete a
+// character, joining lines at a line start). Pure LDP3, headless and testable; the graphics/UI layer wires
+// onto this model later. See docs/DESIGN.md for the full build chain.
+public bundle forge {
+    public namespace editor {
+
+        // The text of one open document, addressed by (row, col). Rows and columns are 0-based; col == the
+        // number of characters to the left of the caret, so it ranges 0..line.length().
+        public class TextBuffer {
+            private mutable ArrayList<String> lines;
+
+            public constructor TextBuffer() {
+                this.lines = new ArrayList<String>() on heap;
+                this.lines.add("");                      // an empty document is one empty line, never zero
+            }
+
+            public method lineCount() returns int { return this.lines.size(); }
+            public method line(int row) returns String { return this.lines.get(row); }
+
+            // Replace the whole document with `text`, split on newlines. Empty input is one empty line.
+            public method loadText(String text) returns void {
+                this.lines = Strings.split(text, "\n");
+                if (this.lines.size() == 0) { this.lines.add(""); }
+            }
+
+            // Serialize the document back to a single String with '\n' between lines.
+            public method text() returns String { return Strings.join(this.lines, "\n"); }
+
+            // Insert character `c` at (row, col): everything from col on shifts right.
+            public method insertChar(int row, int col, char c) returns void {
+                String cur = this.lines.get(row);
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append(cur.substring(0, col));
+                sb.appendChar(c);
+                sb.append(cur.substring(col, cur.length()));
+                this.lines.set(row, sb.toString());
+            }
+
+            // Split the line at (row, col) -- the Enter key: the text at and after col becomes a new line.
+            public method splitLine(int row, int col) returns void {
+                String cur = this.lines.get(row);
+                this.lines.set(row, cur.substring(0, col));
+                this.lines.insertAt(row + 1, cur.substring(col, cur.length()));
+            }
+
+            // Backspace at (row, col). Within a line (col > 0) it deletes the char to the left; at a line
+            // start (col == 0, row > 0) it joins this line onto the previous one. Returns the caret's new
+            // column so the caller can move the cursor.
+            public method backspace(int row, int col) returns int {
+                if (col > 0) {
+                    String cur = this.lines.get(row);
+                    StringBuilder sb = new StringBuilder() on heap;
+                    sb.append(cur.substring(0, col - 1));
+                    sb.append(cur.substring(col, cur.length()));
+                    this.lines.set(row, sb.toString());
+                    return col - 1;
+                }
+                if (row > 0) {
+                    String prev = this.lines.get(row - 1);
+                    int joinCol = prev.length();
+                    this.lines.set(row - 1, prev + this.lines.get(row));
+                    this.lines.removeAt(row);
+                    return joinCol;
+                }
+                return 0;                                // top-left backspace is a no-op
+            }
+        }
+    }
+
+    public namespace app {
+        public class Main {
+            public static method main(string[] args) returns void {
+                TextBuffer buf = new TextBuffer() on heap;
+                buf.loadText("ab\ncd");                  // ["ab", "cd"]
+                buf.insertChar(0, 1, 'X');               // ["aXb", "cd"]
+                buf.splitLine(0, 2);                      // ["aX", "b", "cd"]
+                int col = buf.backspace(2, 0);            // join "cd" onto "b" -> ["aX", "bcd"], caret col 1
+                System.IO.Console.printf("text=[%s]\n", buf.text());   // aX\nbcd
+                System.IO.Console.printf("lines=%d joincol=%d\n", buf.lineCount(), col);
+                return;
+            }
+        }
+    }
+}
