@@ -4,6 +4,7 @@ import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
 import app.Diagnostic;
+import app.GitStatus;
 import input.Key;
 import input.KeyMap;
 import System.Collections.ArrayList;
@@ -30,6 +31,7 @@ public bundle forge {
             private mutable ArrayList<Diagnostic>* diags;
             private mutable String projectDir;      // where build/run commands execute (the project root)
             private mutable String projectName;     // from ldp3.toml, shown in the status bar
+            private mutable GitStatus* git;         // change marks for the active file's gutter
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -39,8 +41,15 @@ public bundle forge {
                 this.diags = new ArrayList<Diagnostic>() on heap;
                 this.projectDir = ".";
                 this.projectName = "";
+                this.git = new GitStatus() on heap;
                 this.docs.openNew();               // start on one empty document
             }
+
+            // Recompute the active file's git change marks (called on open, save and tab switch).
+            public method refreshGit() returns void {
+                this.git.refresh(this.projectDir, this.docs.active().document().path());
+            }
+            public method gitStatus() returns GitStatus* { return this.git; }
 
             // Point build/run and the project label at a workspace directory. Reads its ldp3.toml (if any)
             // for the program name, so the shell knows which project it's driving.
@@ -127,7 +136,11 @@ public bundle forge {
             public method documents() returns DocumentManager* { return this.docs; }
             public method registry() returns CommandRegistry* { return this.commands; }
             public method active() returns Controller* { return this.docs.active(); }
-            public method openFile(String path) returns Controller* { return this.docs.openFile(path); }
+            public method openFile(String path) returns Controller* {
+                Controller* c = this.docs.openFile(path);
+                this.refreshGit();
+                return c;
+            }
             // Close tab `i`; never leave the window with no document -- open a fresh one if that was the last.
             public method closeTab(int i) returns void {
                 this.docs.close(i);

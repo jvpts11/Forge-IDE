@@ -1,0 +1,113 @@
+import System.Collections.ArrayList;
+import System.Text.Strings;
+import System.OS.Process;
+import System.OS.ProcessResult;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // Per-file git change status for the editor gutter. refresh() runs `git diff` for one file and parses
+        // the hunk headers into a list of (line, kind) marks: 1 = added, 2 = modified, 3 = a deletion marker
+        // (lines removed above this point). The editor draws a coloured bar per marked line, JetBrains/VS
+        // Code-style, so you see your uncommitted changes at a glance. Silent (no marks) outside a git repo.
+        public class GitStatus {
+            private mutable ArrayList<int>* lines;    // 0-based line numbers with a change mark
+            private mutable ArrayList<int>* kinds;    // parallel: 1 added, 2 modified, 3 deletion marker
+
+            public constructor GitStatus() {
+                this.lines = new ArrayList<int>() on heap;
+                this.kinds = new ArrayList<int>() on heap;
+            }
+
+            public method clear() returns void {
+                this.lines = new ArrayList<int>() on heap;
+                this.kinds = new ArrayList<int>() on heap;
+            }
+
+            // Recompute the marks for `filePath` as seen from `projectDir` (the repo working tree). Untracked
+            // or non-repo files simply yield no marks.
+            public method refresh(String projectDir, String filePath) returns void {
+                this.clear();
+                if (filePath.length() == 0) { return; }
+                String cmd = "git -C \"" + projectDir + "\" --no-pager diff --unified=0 -- \"" + filePath + "\"";
+                ProcessResult r = Process.run(cmd);
+                if (r.exitCode != 0) { return; }
+                ArrayList<String> out = Strings.split(r.output, "\n");
+                mutable int i = 0;
+                while (i < out.size()) {
+                    String ln = out.get(i);
+                    if (ln.startsWith("@@")) {
+                        this.parseHunk(ln);
+                    }
+                    i = i + 1;
+                }
+            }
+
+            // Parse a hunk header `@@ -oldStart,oldCount +newStart,newCount @@` and record its marks. A count
+            // defaults to 1 when omitted (git's convention). Avoids two-argument indexOf by slicing.
+            private method parseHunk(String header) returns void {
+                int plus = header.indexOf("+");
+                if (plus < 0) { return; }
+                String newPart = GitStatus.firstField(header.substring(plus + 1, header.length()));
+                int minus = header.indexOf("-");
+                mutable int oldCount = 1;
+                if (minus >= 0 && minus < plus) {
+                    oldCount = GitStatus.countField(GitStatus.firstField(
+                        header.substring(minus + 1, header.length())));
+                }
+                int comma = newPart.indexOf(",");
+                mutable int newStart = 0;
+                mutable int newCount = 1;
+                if (comma < 0) {
+                    newStart = newPart.toInt();
+                } else {
+                    newStart = newPart.substring(0, comma).toInt();
+                    newCount = newPart.substring(comma + 1, newPart.length()).toInt();
+                }
+                if (newCount == 0) {
+                    // pure deletion: mark the line the removed text sat above
+                    mutable int at = newStart;
+                    if (at < 1) { at = 1; }
+                    this.add(at - 1, 3);
+                    return;
+                }
+                mutable int kind = 1;                 // added
+                if (oldCount > 0) { kind = 2; }       // lines existed before -> modified
+                mutable int k = 0;
+                while (k < newCount) {
+                    this.add(newStart - 1 + k, kind);
+                    k = k + 1;
+                }
+            }
+            // The text up to the first space (the "12,3" range field of a hunk side).
+            private static method firstField(String s) returns String {
+                int sp = s.indexOf(" ");
+                if (sp < 0) { return s; }
+                return s.substring(0, sp);
+            }
+            // The count from a "start,count" field, or 1 when the count is omitted.
+            private static method countField(String field) returns int {
+                int comma = field.indexOf(",");
+                if (comma < 0) { return 1; }
+                return field.substring(comma + 1, field.length()).toInt();
+            }
+            private method add(int line, int kind) returns void {
+                this.lines.add(line);
+                this.kinds.add(kind);
+            }
+
+            // The change kind for a 0-based document line (0 = none), scanned linearly over the (small) mark set.
+            public method kindAt(int line) returns int {
+                mutable int i = 0;
+                while (i < this.lines.size()) {
+                    if (this.lines.get(i) == line) { return this.kinds.get(i); }
+                    i = i + 1;
+                }
+                return 0;
+            }
+            public method markCount() returns int { return this.lines.size(); }
+        }
+    }
+}

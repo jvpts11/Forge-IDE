@@ -609,12 +609,23 @@ public bundle forge {
                     this.drawSelection(batch, c, textX, oy, cw, ch, visible, firstLine);
                 }
 
+                GitStatus* git = wb.gitStatus();
                 mutable int r = 0;
                 while (r < visible) {
                     int y = oy + this.topPad + r * ch;
                     int docLine = c.lineNumberAt(r);
                     if (r == caretRow) {
                         batch.rect(ox + gpx, y, pw - gpx, ch, 1.0, 1.0, 1.0, 0.035);
+                    }
+                    // git change bar at the gutter's left edge: green added, blue modified, red deletion tick
+                    int gk = git.kindAt(docLine);
+                    if (gk == 1) {
+                        batch.rect(ox, y, 3, ch, 0.451, 0.816, 0.604, 1.0);
+                    } else if (gk == 2) {
+                        batch.rect(ox, y, 3, ch, 0.435, 0.678, 0.796, 1.0);
+                    } else if (gk == 3) {
+                        batch.rect(ox, y + ch - 3, 6, 3, 0.902, 0.318, 0.263, 1.0);
+                        batch.rect(ox, y + ch - 3, 3, 6, 0.902, 0.318, 0.263, 1.0);
                     }
                     String num = (docLine + 1).toString();
                     int nx = ox + gpx - 8 - num.length() * cw;

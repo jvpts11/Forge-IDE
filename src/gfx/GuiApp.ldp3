@@ -268,7 +268,7 @@ public bundle forge {
                         return;
                     }
                     int ti = screen.tabAtX(wb.documents(), mx);
-                    if (ti >= 0) { wb.documents().setActive(ti); }
+                    if (ti >= 0) { wb.documents().setActive(ti); wb.refreshGit(); }
                     return;
                 }
                 if (mx < screen.treeWidth()) {
@@ -919,6 +919,8 @@ public bundle forge {
                     } else if (e.isKey()) {
                         GuiApp.dispatchKey(wb, e.vk, ctrl, shift, alt);
                         if (e.vk == 8) { comp.update(wb.active()); } else { comp.dismiss(); }
+                        // after a save (Ctrl+S), the git change bars reflect the new on-disk state
+                        if (ctrl && !alt && e.vk == 83) { wb.refreshGit(); }
                     }
                 }
                 return;
