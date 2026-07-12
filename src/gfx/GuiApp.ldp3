@@ -328,6 +328,13 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
+                } else if (cmd.equals("gotodef")) {
+                    boolean found = wb.active().goToDefinition();
+                    mutable String r = "not-found";
+                    if (found) {
+                        r = "line " + (wb.active().editor().cursorRow() + 1).toString();
+                    }
+                    System.IO.Console.println("ok " + r);
                 } else if (cmd.equals("fold")) {
                     // fold <line> toggles the fold whose header is that 1-based line
                     int docLine = arg.toInt() - 1;
@@ -525,6 +532,8 @@ public bundle forge {
                         wb.active().toggleFoldAtCaret();
                     } else if (e.isKey() && ctrl && e.vk == 70) {            // Ctrl+F -> find
                         ov.open(2);
+                    } else if (e.isKey() && e.vk == 123) {                   // F12 -> go to definition
+                        wb.active().goToDefinition();
                     } else if (e.isKey() && GuiApp.caretHotkey(wb, e.vk, ctrl, shift, alt)) {
                         // consumed by a multi-cursor hotkey (Ctrl+Alt+Up/Down add a caret; Esc collapses)
                     } else if (e.isChar()) {

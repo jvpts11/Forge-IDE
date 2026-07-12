@@ -52,6 +52,37 @@ public bundle forge {
                 return out;
             }
 
+            // The 0-based line where `name` is declared (the first class/method/etc whose name matches), or
+            // -1. Powers go-to-definition: the identifier under the caret is looked up here.
+            public static method definitionLine(Controller* c, String name) returns int {
+                int n = c.editor().document().lineCount();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = Symbols.stripComment(c.editor().document().line(row));
+                    mutable String prev = "";
+                    mutable int i = 0;
+                    int len = line.length();
+                    while (i < len) {
+                        while (i < len && !Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        mutable int start = i;
+                        while (i < len && Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        if (i > start) {
+                            String word = line.substring(start, i);
+                            if (Symbols.isDeclKeyword(prev) && word.equals(name)) {
+                                return row;
+                            }
+                            prev = word;
+                        }
+                    }
+                    row = row + 1;
+                }
+                return 0 - 1;
+            }
+
             private static method isDeclKeyword(String w) returns boolean {
                 return w.equals("namespace") || w.equals("bundle") || w.equals("class")
                     || w.equals("interface") || w.equals("enum") || w.equals("record")

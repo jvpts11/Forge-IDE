@@ -129,6 +129,44 @@ public bundle forge {
             // The bracket that pairs with the one at/near the caret (invalid Match if none) -- for highlighting.
             public method matchingBracket() returns Match* { return this.ed.matchingBracket(); }
 
+            // --- code intelligence ---
+            // The identifier the caret sits on/in (empty when the caret isn't on a word).
+            public method wordAtCaret() returns String {
+                int row = this.ed.cursorRow();
+                int col = this.ed.cursorCol();
+                String line = this.ed.document().line(row);
+                mutable int start = col;
+                while (start > 0 && Controller.isIdentChar(line.charAt(start - 1))) {
+                    start = start - 1;
+                }
+                mutable int end = col;
+                while (end < line.length() && Controller.isIdentChar(line.charAt(end))) {
+                    end = end + 1;
+                }
+                if (end <= start) {
+                    return "";
+                }
+                return line.substring(start, end);
+            }
+            private static method isIdentChar(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
+            // Jump the caret to the declaration of the identifier under it (in this file). Returns whether a
+            // definition was found.
+            public method goToDefinition() returns boolean {
+                String w = this.wordAtCaret();
+                if (w.length() == 0) {
+                    return false;
+                }
+                int line = Symbols.definitionLine(this, w);
+                if (line < 0) {
+                    return false;
+                }
+                this.placeCaret(line, 0);
+                return true;
+            }
+
             // Mouse: place the caret at a document position (a hit-test result).
             public method placeCaret(int row, int col) returns void { this.ed.setCaret(row, col); this.moved(); }
             // Mouse press then drag: anchor a selection, then extend it to the dragged position.
