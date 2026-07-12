@@ -122,14 +122,13 @@ public bundle forge {
                 batch.rect(0, ctop, tw, screenH - ctop, 0.035, 0.070, 0.078, 1.0);      // tree panel
                 batch.rect(tw, ctop, 1, screenH - ctop, 0.016, 0.035, 0.039, 1.0);      // tree/editor divider
                 int sh = this.statusH();
-                mutable int panelH = 0;
-                if (wb.output().visible) { panelH = 220; }
+                int panelH = this.outputPanelHeight(wb.output(), screenH);
                 this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
                 this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
                 this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
                 this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw, screenH - etop - sh - panelH);
                 if (panelH > 0) {
-                    this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH);
+                    this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH, mx, my);
                 }
                 this.drawStatusBar(batch, wb, screenW, screenH, sh);
             }
@@ -428,14 +427,35 @@ public bundle forge {
                 return 0 - 1;
             }
 
-            // The build/run output panel: a titled band at the bottom of the editor area showing the tail of
-            // the captured command output.
-            private method drawOutputPanel(Batch2D* batch, OutputPanel* panel, int ox, int oy, int pw, int ph)
-                    returns void {
+            // Height the output panel should occupy: 0 when hidden, otherwise a header plus its content sized
+            // to the number of lines (so an empty or short panel is small, not a big blank box), capped at
+            // ~40% of the window.
+            public method outputPanelHeight(OutputPanel* panel, int screenH) returns int {
+                if (!panel.visible) { return 0; }
+                int ch = this.font.lineHeight();
+                int headerH = ch + 8;
+                mutable int maxRows = (screenH * 4 / 10) / ch;
+                if (maxRows < 3) { maxRows = 3; }
+                mutable int rows = panel.lineCount();
+                if (rows < 1) { rows = 1; }
+                if (rows > maxRows) { rows = maxRows; }
+                return headerH + rows * ch + 8;
+            }
+            // The build/run output panel: a titled band at the bottom of the editor area with a close button,
+            // showing the tail of the captured command output.
+            private method drawOutputPanel(Batch2D* batch, OutputPanel* panel, int ox, int oy, int pw, int ph,
+                                           int mx, int my) returns void {
+                int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 batch.rect(ox, oy, pw, ph, 0.043, 0.086, 0.094, 1.0);
                 batch.rect(ox, oy, pw, 1, 0.016, 0.035, 0.039, 1.0);
                 this.font.drawText(batch, ox + 10, oy + 4, panel.title, 0.918, 0.706, 0.392, 1.0);
+                // close button (x) at the top-right of the panel header
+                int xbx = ox + pw - 2 * cw;
+                boolean overX = mx >= xbx - cw && mx < xbx + cw && my >= oy && my < oy + ch + 8;
+                mutable float xr = 0.502;
+                if (overX) { xr = 0.902; }
+                this.font.drawText(batch, xbx, oy + 4, "x", xr, 0.588, 0.584, 1.0);
                 int headerH = ch + 8;
                 int rows = (ph - headerH) / ch;
                 int total = panel.lineCount();
@@ -448,6 +468,13 @@ public bundle forge {
                     y = y + ch;
                     i = i + 1;
                 }
+            }
+            // True when (mx, my) is on the output panel's close button. `oy` is the panel top.
+            public method outputCloseAt(int mx, int my, int ox, int oy, int pw) returns boolean {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int xbx = ox + pw - 2 * cw;
+                return mx >= xbx - cw && mx < xbx + cw && my >= oy && my < oy + ch + 8;
             }
 
             // Bottom status bar: an amber mode chip, the file, the caret position, and the line count.

@@ -280,6 +280,18 @@ public bundle forge {
                     }
                     return;
                 }
+                // clicks in the output panel (close button or body) are consumed there, not by the editor
+                int panelH = screen.outputPanelHeight(wb.output(), win.height());
+                if (panelH > 0) {
+                    int panelTop = win.height() - screen.statusH() - panelH;
+                    if (my >= panelTop) {
+                        if (screen.outputCloseAt(mx, my, screen.treeWidth(), panelTop,
+                                                 win.width() - screen.treeWidth())) {
+                            wb.output().hide();
+                        }
+                        return;
+                    }
+                }
                 int screenRow = (my - screen.textOy()) / screen.lineH();
                 if (screenRow < 0) { return; }
                 Controller* c = wb.active();
@@ -872,6 +884,9 @@ public bundle forge {
                         } else {
                             wb.active().goToDefinition();
                         }
+                    } else if (e.isKey() && e.vk == 27 && wb.output().visible
+                               && !wb.active().hasMultipleCarets()) {       // Esc closes the output panel
+                        wb.output().hide();
                     } else if (e.isKey() && GuiApp.caretHotkey(wb, e.vk, ctrl, shift, alt)) {
                         // consumed by a multi-cursor hotkey (Ctrl+Alt+Up/Down add a caret; Esc collapses)
                     } else if (e.isChar()) {
