@@ -1,5 +1,7 @@
 import app.Controller;
 import System.Collections.ArrayList;
+import System.IO.File;
+import System.IO.Files;
 
 program Forge;
 
@@ -15,6 +17,7 @@ public bundle forge {
             public mutable ArrayList<String>* items;
             public mutable int sel;
             private mutable ArrayList<String>* keywords;
+            private mutable ArrayList<String>* imports;   // importable qualified names (stdlib + project)
 
             public constructor Completion() {
                 this.active = false;
@@ -22,6 +25,21 @@ public bundle forge {
                 this.items = new ArrayList<String>() on heap;
                 this.sel = 0;
                 this.keywords = Completion.keywordList();
+                this.imports = new ArrayList<String>() on heap;
+            }
+
+            // Load the importable qualified names (one per line) that `import` completion offers -- generated
+            // from the real stdlib prelude at build time. Silently no-ops if the file isn't present.
+            public method loadImports(String path) returns void {
+                if (!File.exists(path)) { return; }
+                ArrayList<String> ls = Files.readLines(path);
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < ls.size()) {
+                    if (ls.get(i).length() > 0) { out.add(ls.get(i)); }
+                    i = i + 1;
+                }
+                this.imports = out;
             }
 
             public method dismiss() returns void { this.active = false; }
@@ -44,6 +62,12 @@ public bundle forge {
                 int row = c.editor().cursorRow();
                 int col = c.editor().cursorCol();
                 String line = c.editor().document().line(row);
+                // On an `import` line, complete the whole dotted path against the known importable names.
+                String upto = line.substring(0, col);
+                if (upto.trim().startsWith("import")) {
+                    this.updateImports(upto);
+                    return;
+                }
                 mutable int start = col;
                 while (start > 0 && this.isWordChar(line.charAt(start - 1))) {
                     start = start - 1;
@@ -79,6 +103,30 @@ public bundle forge {
                     }
                     // then identifiers already in the buffer (deduped, excluding the prefix itself)
                     this.collectIdentifiers(c, pre, out);
+                }
+                if (out.size() == 0) {
+                    this.active = false;
+                    return;
+                }
+                this.items = out;
+                this.sel = 0;
+                this.active = true;
+            }
+
+            // Complete an `import` statement: match the dotted path typed after the keyword against the
+            // importable names. The prefix is the whole path (so accept inserts the rest of the qualified
+            // name), and matching is case-insensitive on the last segment for convenience.
+            private method updateImports(String upto) returns void {
+                String t = upto.trim();
+                mutable String path = "";
+                if (t.length() > 6) { path = t.substring(6, t.length()).trim(); }   // text after "import"
+                this.prefix = path;
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < this.imports.size() && out.size() < 40) {
+                    String imp = this.imports.get(i);
+                    if (imp.startsWith(path) && !imp.equals(path)) { out.add(imp); }
+                    i = i + 1;
                 }
                 if (out.size() == 0) {
                     this.active = false;

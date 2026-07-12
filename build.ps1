@@ -44,6 +44,20 @@ try {
             }
             [System.IO.File]::WriteAllText((Join-Path $refDir "stdlib.ldp3"), $sb.ToString())
             Write-Host ("wrote reference/stdlib.ldp3 ({0} chars)" -f $sb.Length)
+            # Importable qualified names, for `import` autocomplete: each public type as <namespace>.<Type>.
+            $ns = ""
+            $imports = New-Object System.Collections.Generic.List[string]
+            foreach ($ln in ($sb.ToString() -split "`n")) {
+                $t = $ln.Trim()
+                if ($t -match '^(public\s+)?namespace\s+([A-Za-z0-9_.]+)') { $ns = $Matches[2] }
+                elseif ($t -match '^public\s+(class|interface|enum|struct|record)\s+([A-Za-z_][A-Za-z0-9_]*)') {
+                    $nm = $Matches[2]
+                    if ($ns -ne "" -and -not $nm.StartsWith("_")) { $imports.Add("$ns.$nm") }
+                }
+            }
+            $uniq = $imports | Sort-Object -Unique
+            [System.IO.File]::WriteAllText((Join-Path $refDir "imports.txt"), ($uniq -join "`n"))
+            Write-Host ("wrote reference/imports.txt ({0} names)" -f $uniq.Count)
         }
     }
     $spec = "C:\Users\jvpts\Documents\GitHub\LDP3\docs\LDP3_specification.md"
