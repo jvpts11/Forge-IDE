@@ -34,13 +34,47 @@ public bundle forge {
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height());
                 FileTree* tree = new FileTree("src") on heap;
+                mutable boolean prevDown = false;
+                mutable int lastW = win.width();
+                mutable int lastH = win.height();
                 while (win.isOpen()) {
                     win.pump();
                     GuiApp.processInput(win, wb);
+                    // left click -> place the caret (edge-triggered)
+                    boolean down = win.keyDown(1);   // VK_LBUTTON
+                    if (down && !prevDown) { GuiApp.handleClick(win, screen, wb); }
+                    prevDown = down;
+                    // mouse wheel -> scroll the view (3 lines per notch)
+                    int scroll = win.takeScroll();
+                    if (scroll != 0) { wb.active().scrollLines(0 - (scroll / 120) * 3); }
+                    // window resize -> re-fit the viewport
+                    int w2 = win.width();
+                    int h2 = win.height();
+                    if (w2 != lastW || h2 != lastH) {
+                        wb.active().resizeViewport(screen.paneRowsFor(h2), screen.paneColsFor(w2));
+                        lastW = w2;
+                        lastH = h2;
+                    }
                     GuiApp.drawFrame(win, batch, screen, wb, tree);
                     win.swap();
                     win.sleep(8);
                 }
+                return;
+            }
+
+            // Convert a left-click at the cursor into a caret placement in the editor pane (clicks in the
+            // tab bar / tree are left for a later slice).
+            private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb) returns void {
+                int mx = win.cursorX();
+                int my = win.cursorY();
+                if (mx < screen.treeWidth()) { return; }
+                if (my < screen.tabH()) { return; }
+                int screenRow = (my - screen.textOy()) / screen.lineH();
+                if (screenRow < 0) { return; }
+                mutable int col = (mx - screen.textOx()) / screen.charW();
+                if (col < 0) { col = 0; }
+                Controller* c = wb.active();
+                c.placeCaret(c.firstLine() + screenRow, c.firstColumn() + col);
                 return;
             }
 

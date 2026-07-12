@@ -35,6 +35,11 @@ public bundle forge {
             public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
             public method tabH() returns int { return this.font.lineHeight() + 12; }
             public method treeWidth() returns int { return this.treeW; }
+            public method charW() returns int { return this.font.advance(); }
+            public method lineH() returns int { return this.font.lineHeight(); }
+            // Pixel origin of the code text (for mouse hit-testing).
+            public method textOx() returns int { return this.treeW + this.gutterPx() + 6; }
+            public method textOy() returns int { return this.tabH() + this.topPad; }
             // Viewport rows/cols that fit the editor pane of a pixel window (window minus chrome).
             public method paneRowsFor(int screenH) returns int {
                 return (screenH - this.tabH() - this.topPad) / this.font.lineHeight();

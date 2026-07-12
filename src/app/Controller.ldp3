@@ -120,6 +120,18 @@ public bundle forge {
             }
             public method selectAll() returns void { this.ed.selectAll(); this.moved(); }
 
+            // Mouse: place the caret at a document position (a hit-test result).
+            public method placeCaret(int row, int col) returns void { this.ed.setCaret(row, col); this.moved(); }
+            // Mouse wheel: scroll the viewport by `delta` lines without moving the caret.
+            public method scrollLines(int delta) returns void {
+                if (delta < 0) { this.view.scrollUp(0 - delta); } else { this.view.scrollDown(delta); }
+            }
+            // Window resize: re-fit the viewport to the new pane size.
+            public method resizeViewport(int rows, int cols) returns void {
+                this.view.resize(rows, cols);
+                this.moved();
+            }
+
             // Paging moves the caret by (height - 1) lines; following the caret does the scroll.
             public method pageDown(boolean extend) returns void {
                 int amount = this.view.height() - 1;
