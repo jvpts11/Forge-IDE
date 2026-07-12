@@ -138,6 +138,27 @@ public bundle forge {
                 a.eqStr(ec3.document().line(2), "cd", "clip.ml-l2");
                 a.eqInt(ec3.cursorRow(), 2, "clip.ml-caret-row");
 
+                // --- line operations: duplicate / delete / move / indent ---
+                Editor el = new Editor(new TextBuffer() on heap) on heap;
+                el.document().loadText("one\ntwo\nthree");
+                el.duplicateLine();                             // ["one","one","two","three"], caret row 1
+                a.eqInt(el.document().lineCount(), 4, "line.dup-count");
+                a.eqStr(el.document().line(1), "one", "line.dup-content");
+                a.eqInt(el.cursorRow(), 1, "line.dup-caret");
+                el.deleteLine();                                // remove the dup -> caret on "two"
+                a.eqInt(el.document().lineCount(), 3, "line.del-count");
+                a.eqStr(el.document().line(1), "two", "line.del-content");
+                el.moveLineDown();                              // ["one","three","two"], caret row 2
+                a.eqStr(el.document().line(1), "three", "line.movedown-1");
+                a.eqStr(el.document().line(2), "two", "line.movedown-2");
+                a.eqInt(el.cursorRow(), 2, "line.movedown-caret");
+                el.moveLineUp();                                // back to ["one","two","three"]
+                a.eqStr(el.document().line(1), "two", "line.moveup");
+                el.indent();
+                a.eqStr(el.document().line(1), "    two", "line.indent");
+                el.dedent();
+                a.eqStr(el.document().line(1), "two", "line.dedent");
+
                 a.summary("editor tests");
                 return a.failCount();
             }

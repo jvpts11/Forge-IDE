@@ -58,6 +58,52 @@ public bundle forge {
             }
             public method clipboardText() returns String { return this.clip.get(); }
 
+            // --- line operations (duplicate / delete / move up-down / indent-dedent), on the caret's line ---
+            public method duplicateLine() returns void {
+                this.saveUndo();
+                this.buf.insertLine(this.row + 1, this.buf.line(this.row));
+                this.row = this.row + 1;
+            }
+            public method deleteLine() returns void {
+                this.saveUndo();
+                this.clearSelection();
+                this.buf.removeLine(this.row);
+                if (this.row >= this.buf.lineCount()) { this.row = this.buf.lineCount() - 1; }
+                this.clampCol();
+            }
+            public method moveLineUp() returns void {
+                if (this.row == 0) { return; }
+                this.saveUndo();
+                String cur = this.buf.line(this.row);
+                this.buf.setLine(this.row, this.buf.line(this.row - 1));
+                this.buf.setLine(this.row - 1, cur);
+                this.row = this.row - 1;
+            }
+            public method moveLineDown() returns void {
+                if (this.row >= this.buf.lineCount() - 1) { return; }
+                this.saveUndo();
+                String cur = this.buf.line(this.row);
+                this.buf.setLine(this.row, this.buf.line(this.row + 1));
+                this.buf.setLine(this.row + 1, cur);
+                this.row = this.row + 1;
+            }
+            public method indent() returns void {
+                this.saveUndo();
+                this.buf.setLine(this.row, "    " + this.buf.line(this.row));   // four spaces
+                this.col = this.col + 4;
+            }
+            public method dedent() returns void {
+                String cur = this.buf.line(this.row);
+                mutable int remove = 0;
+                while (remove < 4 && remove < cur.length() && cur.charAt(remove) == ' ') {
+                    remove = remove + 1;
+                }
+                if (remove == 0) { return; }
+                this.saveUndo();
+                this.buf.setLine(this.row, cur.substring(remove, cur.length()));
+                if (this.col >= remove) { this.col = this.col - remove; } else { this.col = 0; }
+            }
+
             // --- selection ---
             private method anchorSelection() returns void {
                 if (!this.hasSel) {

@@ -21,6 +21,14 @@ public bundle forge {
             public method lineCount() returns int { return this.lines.size(); }
             public method line(int row) returns String { return this.lines.get(row); }
 
+            // Whole-line helpers for line operations (duplicate / delete / move / indent).
+            public method setLine(int row, String text) returns void { this.lines.set(row, text); }
+            public method insertLine(int row, String text) returns void { this.lines.insertAt(row, text); }
+            public method removeLine(int row) returns void {
+                this.lines.removeAt(row);
+                if (this.lines.size() == 0) { this.lines.add(""); }   // never zero lines
+            }
+
             // Replace the whole document with `text`, split on newlines. Empty input is one empty line.
             public method loadText(String text) returns void {
                 this.lines = Strings.split(text, "\n");
