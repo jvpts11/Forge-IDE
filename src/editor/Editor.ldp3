@@ -398,6 +398,12 @@ public bundle forge {
             public method cursorCol() returns int { return this.col; }
             public method document() returns TextBuffer* { return this.buf; }
 
+            // Ordered selection bounds (start <= end), for rendering. Only meaningful when hasSelection().
+            public method selStartRow() returns int { if (this.anchorBeforeCaret()) { return this.selRow; } return this.row; }
+            public method selStartCol() returns int { if (this.anchorBeforeCaret()) { return this.selCol; } return this.col; }
+            public method selEndRow() returns int { if (this.anchorBeforeCaret()) { return this.row; } return this.selRow; }
+            public method selEndCol() returns int { if (this.anchorBeforeCaret()) { return this.col; } return this.selCol; }
+
             // Record the current state before a mutating edit; a fresh edit invalidates the redo history.
             private method saveUndo() returns void {
                 this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);

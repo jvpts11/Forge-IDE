@@ -66,13 +66,21 @@ public bundle forge {
                 return new Font(atlas, tex) on heap;
             }
 
-            // Build the editor with a viewport sized to the window's code area, and open a sample document.
+            // Build the editor with a viewport sized to the window's code area, and open a document. Opens
+            // one of Forge's own source files (real, long, colourful LDP3), falling back to a small embedded
+            // sample if it isn't on disk, then places the caret and a selection to demonstrate scrolling.
             private static method buildWorkbench(GpuScreen* screen, int w, int h) returns Workbench* {
                 int rows = screen.rowsFor(h);
                 int cols = screen.colsFor(w);
                 Workbench* wb = new Workbench(rows, cols) on heap;
-                wb.active().insertText(GuiApp.sample());
-                wb.active().moveDocStart(false);
+                wb.openFile("src/gfx/GuiApp.ldp3");
+                Controller* c = wb.active();
+                if (c.editor().document().lineCount() < 3) { c.insertText(GuiApp.sample()); }
+                mutable int i = 0;
+                while (i < 44) { c.moveDown(false); i = i + 1; }   // scroll into the file
+                c.moveLineStart(false);
+                mutable int j = 0;
+                while (j < 12) { c.moveRight(true); j = j + 1; }   // a demo selection
                 return wb;
             }
 

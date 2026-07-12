@@ -44,22 +44,26 @@ public bundle forge {
                 int textX = gpx + 6;
                 int caretRow = c.caretScreenRow();
 
+                int visible = c.visibleRows();
+                int firstLine = c.firstLine();
+
                 // gutter background band
                 batch.rect(0, 0, gpx, screenH, 0.039, 0.078, 0.086, 1.0);
 
-                int visible = c.visibleRows();
+                // selection highlight (under the text), one band per line the selection touches
+                if (c.editor().hasSelection()) {
+                    this.drawSelection(batch, c, textX, cw, ch, visible, firstLine, screenW - textX);
+                }
+
                 mutable int r = 0;
                 while (r < visible) {
                     int y = this.topPad + r * ch;
-                    // current-line highlight band (behind the text)
                     if (r == caretRow) {
                         batch.rect(gpx, y, screenW - gpx, ch, 1.0, 1.0, 1.0, 0.035);
                     }
-                    // line number, right-aligned in the gutter
                     String num = (c.lineNumberAt(r) + 1).toString();
                     int nx = gpx - 8 - num.length() * cw;
                     this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);
-                    // code text, coloured by token
                     String line = c.renderLine(r);
                     ArrayList<Span> spans = c.renderSpans(r);
                     mutable int si = 0;
@@ -68,6 +72,37 @@ public bundle forge {
                         si = si + 1;
                     }
                     r = r + 1;
+                }
+
+                // caret (on top), a thin amber bar
+                int ccr = c.caretScreenRow();
+                if (ccr >= 0 && ccr < visible) {
+                    int cx = textX + c.caretScreenCol() * cw;
+                    batch.rect(cx, this.topPad + ccr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                }
+            }
+
+            // Draw the translucent selection band(s), clipped to the visible rows.
+            private method drawSelection(Batch2D* batch, Controller* c, int textX, int cw, int ch,
+                                         int visible, int firstLine, int maxW) returns void {
+                int sr = c.editor().selStartRow();
+                int sc = c.editor().selStartCol();
+                int er = c.editor().selEndRow();
+                int ec = c.editor().selEndCol();
+                mutable int row = sr;
+                while (row <= er) {
+                    int screenRow = row - firstLine;
+                    if (screenRow >= 0 && screenRow < visible) {
+                        mutable int startCol = 0;
+                        if (row == sr) { startCol = sc; }
+                        mutable int endCol = c.editor().document().line(row).length();
+                        if (row == er) { endCol = ec; }
+                        mutable int wsel = (endCol - startCol) * cw;
+                        if (wsel < cw && row < er) { wsel = cw; }   // show a sliver for a selected newline
+                        int x = textX + startCol * cw;
+                        batch.rect(x, this.topPad + screenRow * ch, wsel, ch, 0.918, 0.706, 0.392, 0.22);
+                    }
+                    row = row + 1;
                 }
             }
 
