@@ -11,6 +11,7 @@ import io.FileNode;
 import System.IO.File;
 import view.Viewport;
 import view.TextRenderer;
+import view.ScreenRenderer;
 import app.Controller;
 import app.DocumentManager;
 import app.Command;
@@ -430,7 +431,7 @@ public bundle forge {
                 File.writeAll("ft_tree.tmp/a.txt", "1");
                 File.writeAll("ft_tree.tmp/b.txt", "2");
                 File.writeAll("ft_tree.tmp/sub/c.txt", "3");
-                FileTree tree = new FileTree("ft_tree.tmp") on heap;
+                FileTree* tree = new FileTree("ft_tree.tmp") on heap;
                 FileNode* troot = tree.root();
                 a.eqInt(troot.children.size(), 3, "tree.child-count");
                 a.eqStr(troot.children.get(0).name, "sub", "tree.dir-first");
@@ -502,6 +503,18 @@ public bundle forge {
                 a.eqStr(wb.active().editor().document().line(0), "", "wb.undo-cmd");
                 a.eqBool(wb.runCommand("edit.selectAll"), true, "wb.selectall-cmd");
                 a.eqBool(wb.runCommand("bogus.cmd"), false, "wb.unknown-cmd");
+
+                // --- full IDE screen composition (tab bar + tree + editor + status) ---
+                Workbench wbs = new Workbench(4, 24) on heap;
+                wbs.active().insertText("hi\nyo");
+                wbs.active().moveDocStart(false);
+                ScreenRenderer sr = new ScreenRenderer() on heap;
+                ArrayList<String> screen = sr.render(wbs, tree);  // reuse the temp-dir tree above
+                a.eqBool(screen.get(0).contains("untitled"), true, "screen.tabbar");
+                a.eqBool(screen.size() >= 3, true, "screen.row-count");
+                a.eqBool(screen.get(1).contains("hi"), true, "screen.editor-text");
+                a.eqBool(screen.get(1).contains("ft_tree.tmp"), true, "screen.tree-col");
+                a.eqBool(screen.get(screen.size() - 1).contains("Ln 1"), true, "screen.status");
 
                 a.summary("editor tests");
                 return a.failCount();

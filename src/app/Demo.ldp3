@@ -1,31 +1,31 @@
 import System.Collections.ArrayList;
 import System.IO.Console;
-import app.Controller;
-import view.TextRenderer;
+import app.Workbench;
+import io.FileTree;
+import view.ScreenRenderer;
 
 program Forge;
 
 public bundle forge {
     public namespace app {
 
-        // A headless demo of the editor engine: build a document, run a few edits through the Controller,
-        // then print the rendered frame (line-number gutter + clipped lines) and the status bar. This is one
-        // frame of what a real terminal front-end will draw continuously, so running Forge.exe shows the
-        // whole pipeline -- buffer, caret, viewport, highlighter, renderer -- working end to end.
+        // A headless demo of the whole application: build a Workbench, type a sample program into its
+        // document, load Forge's own src/ as the project tree, and print one fully-composed IDE frame (tab
+        // bar + file tree + editor with gutter + status bar). This is exactly the screen the GUI shell will
+        // draw; running Forge.exe shows the entire engine -- documents, editor, viewport, highlighter, tree,
+        // renderer -- composing end to end.
         public class Demo {
             public static method run() returns void {
-                Controller c = new Controller(12, 58) on heap;
-                c.insertText("program Hello;\n\npublic bundle main {\n    public class Main {\n        // a tiny sample program\n        public static method main(string[] args) returns void {\n            mutable int x = 42;\n            x = x + 1;\n        }\n    }\n}");
-                c.moveDocStart(false);
+                Workbench wb = new Workbench(12, 46) on heap;
+                wb.active().insertText("program Hello;\n\npublic bundle main {\n    public class Main {\n        public static method main(string[] args) returns void {\n            mutable int x = 42;\n            x = x + 1;\n        }\n    }\n}");
+                wb.active().moveDocStart(false);
 
-                TextRenderer tr = new TextRenderer() on heap;
-                System.IO.Console.println("+------------------------- Forge --------------------------+");
-                ArrayList<String> rows = tr.renderPlain(c);
-                for (mutable int i = 0; i < rows.size(); i++) {
-                    System.IO.Console.println("| " + rows.get(i));
+                FileTree* tree = new FileTree("src") on heap;
+                ScreenRenderer sr = new ScreenRenderer() on heap;
+                ArrayList<String> screen = sr.render(wb, tree);
+                for (mutable int i = 0; i < screen.size(); i++) {
+                    System.IO.Console.println(screen.get(i));
                 }
-                System.IO.Console.println("+----------------------------------------------------------+");
-                System.IO.Console.println(tr.statusBar(c));
                 System.IO.Console.println("");
             }
         }

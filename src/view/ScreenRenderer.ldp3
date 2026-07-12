@@ -1,0 +1,67 @@
+import System.Collections.ArrayList;
+import System.Text.StringBuilder;
+import System.Text.Strings;
+import app.Workbench;
+import app.DocumentManager;
+import app.Controller;
+import io.FileTree;
+import io.FileNode;
+
+program Forge;
+
+public bundle forge {
+    public namespace view {
+
+        // Composes a whole IDE frame as text: a tab bar on top, the project tree column beside the editor
+        // pane, and the status bar at the bottom. It draws from live Workbench + FileTree state via the
+        // per-pane renderers, so one call yields exactly the screen the GUI shell must reproduce -- and it
+        // stays snapshot-testable with no window.
+        public class ScreenRenderer {
+            private mutable TextRenderer* text;
+            private mutable int treeWidth;
+
+            public constructor ScreenRenderer() {
+                this.text = new TextRenderer() on heap;
+                this.treeWidth = 22;
+            }
+            public method setTreeWidth(int w) returns void { this.treeWidth = w; }
+
+            // "[active-tab*] other-tab ..." -- the active document in brackets, a '*' when it is dirty
+            // (the title already carries the marker).
+            public method tabBar(DocumentManager* docs) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                for (mutable int i = 0; i < docs.count(); i++) {
+                    String title = docs.title(i);
+                    if (i == docs.activeIndex()) {
+                        sb.append("["); sb.append(title); sb.append("]");
+                    } else {
+                        sb.append(" "); sb.append(title); sb.append(" ");
+                    }
+                }
+                return sb.toString();
+            }
+
+            // Truncate or pad `s` to exactly `width` columns.
+            private method fit(String s, int width) returns String {
+                if (s.length() > width) { return s.substring(0, width); }
+                return Strings.padRight(s, width, " ");
+            }
+
+            // The full frame, top to bottom: tab bar, then tree|editor rows, then the status bar.
+            public method render(Workbench* wb, FileTree* tree) returns ArrayList<String> {
+                ArrayList<String> out = new ArrayList<String>() on heap;
+                Controller* c = wb.active();
+                out.add(this.tabBar(wb.documents()));
+                ArrayList<String> editorRows = this.text.renderPlain(c);
+                ArrayList<FileNode>* treeRows = tree.visible();
+                for (mutable int r = 0; r < editorRows.size(); r++) {
+                    mutable String left = "";
+                    if (r < treeRows.size()) { left = tree.rowLabel(treeRows.get(r)); }
+                    out.add(this.fit(left, this.treeWidth) + " |" + editorRows.get(r));
+                }
+                out.add(this.text.statusBar(c));
+                return out;
+            }
+        }
+    }
+}
