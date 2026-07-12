@@ -1,0 +1,118 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // A caret over a TextBuffer: turns key events (type/enter/backspace) and arrow moves into buffer
+        // edits, keeping (row, col) valid, with snapshot-based undo/redo. TextBuffer and Snapshot are in the
+        // same namespace, so no import is needed for them. This is the model an input layer drives.
+        public class Editor {
+            private mutable TextBuffer* buf;
+            private mutable int row;
+            private mutable int col;
+            private mutable ArrayList<Snapshot>* undoStack;
+            private mutable ArrayList<Snapshot>* redoStack;
+
+            public constructor Editor(TextBuffer* doc) {
+                this.buf = doc;
+                this.row = 0;
+                this.col = 0;
+                this.undoStack = new ArrayList<Snapshot>() on heap;
+                this.redoStack = new ArrayList<Snapshot>() on heap;
+            }
+
+            public method cursorRow() returns int { return this.row; }
+            public method cursorCol() returns int { return this.col; }
+            public method document() returns TextBuffer* { return this.buf; }
+
+            // Record the current state before a mutating edit; a fresh edit invalidates the redo history.
+            private method saveUndo() returns void {
+                this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
+                this.redoStack.clear();
+            }
+
+            private method restore(Snapshot* s) returns void {
+                this.buf.loadText(s.text);
+                this.row = s.row;
+                this.col = s.col;
+            }
+
+            public method undo() returns boolean {
+                if (this.undoStack.size() == 0) { return false; }
+                this.redoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
+                int last = this.undoStack.size() - 1;
+                this.restore(this.undoStack.get(last));
+                this.undoStack.removeAt(last);
+                return true;
+            }
+
+            public method redo() returns boolean {
+                if (this.redoStack.size() == 0) { return false; }
+                this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
+                int last = this.redoStack.size() - 1;
+                this.restore(this.redoStack.get(last));
+                this.redoStack.removeAt(last);
+                return true;
+            }
+
+            public method type(char c) returns void {
+                this.saveUndo();
+                this.buf.insertChar(this.row, this.col, c);
+                this.col = this.col + 1;
+            }
+
+            public method enter() returns void {
+                this.saveUndo();
+                this.buf.splitLine(this.row, this.col);
+                this.row = this.row + 1;
+                this.col = 0;
+            }
+
+            public method backspace() returns void {
+                if (this.col == 0 && this.row == 0) { return; }
+                this.saveUndo();
+                boolean joining = this.col == 0;
+                int newCol = this.buf.backspace(this.row, this.col);
+                if (joining) { this.row = this.row - 1; }
+                this.col = newCol;
+            }
+
+            public method moveLeft() returns void {
+                if (this.col > 0) { this.col = this.col - 1; }
+                else if (this.row > 0) {
+                    this.row = this.row - 1;
+                    this.col = this.buf.line(this.row).length();
+                }
+            }
+
+            public method moveRight() returns void {
+                if (this.col < this.buf.line(this.row).length()) { this.col = this.col + 1; }
+                else if (this.row < this.buf.lineCount() - 1) {
+                    this.row = this.row + 1;
+                    this.col = 0;
+                }
+            }
+
+            public method moveUp() returns void {
+                if (this.row > 0) {
+                    this.row = this.row - 1;
+                    this.clampCol();
+                }
+            }
+
+            public method moveDown() returns void {
+                if (this.row < this.buf.lineCount() - 1) {
+                    this.row = this.row + 1;
+                    this.clampCol();
+                }
+            }
+
+            private method clampCol() returns void {
+                int len = this.buf.line(this.row).length();
+                if (this.col > len) { this.col = len; }
+            }
+        }
+    }
+}

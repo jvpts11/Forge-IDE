@@ -1,0 +1,49 @@
+import System.IO.Console;
+
+program Forge;
+
+public bundle forge {
+    public namespace test {
+
+        // A tiny assert harness: counts pass/fail, prints each failure, and holds the fail count so the
+        // caller can gate on it. LDP3 deliberately rejects cast<int>(boolean), so eqBool is the right tool.
+        public class Asserts {
+            private mutable int passed;
+            private mutable int failed;
+            public constructor Asserts() { this.passed = 0; this.failed = 0; }
+
+            public method eqStr(String actual, String expected, String name) returns void {
+                if (actual.equals(expected)) { this.passed = this.passed + 1; }
+                else {
+                    this.failed = this.failed + 1;
+                    System.IO.Console.printf("FAIL %s: [%s] != [%s]\n", name, actual, expected);
+                }
+            }
+            public method eqInt(int actual, int expected, String name) returns void {
+                if (actual == expected) { this.passed = this.passed + 1; }
+                else {
+                    this.failed = this.failed + 1;
+                    System.IO.Console.printf("FAIL %s: %d != %d\n", name, actual, expected);
+                }
+            }
+            public method eqBool(boolean actual, boolean expected, String name) returns void {
+                if (actual == expected) { this.passed = this.passed + 1; }
+                else {
+                    this.failed = this.failed + 1;
+                    System.IO.Console.printf("FAIL %s (boolean mismatch)\n", name);
+                }
+            }
+
+            public method failCount() returns int { return this.failed; }
+
+            public method summary(String suite) returns void {
+                if (this.failed == 0) {
+                    System.IO.Console.printf("%s: OK (%d checks)\n", suite, this.passed);
+                } else {
+                    System.IO.Console.printf("%s: %d FAILED of %d\n", suite, this.failed,
+                                             this.passed + this.failed);
+                }
+            }
+        }
+    }
+}

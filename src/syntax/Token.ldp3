@@ -1,0 +1,21 @@
+program Forge;
+
+public bundle forge {
+    public namespace syntax {
+
+        // The token classes a line is broken into for colouring.
+        public enum Tok { WS, IDENT, KEYWORD, NUMBER, STRING, CHAR, COMMENT, PUNCT }
+
+        // A coloured run over [start, end) of a line.
+        public class Span {
+            public mutable int start;
+            public mutable int end;
+            public mutable Tok kind;
+            public constructor Span(int start, int end, Tok kind) {
+                this.start = start;
+                this.end = end;
+                this.kind = kind;
+            }
+        }
+    }
+}

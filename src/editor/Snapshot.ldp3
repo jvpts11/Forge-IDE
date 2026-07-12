@@ -1,0 +1,18 @@
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // A whole-document snapshot for undo/redo: the serialized text plus where the caret was.
+        public class Snapshot {
+            public mutable String text;
+            public mutable int row;
+            public mutable int col;
+            public constructor Snapshot(String text, int row, int col) {
+                this.text = text;
+                this.row = row;
+                this.col = col;
+            }
+        }
+    }
+}

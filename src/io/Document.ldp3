@@ -1,0 +1,49 @@
+import System.IO.Files;
+import System.Collections.ArrayList;
+import System.Text.Strings;
+import editor.TextBuffer;
+
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // An open document: a TextBuffer plus the file it came from and whether it has unsaved edits. This
+        // is the unit the file tree and tab bar will pass around; the editor edits its buffer.
+        public class Document {
+            private mutable TextBuffer* buf;
+            private mutable String path;
+            private mutable boolean modified;
+
+            public constructor Document(TextBuffer* buffer) {
+                this.buf = buffer;
+                this.path = "";
+                this.modified = false;
+            }
+
+            public method buffer() returns TextBuffer* { return this.buf; }
+            public method path() returns String { return this.path; }
+            public method isModified() returns boolean { return this.modified; }
+            public method markModified() returns void { this.modified = true; }
+
+            // Read a file from disk into the buffer, replacing its contents.
+            public method openFile(String p) returns void {
+                ArrayList<String> ls = Files.readLines(p);
+                this.buf.loadText(Strings.join(ls, "\n"));
+                this.path = p;
+                this.modified = false;
+            }
+
+            // Write the buffer's lines back to `path`.
+            public method save() returns void {
+                Files.writeLines(this.path, Strings.split(this.buf.text(), "\n"));
+                this.modified = false;
+            }
+
+            public method saveAs(String p) returns void {
+                this.path = p;
+                this.save();
+            }
+        }
+    }
+}

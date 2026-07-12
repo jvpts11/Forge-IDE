@@ -1,0 +1,93 @@
+import System.Collections.ArrayList;
+import editor.TextBuffer;
+import editor.Editor;
+import syntax.Tok;
+import syntax.Span;
+import syntax.Highlighter;
+import io.Document;
+import test.Asserts;
+
+program Forge;
+
+public bundle forge {
+    public namespace test {
+
+        // The headless self-check suite for the editor core. run() exercises every module and returns the
+        // number of failed checks (0 == all green), so the entry point can report and exit accordingly.
+        public class CoreTests {
+            public static method run() returns int {
+                Asserts a = new Asserts() on heap;
+
+                // --- TextBuffer edits ---
+                TextBuffer buf = new TextBuffer() on heap;
+                buf.loadText("ab\ncd");
+                buf.insertChar(0, 1, 'X');               // "aXb"
+                buf.splitLine(0, 2);                       // "aX" / "b"
+                buf.backspace(2, 0);                       // join "cd" onto "b" -> "bcd"
+                a.eqInt(buf.lineCount(), 2, "buf.lineCount");
+                a.eqStr(buf.line(0), "aX", "buf.line0");
+                a.eqStr(buf.line(1), "bcd", "buf.line1");
+
+                // --- Editor: type, Enter, backspace within a line, backspace-join, cursor motion ---
+                Editor ed = new Editor(new TextBuffer() on heap) on heap;
+                ed.type('h'); ed.type('i'); ed.enter(); ed.type('y'); ed.type('o');   // "hi" / "yo"
+                a.eqInt(ed.document().lineCount(), 2, "ed.lineCount");
+                a.eqStr(ed.document().line(0), "hi", "ed.line0");
+                a.eqStr(ed.document().line(1), "yo", "ed.line1");
+                a.eqInt(ed.cursorRow(), 1, "ed.row");
+                a.eqInt(ed.cursorCol(), 2, "ed.col");
+                ed.backspace(); ed.backspace();
+                a.eqStr(ed.document().line(1), "", "ed.after-bs-line1");
+                a.eqInt(ed.cursorCol(), 0, "ed.col-after-bs");
+                ed.backspace();                            // line-start backspace joins -> "hi"
+                a.eqInt(ed.document().lineCount(), 1, "ed.after-join-count");
+                a.eqStr(ed.document().line(0), "hi", "ed.after-join");
+                a.eqInt(ed.cursorRow(), 0, "ed.row-after-join");
+                a.eqInt(ed.cursorCol(), 2, "ed.col-after-join");
+                ed.moveLeft();  a.eqInt(ed.cursorCol(), 1, "moveLeft");
+                ed.moveRight(); ed.moveRight();  a.eqInt(ed.cursorCol(), 2, "moveRight-clamp");
+
+                // --- syntax highlighting ---
+                Highlighter hl = new Highlighter() on heap;
+                ArrayList<Span> sp = hl.tokenize("public int x = 42; // hi");
+                a.eqInt(sp.size(), 12, "hl.spanCount");
+                a.eqInt(cast<int>(sp.get(0).kind), cast<int>(Tok.KEYWORD), "hl.public-kw");
+                a.eqInt(cast<int>(sp.get(2).kind), cast<int>(Tok.KEYWORD), "hl.int-kw");
+                a.eqInt(cast<int>(sp.get(4).kind), cast<int>(Tok.IDENT), "hl.x-ident");
+                a.eqInt(cast<int>(sp.get(8).kind), cast<int>(Tok.NUMBER), "hl.42-number");
+                a.eqInt(cast<int>(sp.get(11).kind), cast<int>(Tok.COMMENT), "hl.comment");
+                ArrayList<Span> sp2 = hl.tokenize("s = \"hi\";");
+                a.eqInt(cast<int>(sp2.get(4).kind), cast<int>(Tok.STRING), "hl.string");
+
+                // --- undo / redo ---
+                Editor ed2 = new Editor(new TextBuffer() on heap) on heap;
+                ed2.type('h'); ed2.type('i');
+                a.eqStr(ed2.document().line(0), "hi", "ur.typed");
+                ed2.undo();  a.eqStr(ed2.document().line(0), "h", "ur.undo1");
+                ed2.undo();  a.eqStr(ed2.document().line(0), "", "ur.undo2");
+                ed2.redo();  a.eqStr(ed2.document().line(0), "h", "ur.redo1");
+                ed2.redo();  a.eqStr(ed2.document().line(0), "hi", "ur.redo2");
+                a.eqBool(ed2.redo(), false, "ur.redo-empty");
+                ed2.undo();
+                ed2.type('o');
+                a.eqStr(ed2.document().line(0), "ho", "ur.new-edit");
+                a.eqBool(ed2.redo(), false, "ur.redo-cleared");
+
+                // --- file I/O (Document) ---
+                Document doc = new Document(new TextBuffer() on heap) on heap;
+                doc.buffer().loadText("line1\nline2\nline3");
+                doc.saveAs("forge_doc_test.tmp");
+                a.eqBool(doc.isModified(), false, "doc.saved-clean");
+                Document doc2 = new Document(new TextBuffer() on heap) on heap;
+                doc2.openFile("forge_doc_test.tmp");
+                a.eqStr(doc2.buffer().line(0), "line1", "doc.reload-l0");
+                a.eqStr(doc2.buffer().line(1), "line2", "doc.reload-l1");
+                a.eqStr(doc2.buffer().line(2), "line3", "doc.reload-l2");
+                a.eqStr(doc2.path(), "forge_doc_test.tmp", "doc.path");
+
+                a.summary("editor tests");
+                return a.failCount();
+            }
+        }
+    }
+}

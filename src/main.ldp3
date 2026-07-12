@@ -1,0 +1,18 @@
+import test.CoreTests;
+
+program Forge;
+
+// Forge -- the LDP3 IDE. Entry point. Until the graphics/UI layer lands, main runs the headless editor-core
+// self-check suite so the model stays correct as it grows; it will become the app launcher (open a window,
+// wire input to the Editor, render via ldp3-opengl) once that layer exists. See docs/DESIGN.md.
+public bundle forge {
+    public namespace app {
+        public class Main {
+            public static method main(string[] args) returns void {
+                int failed = CoreTests.run();
+                if (failed == 0) { return; }
+                return;
+            }
+        }
+    }
+}
