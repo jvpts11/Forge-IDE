@@ -413,6 +413,28 @@ public bundle forge {
                 this.col = cc;
             }
 
+            // Mouse press: place the caret at (row, col) and anchor a (still-empty) selection there, so a drag
+            // can extend from this point.
+            public method beginSelect(int row, int col) returns void {
+                this.setCaret(row, col);
+                this.selRow = this.row;
+                this.selCol = this.col;
+                this.hasSel = true;
+            }
+            // Mouse drag: move the caret to (row, col) while keeping the anchor -> grow/shrink the selection.
+            public method extendSelectTo(int row, int col) returns void {
+                mutable int rr = row;
+                if (rr < 0) { rr = 0; }
+                if (rr >= this.buf.lineCount()) { rr = this.buf.lineCount() - 1; }
+                this.row = rr;
+                mutable int cc = col;
+                if (cc < 0) { cc = 0; }
+                int len = this.buf.line(this.row).length();
+                if (cc > len) { cc = len; }
+                this.col = cc;
+                this.hasSel = true;
+            }
+
             // Ordered selection bounds (start <= end), for rendering. Only meaningful when hasSelection().
             public method selStartRow() returns int { if (this.anchorBeforeCaret()) { return this.selRow; } return this.row; }
             public method selStartCol() returns int { if (this.anchorBeforeCaret()) { return this.selCol; } return this.col; }
