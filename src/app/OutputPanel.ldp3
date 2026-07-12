@@ -1,0 +1,49 @@
+import System.Collections.ArrayList;
+import System.Text.Strings;
+import System.OS.Process;
+import System.OS.ProcessResult;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // The build/run output panel: runs a shell command (e.g. `ldp3 build`, `ldp3 run`) on the project,
+        // captures its stdout, and holds the lines for the UI to draw in a bottom panel. This is the IDE's
+        // build-and-run integration -- one of the things that makes Forge an IDE rather than an editor.
+        public class OutputPanel {
+            public mutable ArrayList<String>* lines;
+            public mutable boolean visible;
+            public mutable String title;
+
+            public constructor OutputPanel() {
+                this.lines = new ArrayList<String>() on heap;
+                this.visible = false;
+                this.title = "Output";
+            }
+
+            public method toggle() returns void { this.visible = !this.visible; }
+            public method hide() returns void { this.visible = false; }
+            public method lineCount() returns int { return this.lines.size(); }
+            public method line(int i) returns String { return this.lines.get(i); }
+
+            // Run `cmd` through the shell, capture its output, and show the panel titled `label`.
+            public method run(String caption, String cmd) returns void {
+                this.title = caption;
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                out.add("$ " + cmd);
+                ProcessResult r = Process.run(cmd);
+                ArrayList<String> body = Strings.split(r.output, "\n");
+                mutable int i = 0;
+                while (i < body.size()) {
+                    String ln = body.get(i);
+                    if (ln.length() > 0 || i < body.size() - 1) { out.add(ln); }
+                    i = i + 1;
+                }
+                out.add("[exit " + r.exitCode.toString() + "]");
+                this.lines = out;
+                this.visible = true;
+            }
+        }
+    }
+}

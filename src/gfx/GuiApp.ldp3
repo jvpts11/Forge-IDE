@@ -195,6 +195,12 @@ public bundle forge {
                     GuiApp.writePpm(arg, px, w, h);
                     win.swap();
                     System.IO.Console.println("shot " + arg);
+                } else if (cmd.equals("run")) {
+                    wb.runShell("Run", arg);
+                    System.IO.Console.println("ok " + wb.output().lineCount().toString() + " lines");
+                } else if (cmd.equals("build")) {
+                    wb.runShell("Build", "ldp3 build");
+                    System.IO.Console.println("ok " + wb.output().lineCount().toString() + " lines");
                 } else if (cmd.equals("state")) {
                     GuiApp.serveState(wb);
                 } else {

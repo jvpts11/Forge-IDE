@@ -34,6 +34,9 @@ public bundle forge {
                 this.register("edit.replace", "Replace");
                 this.register("edit.selectAll", "Select All");
                 this.register("edit.duplicateLine", "Duplicate Line");
+                this.register("run.build", "Build Project");
+                this.register("run.program", "Run Project");
+                this.register("view.output", "Toggle Output Panel");
                 this.register("view.split", "Split Editor");
             }
 

@@ -6,6 +6,7 @@ import app.Workbench;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
+import app.OutputPanel;
 import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
@@ -79,10 +80,37 @@ public bundle forge {
                 batch.rect(0, tabh, tw, screenH - tabh, 0.035, 0.070, 0.078, 1.0);      // tree panel
                 batch.rect(tw, tabh, 1, screenH - tabh, 0.016, 0.035, 0.039, 1.0);      // tree/editor divider
                 int sh = this.statusH();
+                mutable int panelH = 0;
+                if (wb.output().visible) { panelH = 220; }
                 this.drawTabBar(batch, wb.documents(), tabh);
                 this.drawTree(batch, tree, tabh, screenH - sh);
-                this.drawEditor(batch, wb.active(), tw, tabh, screenW - tw, screenH - tabh - sh);
+                this.drawEditor(batch, wb.active(), tw, tabh, screenW - tw, screenH - tabh - sh - panelH);
+                if (panelH > 0) {
+                    this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH);
+                }
                 this.drawStatusBar(batch, wb, screenW, screenH, sh);
+            }
+
+            // The build/run output panel: a titled band at the bottom of the editor area showing the tail of
+            // the captured command output.
+            private method drawOutputPanel(Batch2D* batch, OutputPanel* panel, int ox, int oy, int pw, int ph)
+                    returns void {
+                int ch = this.font.lineHeight();
+                batch.rect(ox, oy, pw, ph, 0.043, 0.086, 0.094, 1.0);
+                batch.rect(ox, oy, pw, 1, 0.016, 0.035, 0.039, 1.0);
+                this.font.drawText(batch, ox + 10, oy + 4, panel.title, 0.918, 0.706, 0.392, 1.0);
+                int headerH = ch + 8;
+                int rows = (ph - headerH) / ch;
+                int total = panel.lineCount();
+                mutable int start = 0;
+                if (total > rows) { start = total - rows; }
+                mutable int i = start;
+                mutable int y = oy + headerH;
+                while (i < total) {
+                    this.font.drawText(batch, ox + 10, y, panel.line(i), 0.784, 0.831, 0.824, 1.0);
+                    y = y + ch;
+                    i = i + 1;
+                }
             }
 
             // Bottom status bar: an amber mode chip, the file, the caret position, and the line count.

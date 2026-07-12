@@ -2,6 +2,7 @@ import editor.Editor;
 import app.Controller;
 import app.DocumentManager;
 import app.CommandRegistry;
+import app.OutputPanel;
 import input.Key;
 import input.KeyMap;
 
@@ -19,11 +20,13 @@ public bundle forge {
             private mutable DocumentManager* docs;
             private mutable CommandRegistry* commands;
             private mutable KeyMap* keymap;
+            private mutable OutputPanel* out;
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
                 this.commands = new CommandRegistry() on heap;
                 this.keymap = new KeyMap() on heap;
+                this.out = new OutputPanel() on heap;
                 this.docs.openNew();               // start on one empty document
             }
 
@@ -31,6 +34,9 @@ public bundle forge {
             public method registry() returns CommandRegistry* { return this.commands; }
             public method active() returns Controller* { return this.docs.active(); }
             public method openFile(String path) returns Controller* { return this.docs.openFile(path); }
+            public method output() returns OutputPanel* { return this.out; }
+            // Run a shell command on the project and show its output in the bottom panel.
+            public method runShell(String caption, String cmd) returns void { this.out.run(caption, cmd); }
 
             // Feed a decoded key to the active document's editor. Returns whether it was handled.
             public method handleKey(Key* k) returns boolean {
@@ -50,6 +56,9 @@ public bundle forge {
                 if (id.equals("edit.redo")) { c.redo(); return true; }
                 if (id.equals("edit.selectAll")) { c.selectAll(); return true; }
                 if (id.equals("edit.duplicateLine")) { c.duplicateLine(); return true; }
+                if (id.equals("run.build")) { this.runShell("Build", "ldp3 build"); return true; }
+                if (id.equals("run.program")) { this.runShell("Run", "ldp3 run"); return true; }
+                if (id.equals("view.output")) { this.out.toggle(); return true; }
                 return false;
             }
         }
