@@ -1270,6 +1270,12 @@ public bundle forge {
                         GuiApp.beginRenameSymbol(wb, ov);
                     } else if (e.isKey() && e.vk == 119) {                   // F8 next problem, Shift+F8 previous
                         wb.nextProblem(!shift);
+                    } else if (e.isKey() && alt && !ctrl && !shift && e.vk == 38) {  // Alt+Up -> move line up
+                        wb.active().moveLineUp();
+                    } else if (e.isKey() && alt && !ctrl && !shift && e.vk == 40) {  // Alt+Down -> move line down
+                        wb.active().moveLineDown();
+                    } else if (e.isKey() && alt && shift && !ctrl && e.vk == 40) {   // Alt+Shift+Down -> duplicate line
+                        wb.active().duplicateLine();
                     } else if (e.isKey() && e.vk == 116) {                   // F5 start/continue, Shift+F5 stop
                         if (shift) {
                             wb.debugger().stop();
