@@ -56,6 +56,18 @@ public bundle forge {
             public method setTheme(Theme* t) returns void {
                 this.theme = t;
             }
+            // Sync the palette to the workbench's theme preference. Cheap: only rebuilds the Theme when the
+            // light/dark choice actually changed, so it is safe to call every frame.
+            public method applyThemeFor(Workbench* wb) returns void {
+                boolean isLight = !this.theme.dark;
+                if (wb.wantsLight() != isLight) {
+                    if (wb.wantsLight()) {
+                        this.theme = Theme.makeLight();
+                    } else {
+                        this.theme = Theme.makeDark();
+                    }
+                }
+            }
 
             // The live loop toggles this to blink the caret; shot/serve leave it on so the caret always shows.
             public method setCaretOn(boolean visible) returns void {

@@ -28,6 +28,25 @@ public bundle forge {
                     File.mkdir(d);
                 }
             }
+            private static method themeFile() returns String {
+                return WorkspaceStore.configDir() + "/theme.txt";
+            }
+            // The saved UI theme preference: true = light, false = dark (the default).
+            public static method loadTheme() returns boolean {
+                String path = WorkspaceStore.themeFile();
+                if (!File.exists(path)) {
+                    return false;
+                }
+                return File.readAll(path).trim().equals("light");
+            }
+            public static method saveTheme(boolean light) returns void {
+                WorkspaceStore.ensureConfigDir();
+                if (light) {
+                    File.writeAll(WorkspaceStore.themeFile(), "light");
+                } else {
+                    File.writeAll(WorkspaceStore.themeFile(), "dark");
+                }
+            }
             private static method has(ArrayList<String>* xs, String s) returns boolean {
                 mutable int i = 0;
                 while (i < xs.size()) {

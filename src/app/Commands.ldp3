@@ -44,6 +44,7 @@ public bundle forge {
                 this.register("view.output", "Toggle Output Panel");
                 this.register("view.minimap", "Toggle Minimap");
                 this.register("view.split", "Split Editor");
+                this.register("view.theme", "Toggle Light/Dark Theme");
                 this.register("edit.format", "Format Document");
                 this.register("debug.start", "Debug: Start / Continue");
                 this.register("debug.stepOver", "Debug: Step Over");

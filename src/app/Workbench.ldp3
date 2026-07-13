@@ -38,6 +38,7 @@ public bundle forge {
             private mutable Debugger* dbg;          // debug session (breakpoints, stopped line, stack, vars)
             private mutable String renameOldName;   // the identifier a pending rename prompt is renaming
             private mutable int dbgOutConsumed;      // how many debug-output lines are already in the panel
+            private mutable boolean lightTheme;      // UI theme preference (true = light); the shell applies it
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
 
@@ -53,6 +54,7 @@ public bundle forge {
                 this.dbg = new Debugger() on heap;
                 this.renameOldName = "";
                 this.dbgOutConsumed = 0;
+                this.lightTheme = WorkspaceStore.loadTheme();
                 this.treeDirty = false;
                 this.showMinimap = false;
                 this.docs.openNew();               // start on one empty document
@@ -62,6 +64,14 @@ public bundle forge {
             // frame so incoming adapter events update the UI without blocking.
             public method debugger() returns Debugger* {
                 return this.dbg;
+            }
+            // UI theme preference. The shell reads wantsLight() each frame and re-skins GpuScreen on a change.
+            public method wantsLight() returns boolean {
+                return this.lightTheme;
+            }
+            public method toggleTheme() returns void {
+                this.lightTheme = !this.lightTheme;
+                WorkspaceStore.saveTheme(this.lightTheme);
             }
             // Move any new output the debugged program produced into the Debug Console panel. Called each
             // frame right after pump(), so the program's stdout streams in live.
@@ -588,6 +598,10 @@ public bundle forge {
                 }
                 if (id.equals("view.minimap")) {
                     this.toggleMinimap();
+                    return true;
+                }
+                if (id.equals("view.theme")) {
+                    this.toggleTheme();
                     return true;
                 }
                 if (id.equals("git.status")) {

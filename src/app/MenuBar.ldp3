@@ -81,6 +81,7 @@ public bundle forge {
                 view.add("Command Palette", "view.palette");
                 view.add("Toggle Output", "view.output");
                 view.add("Toggle Minimap", "view.minimap");
+                view.add("Toggle Light/Dark Theme", "view.theme");
                 view.sep();
                 view.add("Fold at Cursor", "view.fold");
                 view.add("Unfold All", "view.unfoldAll");

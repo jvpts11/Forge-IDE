@@ -735,6 +735,10 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("ok bp off");
                     }
+                } else if (cmd.equals("theme")) {
+                    wb.toggleTheme();                               // flip light/dark (applied next drawFrame)
+                    screen.applyThemeFor(wb);
+                    System.IO.Console.println("ok light=" + GuiApp.boolStr(wb.wantsLight()));
                 } else if (cmd.equals("cmd")) {
                     boolean ran = wb.runCommand(arg);               // run any registered command by id
                     if (ran) {
@@ -1782,6 +1786,7 @@ public bundle forge {
                 // stopped line, call stack, variables and program output update in step with the UI.
                 wb.debugger().pump();
                 wb.drainDebugOutput();
+                screen.applyThemeFor(wb);   // re-skin if the theme preference changed
                 int w = win.width();
                 int h = win.height();
                 // Fit the active document's viewport to the window so it fills the whole editor pane. A
