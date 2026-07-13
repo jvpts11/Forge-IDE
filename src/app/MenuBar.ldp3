@@ -73,6 +73,7 @@ public bundle forge {
                 edit.add("Select All", "edit.selectAll");
                 edit.add("Duplicate Line", "edit.duplicateLine");
                 edit.add("Join Lines  Ctrl+J", "edit.joinLines");
+                edit.add("Sort Lines Ascending", "edit.sortLines");
                 edit.add("Add Next Occurrence  Ctrl+D", "edit.addNextOccurrence");
                 edit.add("Select All Occurrences  Ctrl+Shift+L", "edit.selectAllOccurrences");
                 edit.add("Expand Selection  Shift+Alt+Right", "edit.expandSelection");

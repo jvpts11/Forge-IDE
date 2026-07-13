@@ -956,6 +956,10 @@ public bundle forge {
                     c.joinLines();
                     return true;
                 }
+                if (id.equals("edit.sortLines")) {
+                    c.sortSelectedLines();
+                    return true;
+                }
                 if (id.equals("edit.addNextOccurrence")) {
                     c.selectNextOccurrence();
                     return true;

@@ -388,6 +388,54 @@ public bundle forge {
                 this.col = this.buf.line(a).length();
             }
 
+            // Sort the selected lines in ascending (byte) order, in place, as one undo step. A no-op unless the
+            // selection spans at least two lines.
+            public method sortSelectedLines() returns void {
+                int a = this.selMinRow();
+                int b = this.selMaxRow();
+                if (a >= b) {
+                    return;
+                }
+                this.saveUndo();
+                ArrayList<String>* ls = new ArrayList<String>() on heap;
+                mutable int r = a;
+                while (r <= b) {
+                    ls.add(this.buf.line(r));
+                    r = r + 1;
+                }
+                mutable int i = 1;
+                while (i < ls.size()) {
+                    String key = ls.get(i);
+                    mutable int j = i - 1;
+                    while (j >= 0 && Editor.strGreater(ls.get(j), key)) {
+                        ls.set(j + 1, ls.get(j));
+                        j = j - 1;
+                    }
+                    ls.set(j + 1, key);
+                    i = i + 1;
+                }
+                r = a;
+                while (r <= b) {
+                    this.buf.setLine(r, ls.get(r - a));
+                    r = r + 1;
+                }
+                this.clearSelection();
+            }
+            private static method strGreater(String x, String y) returns boolean {
+                int n = x.length();
+                int m = y.length();
+                mutable int i = 0;
+                while (i < n && i < m) {
+                    char cx = x.charAt(i);
+                    char cy = y.charAt(i);
+                    if (cx != cy) {
+                        return cast<int>(cx) > cast<int>(cy);
+                    }
+                    i = i + 1;
+                }
+                return n > m;
+            }
+
             public method indentSelection() returns void {
                 this.saveUndo();
                 int a = this.selMinRow();

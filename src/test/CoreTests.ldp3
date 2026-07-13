@@ -185,6 +185,17 @@ public bundle forge {
                 a.eqStr(jl.document().line(1), "next", "join.rest");
                 a.eqInt(jl.document().lineCount(), 2, "join.count");
 
+                // --- sort selected lines ascending ---
+                Editor srt = new Editor(new TextBuffer() on heap) on heap;
+                srt.document().loadText("banana\napple\ncherry");
+                srt.setCaret(0, 0);
+                srt.selectDown();
+                srt.selectDown();
+                srt.sortSelectedLines();
+                a.eqStr(srt.document().line(0), "apple", "sort.l0");
+                a.eqStr(srt.document().line(1), "banana", "sort.l1");
+                a.eqStr(srt.document().line(2), "cherry", "sort.l2");
+
                 // --- expand / shrink selection (Shift+Alt+Right/Left): word -> inside () -> whole () ---
                 Editor ex = new Editor(new TextBuffer() on heap) on heap;
                 ex.document().loadText("foo(bar, baz)");
@@ -604,8 +615,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 39, "cmd.count");
-                a.eqInt(cr.filter("").size(), 39, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 40, "cmd.count");
+                a.eqInt(cr.filter("").size(), 40, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");

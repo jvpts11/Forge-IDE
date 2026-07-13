@@ -184,6 +184,10 @@ public bundle forge {
                 this.ed.joinLines();
                 this.moved();
             }
+            public method sortSelectedLines() returns void {
+                this.ed.sortSelectedLines();
+                this.moved();
+            }
             public method duplicateLine() returns void {
                 this.ed.duplicateLine();
                 this.edited();
