@@ -6,6 +6,7 @@ import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
 import app.Debugger;
+import app.Terminal;
 import app.Command;
 import io.FileTree;
 import io.FileNode;
@@ -739,6 +740,31 @@ public bundle forge {
                     wb.toggleTheme();                               // flip light/dark (applied next drawFrame)
                     screen.applyThemeFor(wb);
                     System.IO.Console.println("ok light=" + GuiApp.boolStr(wb.wantsLight()));
+                } else if (cmd.equals("term")) {
+                    // term [cmd]: open the terminal; with an argument, type it and press Enter.
+                    if (!wb.terminal().isOpen()) {
+                        wb.toggleTerminal();
+                    }
+                    if (arg.length() > 0) {
+                        mutable int ti = 0;
+                        while (ti < arg.length()) {
+                            wb.terminal().typeChar(arg.charAt(ti));
+                            ti = ti + 1;
+                        }
+                        wb.terminal().enter();
+                    }
+                    System.IO.Console.println("ok term open=" + GuiApp.boolStr(wb.terminal().isOpen()));
+                } else if (cmd.equals("termdump")) {
+                    ArrayList<String>* tl = wb.terminal().scrollback();
+                    mutable int td = 0;
+                    if (tl.size() > 30) {
+                        td = tl.size() - 30;
+                    }
+                    while (td < tl.size()) {
+                        System.IO.Console.println("T| " + tl.get(td));
+                        td = td + 1;
+                    }
+                    System.IO.Console.println("ok");
                 } else if (cmd.equals("cmd")) {
                     boolean ran = wb.runCommand(arg);               // run any registered command by id
                     if (ran) {
@@ -1245,7 +1271,11 @@ public bundle forge {
                     boolean ctrl = win.modCtrl();
                     boolean shift = win.modShift();
                     boolean alt = win.modAlt();
-                    if (ov.isOpen()) {
+                    if (e.isKey() && ctrl && e.vk == 192) {                  // Ctrl+` -> toggle terminal
+                        wb.toggleTerminal();
+                    } else if (wb.terminal().isFocused()) {
+                        GuiApp.terminalKey(wb.terminal(), e, ctrl);
+                    } else if (ov.isOpen()) {
                         GuiApp.overlayEvent(ov, wb, e, ctrl, shift, alt);
                     } else if (menu.isOpen() && e.isKey() && e.vk == 27) {   // Esc closes an open menu
                         menu.close();
@@ -1345,6 +1375,24 @@ public bundle forge {
                     }
                 }
                 return;
+            }
+
+            // Route a key to the integrated terminal while it is focused.
+            private static method terminalKey(Terminal* t, InputEvent* e, boolean ctrl) returns void {
+                if (e.isKey() && e.vk == 27) {           // Esc -> back to the editor (panel stays open)
+                    t.blur();
+                } else if (e.isKey() && e.vk == 13) {    // Enter -> run the line
+                    t.enter();
+                } else if (e.isKey() && e.vk == 8) {     // Backspace
+                    t.backspace();
+                } else if (ctrl && e.isKey() && e.vk == 67) {   // Ctrl+C -> interrupt
+                    t.interrupt();
+                } else if (e.isChar()) {
+                    int cp = e.code;
+                    if (cp >= 32 && cp != 127) {
+                        t.typeChar(cast<char>(cp));
+                    }
+                }
             }
 
             // Handle a key while the completion popup is open. Returns true if it consumed the key.
@@ -1786,6 +1834,7 @@ public bundle forge {
                 // stopped line, call stack, variables and program output update in step with the UI.
                 wb.debugger().pump();
                 wb.drainDebugOutput();
+                wb.terminal().pump();       // stream the integrated terminal's output
                 screen.applyThemeFor(wb);   // re-skin if the theme preference changed
                 int w = win.width();
                 int h = win.height();

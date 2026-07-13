@@ -6,6 +6,7 @@ import app.Workbench;
 import app.Debugger;
 import app.DebugFrame;
 import app.DebugVar;
+import app.Terminal;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
@@ -176,12 +177,20 @@ public bundle forge {
                 batch.rect(0, ctop, tw, screenH - ctop, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);      // tree panel
                 batch.rect(tw, ctop, 1, screenH - ctop, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // tree/editor divider
                 int sh = this.statusH();
-                int panelH = this.outputPanelHeight(wb.output(), screenH);
+                boolean termOpen = wb.terminal().isOpen();
+                mutable int panelH = 0;
+                if (termOpen) {
+                    panelH = this.terminalPanelHeight(screenH);
+                } else {
+                    panelH = this.outputPanelHeight(wb.output(), screenH);
+                }
                 this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
                 this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
                 this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
                 this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw, screenH - etop - sh - panelH);
-                if (panelH > 0) {
+                if (termOpen) {
+                    this.drawTerminal(batch, wb.terminal(), tw, screenH - sh - panelH, screenW - tw, panelH);
+                } else if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH, mx, my);
                 }
                 if (wb.debugger().isActive()) {
@@ -654,6 +663,58 @@ public bundle forge {
                 int ch = this.font.lineHeight();
                 int xbx = ox + pw - 2 * cw;
                 return mx >= xbx - cw && mx < xbx + cw && my >= oy && my < oy + ch + 8;
+            }
+
+            // The integrated terminal panel occupies the bottom ~40% of the window.
+            public method terminalPanelHeight(int screenH) returns int {
+                return screenH * 4 / 10;
+            }
+            // Draw the terminal: a header, the tail of the scrollback that fits, the in-progress output tail,
+            // and the input line with a prompt + caret.
+            private method drawTerminal(Batch2D* batch, Terminal* term, int ox, int oy, int pw, int ph)
+                    returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(ox, oy, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
+                int headerH = ch + 6;
+                this.font.drawText(batch, ox + 10, oy + 4, "TERMINAL", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, this.theme.accent.a);
+                // Rows for output: everything below the header, leaving the last row for the input line.
+                int bodyTop = oy + headerH;
+                int rows = (ph - headerH) / ch;
+                if (rows < 2) {
+                    return;
+                }
+                int outRows = rows - 1;
+                ArrayList<String>* sb = term.scrollback();
+                // Build the visible list = scrollback tail + the partial line, then show its last outRows.
+                int total = sb.size() + 1;
+                mutable int start = total - outRows;
+                if (start < 0) {
+                    start = 0;
+                }
+                mutable int r = 0;
+                mutable int idx = start;
+                while (idx < total && r < outRows) {
+                    mutable String text = "";
+                    if (idx < sb.size()) {
+                        text = sb.get(idx);
+                    } else {
+                        text = term.partialLine();
+                    }
+                    this.font.drawText(batch, ox + 10, bodyTop + r * ch, text, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    r = r + 1;
+                    idx = idx + 1;
+                }
+                // Input line at the bottom with a prompt and (when focused) a block caret.
+                int iy = bodyTop + outRows * ch;
+                this.font.drawText(batch, ox + 10, iy, "$ ", this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                String inp = term.inputLine();
+                this.font.drawText(batch, ox + 10 + 2 * cw, iy, inp, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                if (term.isFocused() && this.caretOn) {
+                    int cx = ox + 10 + (2 + inp.length()) * cw;
+                    batch.rect(cx, iy, cw, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.7);
+                }
             }
 
             // Bottom status bar: an amber mode chip, the file, the caret position, and the line count.

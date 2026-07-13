@@ -1,0 +1,156 @@
+import System.Collections.ArrayList;
+import System.OS.Subprocess;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // An integrated terminal: a real cmd.exe running behind a persistent Subprocess (the same primitive
+        // the debugger uses). Typed commands go to its stdin; its stdout is pumped in each frame and split
+        // into lines for the panel to draw. Toggle with Ctrl+` ; the shell routes keys here while it is
+        // focused.
+        public class Terminal {
+            private mutable Subprocess proc;
+            private mutable boolean started;
+            private mutable boolean open;
+            private mutable boolean focused;
+            private mutable ArrayList<String>* lines;   // completed output lines (scrollback)
+            private mutable String partial;              // the not-yet-newline-terminated tail of the output
+            private mutable String input;                // the line the user is typing
+            private mutable String cwd;                  // where the shell starts
+
+            public constructor Terminal() {
+                this.started = false;
+                this.open = false;
+                this.focused = false;
+                this.lines = new ArrayList<String>() on heap;
+                this.partial = "";
+                this.input = "";
+                this.cwd = ".";
+            }
+
+            public method isOpen() returns boolean {
+                return this.open;
+            }
+            public method isFocused() returns boolean {
+                return this.open && this.focused;
+            }
+            public method setCwd(String dir) returns void {
+                this.cwd = dir;
+            }
+            public method scrollback() returns ArrayList<String>* {
+                return this.lines;
+            }
+            public method partialLine() returns String {
+                return this.partial;
+            }
+            public method inputLine() returns String {
+                return this.input;
+            }
+
+            // Open the panel (spawning the shell the first time) and focus it.
+            public method openPanel() returns void {
+                this.open = true;
+                this.focused = true;
+                if (!this.started) {
+                    this.proc = Subprocess.start("cmd.exe");
+                    this.started = this.proc.isValid();
+                    if (this.started && this.cwd.length() > 0) {
+                        this.proc.write("cd /d \"" + this.cwd + "\"\r\n");
+                    }
+                }
+            }
+            public method toggle() returns void {
+                if (this.open) {
+                    this.open = false;
+                    this.focused = false;
+                } else {
+                    this.openPanel();
+                }
+            }
+            public method focus() returns void {
+                this.focused = this.open;
+            }
+            public method blur() returns void {
+                this.focused = false;
+            }
+
+            // Drain whatever the shell has written since the last frame (never blocks), appending complete
+            // lines to the scrollback and keeping the in-progress tail in `partial`.
+            public method pump() returns void {
+                if (!this.started) {
+                    return;
+                }
+                mutable int guard = 0;
+                while (this.proc.canRead() && guard < 64) {
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        return;
+                    }
+                    this.absorb(chunk);
+                    guard = guard + 1;
+                }
+            }
+
+            private method absorb(String chunk) returns void {
+                mutable String cur = this.partial;
+                mutable int i = 0;
+                while (i < chunk.length()) {
+                    char c = chunk.charAt(i);
+                    if (c == '\n') {
+                        this.lines.add(cur);
+                        cur = "";
+                    } else if (c != '\r') {
+                        cur = cur + Terminal.ch2s(c);
+                    }
+                    i = i + 1;
+                }
+                this.partial = cur;
+                // Bound the scrollback so a chatty command cannot grow it without limit.
+                while (this.lines.size() > 5000) {
+                    this.lines.removeAt(0);
+                }
+            }
+
+            // --- keyboard, while focused ---
+            public method typeChar(char c) returns void {
+                this.input = this.input + Terminal.ch2s(c);
+            }
+            public method backspace() returns void {
+                if (this.input.length() > 0) {
+                    this.input = this.input.substring(0, this.input.length() - 1);
+                }
+            }
+            // Send the typed line to the shell and echo it locally so the scrollback reads like a real prompt.
+            public method enter() returns void {
+                if (!this.started) {
+                    return;
+                }
+                this.lines.add("> " + this.input);
+                this.proc.write(this.input + "\r\n");
+                this.input = "";
+            }
+            public method interrupt() returns void {   // Ctrl+C: send ETX to the shell
+                if (this.started) {
+                    this.proc.write(Terminal.ch2s(cast<char>(3)));
+                }
+            }
+            public method close() returns void {
+                if (this.started) {
+                    this.proc.close();
+                    this.started = false;
+                }
+                this.open = false;
+                this.focused = false;
+            }
+            private static method ch2s(char c) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(c);
+                return sb.toString();
+            }
+        }
+    }
+}

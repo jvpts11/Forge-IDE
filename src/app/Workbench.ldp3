@@ -39,6 +39,7 @@ public bundle forge {
             private mutable String renameOldName;   // the identifier a pending rename prompt is renaming
             private mutable int dbgOutConsumed;      // how many debug-output lines are already in the panel
             private mutable boolean lightTheme;      // UI theme preference (true = light); the shell applies it
+            private mutable Terminal* term;          // integrated terminal (a cmd.exe behind a Subprocess)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
 
@@ -55,6 +56,7 @@ public bundle forge {
                 this.renameOldName = "";
                 this.dbgOutConsumed = 0;
                 this.lightTheme = WorkspaceStore.loadTheme();
+                this.term = new Terminal() on heap;
                 this.treeDirty = false;
                 this.showMinimap = false;
                 this.docs.openNew();               // start on one empty document
@@ -72,6 +74,16 @@ public bundle forge {
             public method toggleTheme() returns void {
                 this.lightTheme = !this.lightTheme;
                 WorkspaceStore.saveTheme(this.lightTheme);
+            }
+
+            // The integrated terminal. The shell toggles/focuses it, pumps its output each frame, and routes
+            // keystrokes to it while it is focused.
+            public method terminal() returns Terminal* {
+                return this.term;
+            }
+            public method toggleTerminal() returns void {
+                this.term.setCwd(this.projectDir);
+                this.term.toggle();
             }
             // Move any new output the debugged program produced into the Debug Console panel. Called each
             // frame right after pump(), so the program's stdout streams in live.
@@ -602,6 +614,10 @@ public bundle forge {
                 }
                 if (id.equals("view.theme")) {
                     this.toggleTheme();
+                    return true;
+                }
+                if (id.equals("view.terminal")) {
+                    this.toggleTerminal();
                     return true;
                 }
                 if (id.equals("git.status")) {
