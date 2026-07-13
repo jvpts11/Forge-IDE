@@ -726,6 +726,13 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("ok bp off");
                     }
+                } else if (cmd.equals("cmd")) {
+                    boolean ran = wb.runCommand(arg);               // run any registered command by id
+                    if (ran) {
+                        System.IO.Console.println("ok");
+                    } else {
+                        System.IO.Console.println("unknown command");
+                    }
                 } else if (cmd.equals("project")) {
                     wb.setProjectDir(arg);                           // point build/debug at a project root
                     System.IO.Console.println("ok " + wb.projectLabel());
@@ -1230,6 +1237,8 @@ public bundle forge {
                         } else {
                             wb.active().nextBookmark(true);
                         }
+                    } else if (e.isKey() && alt && shift && e.vk == 70) {    // Shift+Alt+F -> format document
+                        wb.formatDocument();
                     } else if (e.isKey() && e.vk == 116) {                   // F5 start/continue, Shift+F5 stop
                         if (shift) {
                             wb.debugger().stop();

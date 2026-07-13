@@ -44,6 +44,12 @@ public bundle forge {
                 this.register("view.output", "Toggle Output Panel");
                 this.register("view.minimap", "Toggle Minimap");
                 this.register("view.split", "Split Editor");
+                this.register("edit.format", "Format Document");
+                this.register("debug.start", "Debug: Start / Continue");
+                this.register("debug.stepOver", "Debug: Step Over");
+                this.register("debug.stepInto", "Debug: Step Into");
+                this.register("debug.stepOut", "Debug: Step Out");
+                this.register("debug.stop", "Debug: Stop");
             }
 
             public method register(String id, String title) returns void {

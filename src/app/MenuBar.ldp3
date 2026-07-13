@@ -72,6 +72,8 @@ public bundle forge {
                 edit.add("Select All", "edit.selectAll");
                 edit.add("Duplicate Line", "edit.duplicateLine");
                 edit.add("Find", "edit.find");
+                edit.sep();
+                edit.add("Format Document", "edit.format");
                 this.menus.add(edit);
 
                 Menu* view = new Menu("View") on heap;
@@ -87,6 +89,12 @@ public bundle forge {
                 run.add("Build", "run.build");
                 run.add("Run", "run.program");
                 run.add("Run Tests", "run.test");
+                run.sep();
+                run.add("Start / Continue  F5", "debug.start");
+                run.add("Step Over  F10", "debug.stepOver");
+                run.add("Step Into  F11", "debug.stepInto");
+                run.add("Step Out  Shift+F11", "debug.stepOut");
+                run.add("Stop  Shift+F5", "debug.stop");
                 this.menus.add(run);
 
                 Menu* git = new Menu("Git") on heap;

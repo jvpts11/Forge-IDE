@@ -289,6 +289,25 @@ public bundle forge {
                 this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
             }
 
+            // Format the active file in place with `ldp3 fmt`, then reload it (Shift+Alt+F). The caret line is
+            // kept; formatting never changes meaning, so undo of the whole reformat is one step.
+            public method formatDocument() returns void {
+                Controller* c = this.docs.active();
+                String path = c.document().path();
+                if (path.length() == 0) {
+                    this.out.banner("Format", "Save the file to disk first, then format it.");
+                    return;
+                }
+                c.save();
+                int row = c.editor().cursorRow();
+                Process.run("ldp3 fmt \"" + path + "\"");
+                c.openFile(path);
+                if (row < c.lineCount()) {
+                    c.placeCaret(row, 0);
+                }
+                this.refreshGit();
+            }
+
             // Build the current project with debug info (ldp3 build --debug) and start a debug session on the
             // resulting exe. Breakpoints already set in the gutter are sent on launch. F5 when idle.
             public method startDebugging() returns void {
@@ -485,6 +504,34 @@ public bundle forge {
                 }
                 if (id.equals("git.diff")) {
                     this.gitDiff();
+                    return true;
+                }
+                if (id.equals("edit.format")) {
+                    this.formatDocument();
+                    return true;
+                }
+                if (id.equals("debug.start")) {
+                    if (this.dbg.isActive()) {
+                        this.dbg.continueRun();
+                    } else {
+                        this.startDebugging();
+                    }
+                    return true;
+                }
+                if (id.equals("debug.stepOver")) {
+                    this.dbg.stepOver();
+                    return true;
+                }
+                if (id.equals("debug.stepInto")) {
+                    this.dbg.stepInto();
+                    return true;
+                }
+                if (id.equals("debug.stepOut")) {
+                    this.dbg.stepOut();
+                    return true;
+                }
+                if (id.equals("debug.stop")) {
+                    this.dbg.stop();
                     return true;
                 }
                 return false;
