@@ -1,0 +1,163 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // An RGBA colour, 0..1 per channel. Colours live in the Theme so the whole IDE can be re-skinned by
+        // swapping one object; GpuScreen reads them through fill()/text() helpers.
+        public class Color {
+            public mutable float r;
+            public mutable float g;
+            public mutable float b;
+            public mutable float a;
+            public constructor Color(float r, float g, float b, float a) {
+                this.r = r;
+                this.g = g;
+                this.b = b;
+                this.a = a;
+            }
+        }
+
+        // The colour palette for the whole IDE. Two presets: a neutral dark (the default -- no green tint)
+        // and a light one. Everything GpuScreen draws pulls its colour from here, so a theme switch is one
+        // assignment. The amber accent (the Flamo brand colour) is kept in both themes.
+        public class Theme {
+            public mutable boolean dark;
+            public mutable String name;
+
+            // Surfaces
+            public mutable Color* bg;         // editor background
+            public mutable Color* chrome;     // menu bar / tab bar / status bar
+            public mutable Color* panel;      // tree / output / debug panels
+            public mutable Color* gutter;     // the line-number gutter band
+            public mutable Color* divider;    // hairlines between panels
+            public mutable Color* caretLine;  // the current line's subtle highlight (usually white-on-alpha)
+            public mutable Color* selection;  // selection background
+            public mutable Color* hover;      // row/tab/button hover wash
+
+            // Text
+            public mutable Color* text;       // primary code / label text
+            public mutable Color* textDim;    // line numbers, secondary chrome text
+            public mutable Color* textFaint;  // inactive / very secondary
+            public mutable Color* accent;     // amber brand: active line number, chips, markers
+            public mutable Color* onAccent;   // text drawn on top of an accent fill (the LDP3 chip)
+
+            // Semantic
+            public mutable Color* added;      // git added / success green
+            public mutable Color* modified;   // git modified / info blue
+            public mutable Color* removed;    // git deleted / error red
+            public mutable Color* warning;    // warning amber
+            public mutable Color* breakpoint; // breakpoint dot red
+
+            // Syntax tokens
+            public mutable Color* tDecl;
+            public mutable Color* tControl;
+            public mutable Color* tModifier;
+            public mutable Color* tType;
+            public mutable Color* tTypeName;
+            public mutable Color* tOpword;
+            public mutable Color* tSelf;
+            public mutable Color* tConstant;
+            public mutable Color* tFunc;
+            public mutable Color* tNumber;
+            public mutable Color* tString;
+            public mutable Color* tComment;
+            public mutable Color* tPunct;
+
+            public constructor Theme() {
+                this.dark = true;
+                this.name = "Dark";
+                Theme.applyDark(this);
+            }
+
+            public static method makeDark() returns Theme* {
+                Theme* t = new Theme() on heap;
+                Theme.applyDark(t);
+                return t;
+            }
+            public static method makeLight() returns Theme* {
+                Theme* t = new Theme() on heap;
+                Theme.applyLight(t);
+                return t;
+            }
+
+            // Neutral dark (the default). Cool near-gray surfaces -- no green cast -- with the amber accent
+            // and a saturated multi-hue token scheme.
+            private static method applyDark(Theme* t) returns void {
+                t.dark = true;
+                t.name = "Dark";
+                t.bg = new Color(0.110, 0.118, 0.137, 1.0) on heap;
+                t.chrome = new Color(0.086, 0.090, 0.106, 1.0) on heap;
+                t.panel = new Color(0.125, 0.133, 0.157, 1.0) on heap;
+                t.gutter = new Color(0.098, 0.106, 0.125, 1.0) on heap;
+                t.divider = new Color(0.055, 0.059, 0.071, 1.0) on heap;
+                t.caretLine = new Color(1.0, 1.0, 1.0, 0.035) on heap;
+                t.selection = new Color(0.286, 0.400, 0.573, 0.40) on heap;
+                t.hover = new Color(1.0, 1.0, 1.0, 0.055) on heap;
+                t.text = new Color(0.843, 0.855, 0.882, 1.0) on heap;
+                t.textDim = new Color(0.451, 0.471, 0.510, 1.0) on heap;
+                t.textFaint = new Color(0.290, 0.306, 0.341, 1.0) on heap;
+                t.accent = new Color(0.918, 0.706, 0.392, 1.0) on heap;
+                t.onAccent = new Color(0.125, 0.086, 0.043, 1.0) on heap;
+                t.added = new Color(0.451, 0.816, 0.604, 1.0) on heap;
+                t.modified = new Color(0.435, 0.678, 0.796, 1.0) on heap;
+                t.removed = new Color(0.902, 0.353, 0.310, 1.0) on heap;
+                t.warning = new Color(0.902, 0.706, 0.318, 1.0) on heap;
+                t.breakpoint = new Color(0.886, 0.251, 0.243, 1.0) on heap;
+                t.tDecl = new Color(0.918, 0.706, 0.392, 1.0) on heap;
+                t.tControl = new Color(0.831, 0.573, 0.706, 1.0) on heap;
+                t.tModifier = new Color(0.435, 0.678, 0.796, 1.0) on heap;
+                t.tType = new Color(0.376, 0.788, 0.678, 1.0) on heap;
+                t.tTypeName = new Color(0.545, 0.831, 0.741, 1.0) on heap;
+                t.tOpword = new Color(0.898, 0.588, 0.443, 1.0) on heap;
+                t.tSelf = new Color(0.882, 0.529, 0.505, 1.0) on heap;
+                t.tConstant = new Color(0.847, 0.706, 0.482, 1.0) on heap;
+                t.tFunc = new Color(0.863, 0.863, 0.667, 1.0) on heap;
+                t.tNumber = new Color(0.710, 0.808, 0.659, 1.0) on heap;
+                t.tString = new Color(0.561, 0.780, 0.624, 1.0) on heap;
+                t.tComment = new Color(0.463, 0.502, 0.478, 1.0) on heap;
+                t.tPunct = new Color(0.576, 0.600, 0.635, 1.0) on heap;
+            }
+
+            // Light theme. Warm-neutral off-white surfaces, darker ink text, the same accent + token hues
+            // darkened enough to read on a light ground.
+            private static method applyLight(Theme* t) returns void {
+                t.dark = false;
+                t.name = "Light";
+                t.bg = new Color(0.988, 0.988, 0.984, 1.0) on heap;
+                t.chrome = new Color(0.937, 0.937, 0.929, 1.0) on heap;
+                t.panel = new Color(0.957, 0.957, 0.949, 1.0) on heap;
+                t.gutter = new Color(0.965, 0.965, 0.957, 1.0) on heap;
+                t.divider = new Color(0.851, 0.851, 0.835, 1.0) on heap;
+                t.caretLine = new Color(0.0, 0.0, 0.0, 0.045) on heap;
+                t.selection = new Color(0.267, 0.478, 0.780, 0.28) on heap;
+                t.hover = new Color(0.0, 0.0, 0.0, 0.055) on heap;
+                t.text = new Color(0.145, 0.157, 0.180, 1.0) on heap;
+                t.textDim = new Color(0.482, 0.494, 0.518, 1.0) on heap;
+                t.textFaint = new Color(0.663, 0.671, 0.686, 1.0) on heap;
+                t.accent = new Color(0.780, 0.522, 0.169, 1.0) on heap;
+                t.onAccent = new Color(1.0, 1.0, 1.0, 1.0) on heap;
+                t.added = new Color(0.204, 0.588, 0.376, 1.0) on heap;
+                t.modified = new Color(0.176, 0.443, 0.647, 1.0) on heap;
+                t.removed = new Color(0.769, 0.196, 0.157, 1.0) on heap;
+                t.warning = new Color(0.706, 0.494, 0.055, 1.0) on heap;
+                t.breakpoint = new Color(0.800, 0.180, 0.169, 1.0) on heap;
+                t.tDecl = new Color(0.647, 0.408, 0.078, 1.0) on heap;
+                t.tControl = new Color(0.643, 0.278, 0.482, 1.0) on heap;
+                t.tModifier = new Color(0.129, 0.416, 0.573, 1.0) on heap;
+                t.tType = new Color(0.075, 0.494, 0.443, 1.0) on heap;
+                t.tTypeName = new Color(0.114, 0.478, 0.431, 1.0) on heap;
+                t.tOpword = new Color(0.694, 0.353, 0.169, 1.0) on heap;
+                t.tSelf = new Color(0.678, 0.259, 0.243, 1.0) on heap;
+                t.tConstant = new Color(0.588, 0.412, 0.129, 1.0) on heap;
+                t.tFunc = new Color(0.482, 0.451, 0.161, 1.0) on heap;
+                t.tNumber = new Color(0.106, 0.475, 0.290, 1.0) on heap;
+                t.tString = new Color(0.153, 0.514, 0.314, 1.0) on heap;
+                t.tComment = new Color(0.545, 0.573, 0.545, 1.0) on heap;
+                t.tPunct = new Color(0.353, 0.376, 0.408, 1.0) on heap;
+            }
+        }
+    }
+}

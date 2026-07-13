@@ -1793,7 +1793,7 @@ public bundle forge {
                     wb.active().resizeViewport(fitRows, screen.paneColsFor(w));
                 }
                 Wgl.glViewport(0, 0, w, h);
-                Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);   // #0d1a1d
+                Wgl.glClearColor(screen.colors().bg.r, screen.colors().bg.g, screen.colors().bg.b, 1.0);
                 Wgl.glClear(16384);   // GL_COLOR_BUFFER_BIT
 
                 int mx = win.cursorX();
@@ -1820,7 +1820,7 @@ public bundle forge {
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);
-                Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);
+                Wgl.glClearColor(screen.colors().bg.r, screen.colors().bg.g, screen.colors().bg.b, 1.0);
                 Wgl.glClear(16384);
                 batch.begin(w, h, screen.fontTexture());
                 screen.drawWelcome(batch, recent, win.cursorX(), win.cursorY(), w, h);

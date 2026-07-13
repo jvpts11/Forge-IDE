@@ -39,6 +39,7 @@ public bundle forge {
             private mutable int topPad;
             private mutable int treeW;
             private mutable boolean caretOn;   // caret visibility for blink (the live loop toggles it)
+            private mutable Theme* theme;      // the whole colour palette; swap to re-skin the IDE
 
             public constructor GpuScreen(Font* font) {
                 this.font = font;
@@ -46,6 +47,14 @@ public bundle forge {
                 this.topPad = 6;
                 this.treeW = 230;
                 this.caretOn = true;
+                this.theme = Theme.makeDark();
+            }
+
+            public method colors() returns Theme* {
+                return this.theme;
+            }
+            public method setTheme(Theme* t) returns void {
+                this.theme = t;
             }
 
             // The live loop toggles this to blink the caret; shot/serve leave it on so the caret always shows.
@@ -151,9 +160,9 @@ public bundle forge {
                 int etop = ctop + this.crumbH();
                 int tw = this.treeW;
                 // chrome panel backgrounds
-                batch.rect(0, mh, screenW, tabh, 0.027, 0.055, 0.063, 1.0);             // tab bar
-                batch.rect(0, ctop, tw, screenH - ctop, 0.035, 0.070, 0.078, 1.0);      // tree panel
-                batch.rect(tw, ctop, 1, screenH - ctop, 0.016, 0.035, 0.039, 1.0);      // tree/editor divider
+                batch.rect(0, mh, screenW, tabh, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);             // tab bar
+                batch.rect(0, ctop, tw, screenH - ctop, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);      // tree panel
+                batch.rect(tw, ctop, 1, screenH - ctop, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // tree/editor divider
                 int sh = this.statusH();
                 int panelH = this.outputPanelHeight(wb.output(), screenH);
                 this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
@@ -207,30 +216,30 @@ public bundle forge {
                 int px = this.debugPanelX(screenW);
                 int py = this.menuH() + this.tabH() + this.crumbH();
                 int ph = screenH - py - this.statusH();
-                batch.rect(px, py, pw, ph, 0.031, 0.063, 0.071, 0.97);
-                batch.rect(px, py, 1, ph, 0.016, 0.035, 0.039, 1.0);
+                batch.rect(px, py, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 0.97);
+                batch.rect(px, py, 1, ph, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
                 mutable int y = py + 8;
-                this.font.drawText(batch, px + 10, y, "DEBUG -- " + dbg.statusText(), 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, px + 10, y, "DEBUG -- " + dbg.statusText(), this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 y = y + ch + 6;
-                this.font.drawText(batch, px + 10, y, "CALL STACK", 0.502, 0.588, 0.584, 1.0);
+                this.font.drawText(batch, px + 10, y, "CALL STACK", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                 y = y + ch + 2;
                 ArrayList<DebugFrame*>* stack = dbg.callStackView();
                 mutable int i = 0;
                 while (i < stack.size() && i < 12) {
                     DebugFrame* fr = stack.get(i);
-                    this.font.drawText(batch, px + 16, y, fr.name + " :" + fr.line.toString(), 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, px + 16, y, fr.name + " :" + fr.line.toString(), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     y = y + ch;
                     i = i + 1;
                 }
                 y = y + 10;
-                this.font.drawText(batch, px + 10, y, "VARIABLES", 0.502, 0.588, 0.584, 1.0);
+                this.font.drawText(batch, px + 10, y, "VARIABLES", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                 y = y + ch + 2;
                 ArrayList<DebugVar*>* vars = dbg.variablesView();
                 mutable int j = 0;
                 while (j < vars.size() && y < py + ph - ch) {
                     DebugVar* v = vars.get(j);
-                    this.font.drawText(batch, px + 16, y, v.name, 0.435, 0.678, 0.796, 1.0);
-                    this.font.drawText(batch, px + 16 + (v.name.length() + 1) * cw, y, "= " + v.value, 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, px + 16, y, v.name, this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, this.theme.modified.a);
+                    this.font.drawText(batch, px + 16 + (v.name.length() + 1) * cw, y, "= " + v.value, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     y = y + ch;
                     j = j + 1;
                 }
@@ -242,12 +251,12 @@ public bundle forge {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 int h = this.crumbH();
-                batch.rect(ox, oy, pw, h, 0.043, 0.082, 0.090, 1.0);
-                batch.rect(ox, oy + h - 1, pw, 1, 0.016, 0.035, 0.039, 1.0);      // bottom hairline
+                batch.rect(ox, oy, pw, h, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(ox, oy + h - 1, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // bottom hairline
                 int ty = oy + (h - ch) / 2;
                 ArrayList<String>* trail = Breadcrumbs.trail(wb.active());
                 if (trail.size() == 0) {
-                    this.font.drawText(batch, ox + 12, ty, "(top level)", 0.376, 0.478, 0.475, 1.0);
+                    this.font.drawText(batch, ox + 12, ty, "(top level)", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                     return;
                 }
                 mutable int x = ox + 12;
@@ -266,7 +275,7 @@ public bundle forge {
                     this.font.drawText(batch, x, ty, seg, r, g, b, 1.0);
                     x = x + (seg.length() + 1) * cw;
                     if (!last) {
-                        this.font.drawText(batch, x, ty, ">", 0.376, 0.478, 0.475, 1.0);
+                        this.font.drawText(batch, x, ty, ">", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                         x = x + 2 * cw;
                     }
                     i = i + 1;
@@ -289,13 +298,13 @@ public bundle forge {
                                       int screenW, int screenH) returns void {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
-                batch.rect(0, 0, screenW, screenH, 0.051, 0.102, 0.114, 1.0);
+                batch.rect(0, 0, screenW, screenH, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, this.theme.bg.a);
                 int x0 = this.welcomeX0(screenW);
                 int hover = this.welcomeHit(mx, my, recent.size(), screenW);
                 // banner: an amber flame chip + the wordmark
-                batch.rect(x0, 84, 16, 16, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, x0 + 28, 88, "Forge", 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, x0 + 28 + 6 * cw, 88, "the LDP3 IDE", 0.502, 0.588, 0.584, 1.0);
+                batch.rect(x0, 84, 16, 16, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, x0 + 28, 88, "Forge", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, x0 + 28 + 6 * cw, 88, "the LDP3 IDE", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                 this.font.drawText(batch, x0 + 28, 88 + ch + 4, "Start a project, or reopen a recent one.",
                                    0.502, 0.588, 0.584, 1.0);
                 int btnH = ch + 20;
@@ -309,7 +318,7 @@ public bundle forge {
                                    hover == 0 - 3);
                 // recent list
                 int hdrY = btnY + btnH + 30;
-                this.font.drawText(batch, x0, hdrY, "RECENT PROJECTS", 0.376, 0.478, 0.475, 1.0);
+                this.font.drawText(batch, x0, hdrY, "RECENT PROJECTS", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                 int rowH = ch + 10;
                 int listTop = hdrY + ch + 10;
                 int listW = btnW * 3 + 24;
@@ -317,11 +326,11 @@ public bundle forge {
                 while (i < recent.size() && i < 12) {
                     int ry = listTop + i * rowH;
                     if (hover == i) {
-                        batch.rect(x0 - 4, ry - 3, listW + 8, rowH, 0.918, 0.706, 0.392, 0.14);
+                        batch.rect(x0 - 4, ry - 3, listW + 8, rowH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.14);
                     }
                     String path = recent.get(i);
                     String name = Paths.basename(path);
-                    this.font.drawText(batch, x0 + 4, ry, name, 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, x0 + 4, ry, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     this.font.drawText(batch, x0 + 4 + (name.length() + 2) * cw, ry, path,
                                        0.376, 0.478, 0.475, 1.0);
                     i = i + 1;
@@ -338,8 +347,8 @@ public bundle forge {
                     bg = 0.114;
                 }
                 batch.rect(x, y, w, h, bg, 0.106, 0.114, 1.0);
-                batch.rect(x, y, 3, h, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, x + 14, y + 10, caption, 0.804, 0.851, 0.843, 1.0);
+                batch.rect(x, y, 3, h, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, x + 14, y + 10, caption, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
             }
             // Which welcome control is under (mx, my): -1 = New Project, -2 = Open Folder, -3 = Open Project,
             // 0..n = a recent index, -10 = nothing.
@@ -380,8 +389,8 @@ public bundle forge {
                                       int screenW) returns void {
                 int cw = this.font.advance();
                 int mh = this.menuH();
-                batch.rect(0, 0, screenW, mh, 0.031, 0.063, 0.071, 1.0);
-                batch.rect(0, mh - 1, screenW, 1, 0.016, 0.035, 0.039, 1.0);      // bottom hairline
+                batch.rect(0, 0, screenW, mh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(0, mh - 1, screenW, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // bottom hairline
                 int ty = (mh - this.font.lineHeight()) / 2;
                 mutable int x = 8;
                 mutable int i = 0;
@@ -393,7 +402,7 @@ public bundle forge {
                     mutable float g = 0.769;
                     mutable float b = 0.761;
                     if (isOpen) {
-                        batch.rect(x, 0, tw, mh, 0.063, 0.106, 0.114, 1.0);
+                        batch.rect(x, 0, tw, mh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
                         r = 0.918; g = 0.706; b = 0.392;
                     }
                     this.font.drawText(batch, x + cw, ty, t, r, g, b, 1.0);
@@ -410,7 +419,7 @@ public bundle forge {
                     bb = 0.118;
                 }
                 batch.rect(bbx, 4, this.toolBtnW(), mh - 8, bb, 0.106, 0.114, 1.0);
-                this.font.drawText(batch, bbx + cw, ty, "Build", 0.804, 0.851, 0.843, 1.0);
+                this.font.drawText(batch, bbx + cw, ty, "Build", this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                 mutable float rb = 0.063;
                 if (overRun) {
                     rb = 0.118;
@@ -419,15 +428,15 @@ public bundle forge {
                 // a small green play triangle
                 int triX = rbx + cw;
                 int triY = mh / 2;
-                batch.rect(triX, triY - 5, 2, 10, 0.451, 0.816, 0.604, 1.0);
-                batch.rect(triX + 2, triY - 4, 2, 8, 0.451, 0.816, 0.604, 1.0);
-                batch.rect(triX + 4, triY - 3, 2, 6, 0.451, 0.816, 0.604, 1.0);
-                batch.rect(triX + 6, triY - 1, 2, 2, 0.451, 0.816, 0.604, 1.0);
-                this.font.drawText(batch, rbx + cw + 12, ty, "Run", 0.451, 0.816, 0.604, 1.0);
+                batch.rect(triX, triY - 5, 2, 10, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                batch.rect(triX + 2, triY - 4, 2, 8, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                batch.rect(triX + 4, triY - 3, 2, 6, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                batch.rect(triX + 6, triY - 1, 2, 2, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                this.font.drawText(batch, rbx + cw + 12, ty, "Run", this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
                 String proj = wb.projectLabel();
                 if (proj.length() > 0) {
                     int px = bbx - (proj.length() + 3) * cw;
-                    this.font.drawText(batch, px, ty, proj, 0.502, 0.588, 0.584, 1.0);
+                    this.font.drawText(batch, px, ty, proj, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                 }
             }
             private method toolBtnW() returns int {
@@ -478,21 +487,21 @@ public bundle forge {
                     }
                     i = i + 1;
                 }
-                batch.rect(x, mh, dw, dh, 0.063, 0.106, 0.114, 1.0);
-                batch.rect(x, mh, dw, 2, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(x, mh, dw, dh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(x, mh, dw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 mutable int y = mh + 3;
                 i = 0;
                 while (i < m.items.size()) {
                     MenuItem* it = m.items.get(i);
                     if (it.isSeparator()) {
-                        batch.rect(x + 6, y + 3, dw - 12, 1, 0.204, 0.278, 0.290, 1.0);
+                        batch.rect(x + 6, y + 3, dw - 12, 1, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                         y = y + 7;
                     } else {
                         boolean hover = mx >= x && mx < x + dw && my >= y - 1 && my < y - 1 + rowH;
                         if (hover) {
-                            batch.rect(x + 2, y - 1, dw - 4, rowH, 0.918, 0.706, 0.392, 0.18);
+                            batch.rect(x + 2, y - 1, dw - 4, rowH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
                         }
-                        this.font.drawText(batch, x + cw, y + 3, it.caption, 0.804, 0.851, 0.843, 1.0);
+                        this.font.drawText(batch, x + cw, y + 3, it.caption, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                         y = y + rowH;
                     }
                     i = i + 1;
@@ -601,9 +610,9 @@ public bundle forge {
                                            int mx, int my) returns void {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
-                batch.rect(ox, oy, pw, ph, 0.043, 0.086, 0.094, 1.0);
-                batch.rect(ox, oy, pw, 1, 0.016, 0.035, 0.039, 1.0);
-                this.font.drawText(batch, ox + 10, oy + 4, panel.title, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(ox, oy, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
+                this.font.drawText(batch, ox + 10, oy + 4, panel.title, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 // close button (x) at the top-right of the panel header
                 int xbx = ox + pw - 2 * cw;
                 boolean overX = mx >= xbx - cw && mx < xbx + cw && my >= oy && my < oy + ch + 8;
@@ -622,7 +631,7 @@ public bundle forge {
                 mutable int i = start;
                 mutable int y = oy + headerH;
                 while (i < total) {
-                    this.font.drawText(batch, ox + 10, y, panel.line(i), 0.784, 0.831, 0.824, 1.0);
+                    this.font.drawText(batch, ox + 10, y, panel.line(i), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     y = y + ch;
                     i = i + 1;
                 }
@@ -641,13 +650,13 @@ public bundle forge {
                 int cw = this.font.advance();
                 int y0 = screenH - sh;
                 int ty = y0 + 4;
-                batch.rect(0, y0, screenW, sh, 0.027, 0.055, 0.063, 1.0);
-                batch.rect(0, y0, screenW, 1, 0.016, 0.035, 0.039, 1.0);   // top hairline
+                batch.rect(0, y0, screenW, sh, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);
+                batch.rect(0, y0, screenW, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);   // top hairline
                 Controller* c = wb.active();
                 // amber mode chip
                 int chipW = 6 * cw;
-                batch.rect(0, y0, chipW, sh, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, cw, ty, "LDP3", 0.125, 0.086, 0.043, 1.0);
+                batch.rect(0, y0, chipW, sh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, cw, ty, "LDP3", this.theme.onAccent.r, this.theme.onAccent.g, this.theme.onAccent.b, this.theme.onAccent.a);
                 // file name + dirty marker
                 mutable String name = c.document().path();
                 if (name.length() == 0) {
@@ -656,7 +665,7 @@ public bundle forge {
                 if (c.document().isModified()) {
                     name = name + " *";
                 }
-                this.font.drawText(batch, chipW + cw, ty, name, 0.804, 0.851, 0.843, 1.0);
+                this.font.drawText(batch, chipW + cw, ty, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                 // diagnostics count (errors red, warnings amber)
                 int errs = wb.errorCount();
                 int warns = wb.warningCount();
@@ -669,14 +678,14 @@ public bundle forge {
                     }
                     this.font.drawText(batch, dx, ty, ecnt, er, 0.318, 0.263, 1.0);
                     String wcnt = "!" + warns.toString();
-                    this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, 0.902, 0.706, 0.318, 1.0);
+                    this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, this.theme.warning.r, this.theme.warning.g, this.theme.warning.b, this.theme.warning.a);
                 }
                 // caret position, right side
                 String pos = "Ln " + (c.editor().cursorRow() + 1).toString()
                            + ", Col " + (c.editor().cursorCol() + 1).toString()
                            + "    " + c.lineCount().toString() + " lines";
                 int px = screenW - (pos.length() + 2) * cw;
-                this.font.drawText(batch, px, ty, pos, 0.502, 0.588, 0.584, 1.0);
+                this.font.drawText(batch, px, ty, pos, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
             }
 
             private method drawTabBar(Batch2D* batch, DocumentManager* docs, int top, int tabh, int mx, int my)
@@ -694,12 +703,12 @@ public bundle forge {
                     mutable float g = 0.588;
                     mutable float b = 0.584;
                     if (active) {
-                        batch.rect(x, top, tw, tabh, 0.051, 0.102, 0.114, 1.0);   // active tab = editor ground
-                        batch.rect(x, top, tw, 2, 0.918, 0.706, 0.392, 1.0);      // amber accent
+                        batch.rect(x, top, tw, tabh, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, this.theme.bg.a);   // active tab = editor ground
+                        batch.rect(x, top, tw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);      // amber accent
                         r = 0.804; g = 0.851; b = 0.843;
                     } else {
                         if (hover) {
-                            batch.rect(x, top, tw, tabh, 1.0, 1.0, 1.0, 0.04);   // hover highlight
+                            batch.rect(x, top, tw, tabh, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.04);   // hover highlight
                             r = 0.702; g = 0.769; b = 0.761;
                         }
                     }
@@ -731,7 +740,7 @@ public bundle forge {
                     }
                     boolean hover = mx >= 0 && mx < this.treeW && my >= y && my < y + ch;
                     if (hover) {
-                        batch.rect(0, y, this.treeW, ch, 1.0, 1.0, 1.0, 0.045);
+                        batch.rect(0, y, this.treeW, ch, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.045);
                     }
                     FileNode* node = rows.get(i);
                     mutable float r = 0.576;
@@ -759,7 +768,7 @@ public bundle forge {
                 int visible = c.visibleRows();
                 int firstLine = c.firstLine();
 
-                batch.rect(ox, oy, gpx, ph, 0.039, 0.078, 0.086, 1.0);   // gutter band
+                batch.rect(ox, oy, gpx, ph, this.theme.gutter.r, this.theme.gutter.g, this.theme.gutter.b, this.theme.gutter.a);   // gutter band
 
                 // find: highlight every occurrence of the query in the visible lines. With the find bar closed,
                 // fall back to highlighting the identifier the caret sits on, JetBrains/VS Code-style.
@@ -781,37 +790,37 @@ public bundle forge {
                     int y = oy + this.topPad + r * ch;
                     int docLine = c.lineNumberAt(r);
                     if (r == caretRow) {
-                        batch.rect(ox + gpx, y, pw - gpx, ch, 1.0, 1.0, 1.0, 0.035);
+                        batch.rect(ox + gpx, y, pw - gpx, ch, this.theme.caretLine.r, this.theme.caretLine.g, this.theme.caretLine.b, this.theme.caretLine.a);
                     }
                     // stopped line (debugger paused here): a translucent amber band across the whole row
                     if (dbg.isStoppedAt(dbgPath, docLine + 1)) {
-                        batch.rect(ox + gpx, y, pw - gpx, ch, 0.918, 0.706, 0.392, 0.16);
+                        batch.rect(ox + gpx, y, pw - gpx, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.16);
                     }
                     // git change bar at the gutter's left edge: green added, blue modified, red deletion tick
                     int gk = git.kindAt(docLine);
                     if (gk == 1) {
-                        batch.rect(ox, y, 3, ch, 0.451, 0.816, 0.604, 1.0);
+                        batch.rect(ox, y, 3, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
                     } else if (gk == 2) {
-                        batch.rect(ox, y, 3, ch, 0.435, 0.678, 0.796, 1.0);
+                        batch.rect(ox, y, 3, ch, this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, this.theme.modified.a);
                     } else if (gk == 3) {
-                        batch.rect(ox, y + ch - 3, 6, 3, 0.902, 0.318, 0.263, 1.0);
-                        batch.rect(ox, y + ch - 3, 3, 6, 0.902, 0.318, 0.263, 1.0);
+                        batch.rect(ox, y + ch - 3, 6, 3, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, this.theme.removed.a);
+                        batch.rect(ox, y + ch - 3, 3, 6, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, this.theme.removed.a);
                     }
                     // bookmark marker: a small amber square at the gutter's inner edge
                     if (c.hasBookmark(docLine)) {
-                        batch.rect(ox + gpx - 5, y + ch / 2 - 3, 5, 6, 0.918, 0.706, 0.392, 1.0);
+                        batch.rect(ox + gpx - 5, y + ch / 2 - 3, 5, 6, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                     }
                     // breakpoint marker: a red dot at the gutter's left edge (VS Code-style)
                     if (dbg.hasBreakpoint(dbgPath, docLine + 1)) {
-                        batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, 0.886, 0.251, 0.243, 1.0);
+                        batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, this.theme.breakpoint.r, this.theme.breakpoint.g, this.theme.breakpoint.b, this.theme.breakpoint.a);
                     }
                     String num = (docLine + 1).toString();
                     int nx = ox + gpx - 8 - num.length() * cw;
                     // the caret's line number is brighter (amber), the rest dim
                     if (r == caretRow) {
-                        this.font.drawText(batch, nx, y, num, 0.804, 0.639, 0.408, 1.0);
+                        this.font.drawText(batch, nx, y, num, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, this.theme.accent.a);
                     } else {
-                        this.font.drawText(batch, nx, y, num, 0.208, 0.329, 0.353, 1.0);
+                        this.font.drawText(batch, nx, y, num, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                     }
                     // fold marker in the gutter/text gap for foldable header lines
                     if (c.isFoldable(docLine)) {
@@ -828,8 +837,8 @@ public bundle forge {
                     // a "..." badge after a collapsed header shows the block is folded
                     if (c.isFolded(docLine)) {
                         int bx2 = textX + (line.length() + 1) * cw;
-                        batch.rect(bx2, y + 2, 3 * cw + 4, ch - 4, 0.239, 0.353, 0.373, 0.4);
-                        this.font.drawText(batch, bx2 + 2, y, "...", 0.6, 0.68, 0.67, 1.0);
+                        batch.rect(bx2, y + 2, 3 * cw + 4, ch - 4, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, 0.4);
+                        this.font.drawText(batch, bx2 + 2, y, "...", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                     }
                     r = r + 1;
                 }
@@ -846,7 +855,7 @@ public bundle forge {
                 while (s < sc) {
                     int hl = sticky.get(startIdx + s);
                     int sy = oy + this.topPad + s * ch;
-                    batch.rect(ox, sy, pw, ch, 0.075, 0.129, 0.141, 1.0);
+                    batch.rect(ox, sy, pw, ch, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
                     String hnum = (hl + 1).toString();
                     this.font.drawText(batch, ox + gpx - 8 - hnum.length() * cw, sy, hnum,
                                        0.376, 0.478, 0.475, 1.0);
@@ -855,7 +864,7 @@ public bundle forge {
                     s = s + 1;
                 }
                 if (sc > 0) {
-                    batch.rect(ox, oy + this.topPad + sc * ch, pw, 1, 0.918, 0.706, 0.392, 0.35);
+                    batch.rect(ox, oy + this.topPad + sc * ch, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.35);
                 }
 
                 // matching-bracket highlight (both the bracket at the caret and its partner)
@@ -872,7 +881,7 @@ public bundle forge {
                 int ccr = c.caretScreenRow();
                 if (ccr >= 0 && ccr < visible && this.caretOn) {
                     int cx = textX + c.caretScreenCol() * cw;
-                    batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                    batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 }
                 // secondary carets (multi-cursor)
                 mutable int mc = 0;
@@ -880,7 +889,7 @@ public bundle forge {
                     int esr = c.extraCaretScreenRow(mc);
                     if (esr >= 0 && esr < visible && this.caretOn) {
                         int ex = textX + c.extraCaretScreenCol(mc) * cw;
-                        batch.rect(ex, oy + this.topPad + esr * ch, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                        batch.rect(ex, oy + this.topPad + esr * ch, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                     }
                     mc = mc + 1;
                 }
@@ -942,9 +951,9 @@ public bundle forge {
                                 tx = ox;
                             }
                             int tyt = my + ch;
-                            batch.rect(tx, tyt, tw2, ch + 8, 0.027, 0.055, 0.063, 1.0);
-                            batch.rect(tx, tyt, tw2, 2, 0.918, 0.706, 0.392, 1.0);
-                            this.font.drawText(batch, tx + cw, tyt + 4, info, 0.804, 0.851, 0.843, 1.0);
+                            batch.rect(tx, tyt, tw2, ch + 8, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);
+                            batch.rect(tx, tyt, tw2, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                            this.font.drawText(batch, tx + cw, tyt + 4, info, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                         }
                     }
                 }
@@ -961,8 +970,8 @@ public bundle forge {
             private method drawMinimap(Batch2D* batch, Controller* c, int mmX, int oy, int ph, int firstLine,
                                        int visible) returns void {
                 int mmW = this.minimapW();
-                batch.rect(mmX, oy, mmW, ph, 0.031, 0.063, 0.071, 1.0);
-                batch.rect(mmX, oy, 1, ph, 0.016, 0.035, 0.039, 1.0);
+                batch.rect(mmX, oy, mmW, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(mmX, oy, 1, ph, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
                 int total = c.editor().document().lineCount();
                 if (total <= 0) {
                     return;
@@ -983,7 +992,7 @@ public bundle forge {
                         if (lx > mmW - 2) {
                             lx = mmW - 2;
                         }
-                        batch.rect(mmX + lx, y, w, 1, 0.502, 0.565, 0.557, 0.55);
+                        batch.rect(mmX + lx, y, w, 1, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, 0.55);
                     }
                     line = line + 1;
                 }
@@ -992,9 +1001,9 @@ public bundle forge {
                 if (vyH < 6) {
                     vyH = 6;
                 }
-                batch.rect(mmX, vy0, mmW, vyH, 1.0, 1.0, 1.0, 0.07);
-                batch.rect(mmX, vy0, mmW, 1, 0.918, 0.706, 0.392, 0.5);
-                batch.rect(mmX, vy0 + vyH - 1, mmW, 1, 0.918, 0.706, 0.392, 0.5);
+                batch.rect(mmX, vy0, mmW, vyH, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.07);
+                batch.rect(mmX, vy0, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);
+                batch.rect(mmX, vy0 + vyH - 1, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);
             }
             private method leadingSpaces(String s) returns int {
                 mutable int i = 0;
@@ -1008,7 +1017,7 @@ public bundle forge {
                     returns void {
                 int rw = 12;
                 int x = rightX - rw;
-                batch.rect(x, oy, rw, ph, 0.027, 0.055, 0.063, 1.0);      // track
+                batch.rect(x, oy, rw, ph, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);      // track
                 Controller* c = wb.active();
                 int total = c.lineCount();
                 if (total <= 0) {
@@ -1021,7 +1030,7 @@ public bundle forge {
                 if (thumbH < 24) {
                     thumbH = 24;
                 }
-                batch.rect(x + 2, thumbY, rw - 4, thumbH, 0.918, 0.706, 0.392, 0.28);   // amber thumb
+                batch.rect(x + 2, thumbY, rw - 4, thumbH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.28);   // amber thumb
                 String base = Paths.basename(c.document().path());
                 if (base.length() == 0) {
                     return;
@@ -1068,7 +1077,7 @@ public bundle forge {
                             wsel = cw;
                         }
                         int x = textX + startCol * cw;
-                        batch.rect(x, oy + this.topPad + screenRow * ch, wsel, ch, 0.918, 0.706, 0.392, 0.22);
+                        batch.rect(x, oy + this.topPad + screenRow * ch, wsel, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.22);
                     }
                     row = row + 1;
                 }
@@ -1168,11 +1177,11 @@ public bundle forge {
                 }
                 int x = textX + col * cw;
                 int y = oy + this.topPad + sr * ch;
-                batch.rect(x, y, cw, ch, 0.549, 0.784, 0.624, 0.16);
-                batch.rect(x, y, cw, 1, 0.549, 0.784, 0.624, 0.85);
-                batch.rect(x, y + ch - 1, cw, 1, 0.549, 0.784, 0.624, 0.85);
-                batch.rect(x, y, 1, ch, 0.549, 0.784, 0.624, 0.85);
-                batch.rect(x + cw - 1, y, 1, ch, 0.549, 0.784, 0.624, 0.85);
+                batch.rect(x, y, cw, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.16);
+                batch.rect(x, y, cw, 1, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
+                batch.rect(x, y + ch - 1, cw, 1, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
+                batch.rect(x, y, 1, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
+                batch.rect(x + cw - 1, y, 1, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
             }
             // The column of the bracket the caret sits on/after (-1 if none) -- mirrors Editor.matchingBracket.
             private method caretBracketCol(Controller* c, int row, int col) returns int {
@@ -1226,15 +1235,15 @@ public bundle forge {
                 }
                 int pw = 280;
                 int pph = shown * (ch + 2) + 6;
-                batch.rect(px, py, pw, pph, 0.063, 0.106, 0.114, 1.0);
-                batch.rect(px, py, 2, pph, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(px, py, pw, pph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(px, py, 2, pph, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 mutable int i = 0;
                 while (i < shown) {
                     int ry = py + 3 + i * (ch + 2);
                     if (i == comp.sel) {
-                        batch.rect(px + 2, ry - 1, pw - 4, ch + 2, 0.918, 0.706, 0.392, 0.18);
+                        batch.rect(px + 2, ry - 1, pw - 4, ch + 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
                     }
-                    this.font.drawText(batch, px + 8, ry, comp.items.get(i), 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, px + 8, ry, comp.items.get(i), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     i = i + 1;
                 }
             }
@@ -1266,9 +1275,9 @@ public bundle forge {
                 if (ty < this.editorTop()) {
                     ty = cy + ch;
                 }
-                batch.rect(tx, ty, tw, ch + 8, 0.027, 0.055, 0.063, 1.0);
-                batch.rect(tx, ty, tw, 2, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, tx + cw, ty + 4, sig, 0.804, 0.851, 0.843, 1.0);
+                batch.rect(tx, ty, tw, ch + 8, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);
+                batch.rect(tx, ty, tw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, tx + cw, ty + 4, sig, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
             }
 
             // --- modal overlays (drawn on top of the frame) ---
@@ -1306,12 +1315,12 @@ public bundle forge {
                 int bx = (screenW - bw) / 2;
                 int by = 70;
                 int bh = ch + 14;
-                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
-                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12, by + 7, ov.promptLabel, 0.502, 0.588, 0.584, 1.0);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, ov.promptLabel, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                 int lx = bx + 12 + ov.promptLabel.length() * cw;
-                this.font.drawText(batch, lx, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
-                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, lx, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
             }
 
             // Find-in-files box (Ctrl+Shift+F): a centered input; Enter greps the project into the output panel.
@@ -1322,12 +1331,12 @@ public bundle forge {
                 int bx = (screenW - bw) / 2;
                 int by = 70;
                 int bh = ch + 14;
-                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
-                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12, by + 7, "find in files: ", 0.502, 0.588, 0.584, 1.0);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "find in files: ", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                 int lx = bx + 12 + 15 * cw;
-                this.font.drawText(batch, lx, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
-                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, lx, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
             }
 
             // Go-to-line box (Ctrl+G): a small centered input for a line number.
@@ -1338,12 +1347,12 @@ public bundle forge {
                 int bx = (screenW - bw) / 2;
                 int by = 70;
                 int bh = ch + 14;
-                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
-                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12, by + 7, "line: ", 0.502, 0.588, 0.584, 1.0);
-                this.font.drawText(batch, bx + 12 + 6 * cw, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "line: ", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                this.font.drawText(batch, bx + 12 + 6 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                 int qx = bx + 12 + (6 + ov.query.length()) * cw;
-                batch.rect(qx, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
             }
 
             // The quick-open file picker (Ctrl+P): a centered list of project files filtered by the query,
@@ -1361,22 +1370,22 @@ public bundle forge {
                 }
                 int bh = ch + 12 + shown * (ch + 4) + 8;
                 batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);
-                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
-                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12, by + 7, "> ", 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "> ", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                 int qx = bx + 12 + (2 + ov.query.length()) * cw;
-                batch.rect(qx, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 mutable int i = 0;
                 while (i < shown) {
                     int orig = m.get(i);
                     int ry = by + ch + 12 + i * (ch + 4);
                     if (i == ov.sel) {
-                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18);
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
                     }
                     String path = ov.items.get(orig);
                     String name = Paths.basename(path);
-                    this.font.drawText(batch, bx + 16, ry, name, 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, bx + 16, ry, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     this.font.drawText(batch, bx + 16 + (name.length() + 2) * cw, ry, path,
                                        0.376, 0.478, 0.475, 1.0);
                     i = i + 1;
@@ -1398,23 +1407,23 @@ public bundle forge {
                 }
                 int bh = ch + 12 + shown * (ch + 4) + 8;
                 batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);        // dim backdrop
-                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
-                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 // query row (a leading '#' hints "symbols")
-                this.font.drawText(batch, bx + 12, by + 7, "# ", 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "# ", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                 int qx = bx + 12 + (2 + ov.query.length()) * cw;
-                batch.rect(qx, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 mutable int i = 0;
                 while (i < shown) {
                     int orig = m.get(i);
                     int ry = by + ch + 12 + i * (ch + 4);
                     if (i == ov.sel) {
-                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18);
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
                     }
-                    this.font.drawText(batch, bx + 16, ry, ov.items.get(orig), 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, bx + 16, ry, ov.items.get(orig), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     String ln = ":" + ov.targets.get(orig).toString();
-                    this.font.drawText(batch, bx + bw - 16 - ln.length() * cw, ry, ln, 0.376, 0.478, 0.475, 1.0);
+                    this.font.drawText(batch, bx + bw - 16 - ln.length() * cw, ry, ln, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                     i = i + 1;
                 }
             }
@@ -1433,24 +1442,24 @@ public bundle forge {
                 }
                 int bh = ch + 12 + shown * (ch + 4) + 8;
                 batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);        // dim backdrop
-                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
-                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 // query row
-                this.font.drawText(batch, bx + 12, by + 7, "> ", 0.918, 0.706, 0.392, 1.0);
-                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "> ", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                 int qx = bx + 12 + (2 + ov.query.length()) * cw;
-                batch.rect(qx, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 // results
                 mutable int i = 0;
                 while (i < shown) {
                     int ry = by + ch + 12 + i * (ch + 4);
                     if (i == ov.sel) {
-                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18);
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
                     }
                     Command* cmd = results.get(i);
-                    this.font.drawText(batch, bx + 16, ry, cmd.title, 0.804, 0.851, 0.843, 1.0);
+                    this.font.drawText(batch, bx + 16, ry, cmd.title, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     int idx = bx + bw - 16 - cmd.id.length() * cw;
-                    this.font.drawText(batch, idx, ry, cmd.id, 0.376, 0.478, 0.475, 1.0);
+                    this.font.drawText(batch, idx, ry, cmd.id, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                     i = i + 1;
                 }
             }
@@ -1465,8 +1474,8 @@ public bundle forge {
                 int by = this.contentTop() + 10;
                 int rowH = ch + 9;
                 int bh = rowH * 2 + 10;
-                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
-                batch.rect(bx, by, 3, bh, 0.918, 0.706, 0.392, 1.0);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 // find row
                 int fy = by + 6;
                 this.drawField(batch, bx, fy, cw, ch, "find", ov.query, !ov.focusReplace);
@@ -1475,14 +1484,14 @@ public bundle forge {
                 if (ov.query.length() == 0) {
                     cnt = "";
                 }
-                this.font.drawText(batch, bx + bw - (cnt.length() + 1) * cw, fy, cnt, 0.502, 0.588, 0.584, 1.0);
+                this.font.drawText(batch, bx + bw - (cnt.length() + 1) * cw, fy, cnt, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
                 // replace row
                 int ry = by + 6 + rowH;
                 this.drawField(batch, bx, ry, cw, ch, "repl", ov.replace, ov.focusReplace);
                 // hint
                 String hint = "Enter next  Shift+Enter prev  Tab field  ^A all";
                 if (bw - 24 > hint.length() * cw) {
-                    this.font.drawText(batch, bx + bw - (hint.length() + 1) * cw, ry, hint, 0.302, 0.416, 0.427, 1.0);
+                    this.font.drawText(batch, bx + bw - (hint.length() + 1) * cw, ry, hint, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                 }
             }
             // One labelled input row of the find panel; draws the caret when it is the focused field.
@@ -1497,10 +1506,10 @@ public bundle forge {
                     lb = 0.392;
                 }
                 this.font.drawText(batch, bx + 12, y, caption, lr, lg, lb, 1.0);
-                this.font.drawText(batch, bx + 12 + 5 * cw, y, text, 0.804, 0.851, 0.843, 1.0);
+                this.font.drawText(batch, bx + 12 + 5 * cw, y, text, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
                 if (focused) {
                     int qx = bx + 12 + (5 + text.length()) * cw;
-                    batch.rect(qx, y, 2, ch, 0.918, 0.706, 0.392, 1.0);
+                    batch.rect(qx, y, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 }
             }
 
@@ -1512,13 +1521,13 @@ public bundle forge {
                 if (folded) {
                     // right-pointing filled triangle
                     while (k < 6) {
-                        batch.rect(cx + k, cy - (6 - k), 1, (6 - k) * 2, 0.918, 0.706, 0.392, 1.0);
+                        batch.rect(cx + k, cy - (6 - k), 1, (6 - k) * 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                         k = k + 1;
                     }
                 } else {
                     // down-pointing filled triangle
                     while (k < 6) {
-                        batch.rect(cx - (6 - k), cy - 3 + k, (6 - k) * 2, 1, 0.639, 0.71, 0.70, 0.95);
+                        batch.rect(cx - (6 - k), cy - 3 + k, (6 - k) * 2, 1, this.theme.text.r, this.theme.text.g, this.theme.text.b, 0.95);
                         k = k + 1;
                     }
                 }
@@ -1530,7 +1539,7 @@ public bundle forge {
                     returns void {
                 mutable int col = 4;
                 while (col < lead) {
-                    batch.rect(textX + col * cw, y, 1, ch, 0.239, 0.353, 0.373, 0.5);
+                    batch.rect(textX + col * cw, y, 1, ch, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, 0.5);
                     col = col + 4;
                 }
             }
@@ -1546,66 +1555,66 @@ public bundle forge {
                 // colour), teal for types, magenta for control flow, blue for modifiers, coral for word
                 // operators and self-refs, yellow for calls, green for literals/comments.
                 if (k == Tok.DECL) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.918, 0.706, 0.392, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tDecl.r, this.theme.tDecl.g, this.theme.tDecl.b, this.theme.tDecl.a);
                     return;
                 }
                 if (k == Tok.CONTROL) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.831, 0.573, 0.706, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tControl.r, this.theme.tControl.g, this.theme.tControl.b, this.theme.tControl.a);
                     return;
                 }
                 if (k == Tok.MODIFIER) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.435, 0.678, 0.796, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tModifier.r, this.theme.tModifier.g, this.theme.tModifier.b, this.theme.tModifier.a);
                     return;
                 }
                 if (k == Tok.TYPE) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.376, 0.788, 0.678, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tType.r, this.theme.tType.g, this.theme.tType.b, this.theme.tType.a);
                     return;
                 }
                 if (k == Tok.TYPENAME) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.545, 0.831, 0.741, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tTypeName.r, this.theme.tTypeName.g, this.theme.tTypeName.b, this.theme.tTypeName.a);
                     return;
                 }
                 if (k == Tok.OPWORD) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.898, 0.588, 0.443, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tOpword.r, this.theme.tOpword.g, this.theme.tOpword.b, this.theme.tOpword.a);
                     return;
                 }
                 if (k == Tok.SELFKW) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.882, 0.529, 0.505, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tSelf.r, this.theme.tSelf.g, this.theme.tSelf.b, this.theme.tSelf.a);
                     return;
                 }
                 if (k == Tok.CONSTANT) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.847, 0.706, 0.482, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tConstant.r, this.theme.tConstant.g, this.theme.tConstant.b, this.theme.tConstant.a);
                     return;
                 }
                 if (k == Tok.FUNC) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.863, 0.863, 0.667, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tFunc.r, this.theme.tFunc.g, this.theme.tFunc.b, this.theme.tFunc.a);
                     return;
                 }
                 if (k == Tok.KEYWORD) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.918, 0.706, 0.392, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tDecl.r, this.theme.tDecl.g, this.theme.tDecl.b, this.theme.tDecl.a);
                     return;
                 }
                 if (k == Tok.NUMBER) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.710, 0.808, 0.659, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tNumber.r, this.theme.tNumber.g, this.theme.tNumber.b, this.theme.tNumber.a);
                     return;
                 }
                 if (k == Tok.STRING) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tString.r, this.theme.tString.g, this.theme.tString.b, this.theme.tString.a);
                     return;
                 }
                 if (k == Tok.CHAR) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tString.r, this.theme.tString.g, this.theme.tString.b, this.theme.tString.a);
                     return;
                 }
                 if (k == Tok.COMMENT) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.384, 0.549, 0.408, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tComment.r, this.theme.tComment.g, this.theme.tComment.b, this.theme.tComment.a);
                     return;
                 }
                 if (k == Tok.PUNCT) {
-                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.565, 0.635, 0.631, 1.0);
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tPunct.r, this.theme.tPunct.g, this.theme.tPunct.b, this.theme.tPunct.a);
                     return;
                 }
-                this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.804, 0.851, 0.843, 1.0);
+                this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
             }
         }
     }
