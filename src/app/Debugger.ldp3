@@ -168,6 +168,31 @@ public bundle forge {
             public method stoppedAtLine() returns int {
                 return this.stoppedLine;
             }
+            // True if execution is paused on (file, line). Tolerant of relative-vs-absolute paths by also
+            // matching on basename, since the adapter reports the DWARF path which may differ from the
+            // editor's stored path.
+            public method isStoppedAt(String file, int line) returns boolean {
+                if (!this.stopped || this.stoppedLine != line) {
+                    return false;
+                }
+                if (this.stoppedFile.equals(file)) {
+                    return true;
+                }
+                return Debugger.baseName(this.stoppedFile).equals(Debugger.baseName(file));
+            }
+            private static method baseName(String p) returns String {
+                mutable int cut = -1;
+                for (mutable int i = 0; i < p.length(); i++) {
+                    char ch = p.charAt(i);
+                    if (ch == '/' || ch == '\\') {
+                        cut = i;
+                    }
+                }
+                if (cut < 0) {
+                    return p;
+                }
+                return p.substring(cut + 1, p.length());
+            }
             public method currentThreadId() returns int {
                 return this.currentThread;
             }

@@ -376,10 +376,13 @@ public bundle forge {
                     return;
                 }
                 Controller* c = wb.active();
-                // a click in the gutter (left of the code) toggles the fold on a foldable line
+                // a click in the gutter (left of the code): the leftmost strip toggles a breakpoint (VS
+                // Code-style), the inner part toggles the fold on a foldable line.
                 if (mx < screen.textOx()) {
                     int docLine = c.lineNumberAt(screenRow);
-                    if (c.isFoldable(docLine)) {
+                    if (mx < screen.treeWidth() + 18) {
+                        wb.debugger().toggleBreakpoint(wb.activePath(), docLine + 1);
+                    } else if (c.isFoldable(docLine)) {
                         c.toggleFold(docLine);
                     }
                     return;
@@ -714,6 +717,14 @@ public bundle forge {
                     String ry = GuiApp.rest(arg);
                     GuiApp.dragExtendAt(screen, wb, rx.toInt(), ry.toInt());
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("bp")) {
+                    // bp <line>: toggle a breakpoint on the active file at a 1-based line (debug-UI check).
+                    boolean added = wb.debugger().toggleBreakpoint(wb.activePath(), arg.toInt());
+                    if (added) {
+                        System.IO.Console.println("ok bp on");
+                    } else {
+                        System.IO.Console.println("ok bp off");
+                    }
                 } else if (cmd.equals("selword")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);

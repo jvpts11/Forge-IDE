@@ -3,6 +3,7 @@ import gfx.Font;
 import gfx.Overlay;
 import app.Controller;
 import app.Workbench;
+import app.Debugger;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
@@ -701,12 +702,18 @@ public bundle forge {
                 }
 
                 GitStatus* git = wb.gitStatus();
+                Debugger* dbg = wb.debugger();
+                String dbgPath = wb.activePath();
                 mutable int r = 0;
                 while (r < visible) {
                     int y = oy + this.topPad + r * ch;
                     int docLine = c.lineNumberAt(r);
                     if (r == caretRow) {
                         batch.rect(ox + gpx, y, pw - gpx, ch, 1.0, 1.0, 1.0, 0.035);
+                    }
+                    // stopped line (debugger paused here): a translucent amber band across the whole row
+                    if (dbg.isStoppedAt(dbgPath, docLine + 1)) {
+                        batch.rect(ox + gpx, y, pw - gpx, ch, 0.918, 0.706, 0.392, 0.16);
                     }
                     // git change bar at the gutter's left edge: green added, blue modified, red deletion tick
                     int gk = git.kindAt(docLine);
@@ -721,6 +728,10 @@ public bundle forge {
                     // bookmark marker: a small amber square at the gutter's inner edge
                     if (c.hasBookmark(docLine)) {
                         batch.rect(ox + gpx - 5, y + ch / 2 - 3, 5, 6, 0.918, 0.706, 0.392, 1.0);
+                    }
+                    // breakpoint marker: a red dot at the gutter's left edge (VS Code-style)
+                    if (dbg.hasBreakpoint(dbgPath, docLine + 1)) {
+                        batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, 0.886, 0.251, 0.243, 1.0);
                     }
                     String num = (docLine + 1).toString();
                     int nx = ox + gpx - 8 - num.length() * cw;
