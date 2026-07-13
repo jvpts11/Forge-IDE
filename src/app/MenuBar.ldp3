@@ -71,6 +71,8 @@ public bundle forge {
                 edit.sep();
                 edit.add("Select All", "edit.selectAll");
                 edit.add("Duplicate Line", "edit.duplicateLine");
+                edit.add("Add Next Occurrence  Ctrl+D", "edit.addNextOccurrence");
+                edit.add("Select All Occurrences  Ctrl+Shift+L", "edit.selectAllOccurrences");
                 edit.add("Find", "edit.find");
                 edit.sep();
                 edit.add("Rename Symbol  Shift+F6", "edit.rename");

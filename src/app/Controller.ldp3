@@ -453,6 +453,27 @@ public bundle forge {
             public method extraCaretScreenCol(int i) returns int {
                 return this.ed.extraCaretCol(i) - this.view.firstColumn();
             }
+            // Does secondary caret `i` carry a selection (a Ctrl+D occurrence)? Its selection lives on the same
+            // screen row as the caret (occurrences are single-line), spanning from its start column to the caret.
+            public method extraCaretHasSel(int i) returns boolean {
+                return this.ed.extraHasSel(i);
+            }
+            public method extraSelScreenCol(int i) returns int {
+                return this.ed.extraSelCol(i) - this.view.firstColumn();
+            }
+            // Ctrl+D: add the next occurrence of the selection (or select the word first). Returns false when
+            // there is nothing more to add.
+            public method selectNextOccurrence() returns boolean {
+                boolean r = this.ed.selectNextOccurrence();
+                this.moved();
+                return r;
+            }
+            // Ctrl+Shift+L: select every occurrence at once.
+            public method selectAllOccurrences() returns boolean {
+                boolean r = this.ed.selectAllOccurrences();
+                this.moved();
+                return r;
+            }
             // Mouse wheel: scroll the viewport by `delta` lines without moving the caret.
             public method scrollLines(int delta) returns void {
                 if (delta < 0) {

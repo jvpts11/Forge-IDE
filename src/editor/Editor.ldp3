@@ -27,6 +27,8 @@ public bundle forge {
             private mutable ArrayList<Snapshot>* redoStack;
             private mutable ArrayList<int>* extraRows;   // secondary carets (multi-cursor); primary is row/col
             private mutable ArrayList<int>* extraCols;
+            private mutable ArrayList<int>* extraSelRows; // per-caret selection anchor; -1 row means "no selection"
+            private mutable ArrayList<int>* extraSelCols;
             private mutable boolean suppressUndo;         // set while a multi-caret edit groups into one undo
 
             public constructor Editor(TextBuffer* doc) {
@@ -44,6 +46,8 @@ public bundle forge {
                 this.redoStack = new ArrayList<Snapshot>() on heap;
                 this.extraRows = new ArrayList<int>() on heap;
                 this.extraCols = new ArrayList<int>() on heap;
+                this.extraSelRows = new ArrayList<int>() on heap;
+                this.extraSelCols = new ArrayList<int>() on heap;
                 this.suppressUndo = false;
             }
 
@@ -763,6 +767,18 @@ public bundle forge {
             public method clearExtraCarets() returns void {
                 this.extraRows = new ArrayList<int>() on heap;
                 this.extraCols = new ArrayList<int>() on heap;
+                this.extraSelRows = new ArrayList<int>() on heap;
+                this.extraSelCols = new ArrayList<int>() on heap;
+            }
+            // Whether secondary caret `i` carries a selection (from Ctrl+D add-next-occurrence).
+            public method extraHasSel(int i) returns boolean {
+                return this.extraSelRows.get(i) >= 0;
+            }
+            public method extraSelRow(int i) returns int {
+                return this.extraSelRows.get(i);
+            }
+            public method extraSelCol(int i) returns int {
+                return this.extraSelCols.get(i);
             }
             // Add a secondary caret at (row, col), clamped into the document; a no-op if it duplicates a caret.
             public method addCaretAt(int row, int col) returns void {
@@ -793,6 +809,16 @@ public bundle forge {
                 }
                 this.extraRows.add(rr);
                 this.extraCols.add(cc);
+                this.extraSelRows.add(0 - 1);
+                this.extraSelCols.add(0 - 1);
+            }
+            // Add a secondary caret that also carries a selection spanning (selRow,selCol)..(row,col) -- the
+            // shape Ctrl+D produces so that a subsequent keystroke replaces every selected occurrence at once.
+            private method addSelectionCaret(int selRow, int selCol, int row, int col) returns void {
+                this.extraRows.add(row);
+                this.extraCols.add(col);
+                this.extraSelRows.add(selRow);
+                this.extraSelCols.add(selCol);
             }
             // Add a caret one line below the bottom-most caret (or above the top-most), at the primary column.
             public method addCaretBelow() returns void {
@@ -822,6 +848,138 @@ public bundle forge {
                 }
             }
 
+            // The start (row, col) of the primary selection -- the anchor when it precedes the caret, else the
+            // caret. Returns the caret when there is no selection.
+            private method primaryStartRow() returns int {
+                if (this.hasSelection() && !this.anchorBeforeCaret()) {
+                    return this.row;
+                }
+                if (this.hasSelection()) {
+                    return this.selRow;
+                }
+                return this.row;
+            }
+            private method primaryStartCol() returns int {
+                if (this.hasSelection() && !this.anchorBeforeCaret()) {
+                    return this.col;
+                }
+                if (this.hasSelection()) {
+                    return this.selCol;
+                }
+                return this.col;
+            }
+            // Is an occurrence starting at (r, c) already selected by the primary or one of the secondaries?
+            private method occurrenceOccupied(int r, int c) returns boolean {
+                if (r == this.primaryStartRow() && c == this.primaryStartCol()) {
+                    return true;
+                }
+                mutable int i = 0;
+                while (i < this.extraRows.size()) {
+                    if (this.extraSelRows.get(i) == r && this.extraSelCols.get(i) == c) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+
+            // Ctrl+D: the first press with no selection selects the word under the caret; each further press
+            // adds the next occurrence of the selected text as a new selection+caret (wrapping the document,
+            // skipping ones already selected). Typing then replaces every selected occurrence at once. Returns
+            // false when there is nothing more to add.
+            public method selectNextOccurrence() returns boolean {
+                if (!this.hasSelection()) {
+                    this.selectWordAtCaret();
+                    return this.hasSelection();
+                }
+                String needle = this.selectionText();
+                if (needle.length() == 0 || Editor.hasNewline(needle)) {
+                    return false;
+                }
+                ArrayList<Match>* all = this.search.findAll(needle);
+                if (all.size() <= 1) {
+                    return false;
+                }
+                int pr = this.primaryStartRow();
+                int pc = this.primaryStartCol();
+                mutable int pIdx = 0;
+                mutable int f = 0;
+                while (f < all.size()) {
+                    if (all.get(f).row == pr && all.get(f).col == pc) {
+                        pIdx = f;
+                    }
+                    f = f + 1;
+                }
+                mutable int advance = 1;
+                while (advance <= all.size()) {
+                    int idx = (pIdx + advance) % all.size();
+                    Match* m = all.get(idx);
+                    if (!this.occurrenceOccupied(m.row, m.col)) {
+                        // Demote the current primary to a secondary, promote the found occurrence to primary.
+                        int endRow = this.row;
+                        int endCol = this.col;
+                        int sr = this.selRow;
+                        int sc = this.selCol;
+                        this.addSelectionCaret(sr, sc, endRow, endCol);
+                        this.selRow = m.row;
+                        this.selCol = m.col;
+                        this.row = m.row;
+                        this.col = m.col + m.length;
+                        this.hasSel = true;
+                        return true;
+                    }
+                    advance = advance + 1;
+                }
+                return false;
+            }
+
+            // Ctrl+Shift+L: select every occurrence of the current selection (or the word under the caret) at
+            // once. The primary stays on its occurrence; every other becomes a secondary selection.
+            public method selectAllOccurrences() returns boolean {
+                if (!this.hasSelection()) {
+                    this.selectWordAtCaret();
+                }
+                if (!this.hasSelection()) {
+                    return false;
+                }
+                String needle = this.selectionText();
+                if (needle.length() == 0 || Editor.hasNewline(needle)) {
+                    return false;
+                }
+                ArrayList<Match>* all = this.search.findAll(needle);
+                if (all.size() == 0) {
+                    return false;
+                }
+                this.clearExtraCarets();
+                int pr = this.primaryStartRow();
+                int pc = this.primaryStartCol();
+                // Keep the primary anchored to its own occurrence, shaped anchor-before-caret for consistency.
+                this.selRow = pr;
+                this.selCol = pc;
+                this.row = pr;
+                this.col = pc + needle.length();
+                this.hasSel = true;
+                mutable int i = 0;
+                while (i < all.size()) {
+                    Match* m = all.get(i);
+                    if (!(m.row == pr && m.col == pc)) {
+                        this.addSelectionCaret(m.row, m.col, m.row, m.col + m.length);
+                    }
+                    i = i + 1;
+                }
+                return true;
+            }
+            private static method hasNewline(String s) returns boolean {
+                mutable int i = 0;
+                while (i < s.length()) {
+                    if (s.charAt(i) == '\n') {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+
             // Type / backspace / newline that route through every caret when there are secondaries.
             public method typeMulti(char c) returns void {
                 if (this.extraRows.size() == 0) {
@@ -846,20 +1004,33 @@ public bundle forge {
             }
 
             // Apply one edit at every caret as a single undo step. op: 0 = type char, 1 = backspace, 2 = enter.
-            // Carets run bottom-to-top so an edit never shifts a caret still to be processed.
+            // Carets run bottom-to-top so an edit never shifts a caret still to be processed. Each caret carries
+            // its own selection (sr,sc >= 0 means active): the edit deletes it first, so typing over Ctrl+D
+            // occurrences replaces every one at once.
             private method applyMulti(int op, char ch) returns void {
                 this.saveUndo();
                 this.suppressUndo = true;
                 ArrayList<int>* rows = new ArrayList<int>() on heap;
                 ArrayList<int>* cols = new ArrayList<int>() on heap;
+                ArrayList<int>* srs = new ArrayList<int>() on heap;
+                ArrayList<int>* scs = new ArrayList<int>() on heap;
                 ArrayList<int>* prim = new ArrayList<int>() on heap;
                 rows.add(this.row);
                 cols.add(this.col);
+                if (this.hasSelection()) {
+                    srs.add(this.selRow);
+                    scs.add(this.selCol);
+                } else {
+                    srs.add(0 - 1);
+                    scs.add(0 - 1);
+                }
                 prim.add(1);
                 mutable int i = 0;
                 while (i < this.extraRows.size()) {
                     rows.add(this.extraRows.get(i));
                     cols.add(this.extraCols.get(i));
+                    srs.add(this.extraSelRows.get(i));
+                    scs.add(this.extraSelCols.get(i));
                     prim.add(0);
                     i = i + 1;
                 }
@@ -877,6 +1048,8 @@ public bundle forge {
                     if (best != a) {
                         Editor.swapInt(rows, a, best);
                         Editor.swapInt(cols, a, best);
+                        Editor.swapInt(srs, a, best);
+                        Editor.swapInt(scs, a, best);
                         Editor.swapInt(prim, a, best);
                     }
                     a = a + 1;
@@ -886,7 +1059,13 @@ public bundle forge {
                 while (k < rows.size()) {
                     this.row = rows.get(k);
                     this.col = cols.get(k);
-                    this.hasSel = false;
+                    if (srs.get(k) >= 0) {
+                        this.selRow = srs.get(k);
+                        this.selCol = scs.get(k);
+                        this.hasSel = true;
+                    } else {
+                        this.hasSel = false;
+                    }
                     if (op == 0) {
                         this.typeWithPairs(ch);
                     } else if (op == 1) {
@@ -894,13 +1073,16 @@ public bundle forge {
                     } else {
                         this.enter();
                     }
+                    this.hasSel = false;
                     rows.set(k, this.row);
                     cols.set(k, this.col);
                     k = k + 1;
                 }
-                // scatter back: the tagged entry is the primary, the rest become secondaries
+                // scatter back: the tagged entry is the primary, the rest become bare secondaries
                 this.extraRows = new ArrayList<int>() on heap;
                 this.extraCols = new ArrayList<int>() on heap;
+                this.extraSelRows = new ArrayList<int>() on heap;
+                this.extraSelCols = new ArrayList<int>() on heap;
                 mutable int j = 0;
                 while (j < rows.size()) {
                     if (prim.get(j) == 1) {
@@ -909,6 +1091,8 @@ public bundle forge {
                     } else {
                         this.extraRows.add(rows.get(j));
                         this.extraCols.add(cols.get(j));
+                        this.extraSelRows.add(0 - 1);
+                        this.extraSelCols.add(0 - 1);
                     }
                     j = j + 1;
                 }

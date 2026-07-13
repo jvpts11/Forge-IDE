@@ -1420,8 +1420,9 @@ public bundle forge {
                 return false;
             }
 
-            // Multi-cursor hotkeys: Ctrl+Alt+Down/Up add a secondary caret below/above; Esc collapses back to
-            // one when there are extras. Returns true if it consumed the key.
+            // Multi-cursor hotkeys: Ctrl+Alt+Down/Up add a secondary caret below/above; Ctrl+D adds the next
+            // occurrence of the selection (or selects the word first); Ctrl+Shift+L selects every occurrence;
+            // Esc collapses back to one when there are extras. Returns true if it consumed the key.
             private static method caretHotkey(Workbench* wb, int vk, boolean ctrl, boolean shift, boolean alt)
                     returns boolean {
                 if (ctrl && alt && vk == 40) {
@@ -1430,6 +1431,14 @@ public bundle forge {
                 }
                 if (ctrl && alt && vk == 38) {
                     wb.active().addCaretAbove();
+                    return true;
+                }
+                if (ctrl && !alt && !shift && vk == 68) {
+                    wb.active().selectNextOccurrence();
+                    return true;
+                }
+                if (ctrl && !alt && shift && vk == 76) {
+                    wb.active().selectAllOccurrences();
                     return true;
                 }
                 if (vk == 27 && wb.active().hasMultipleCarets()) {

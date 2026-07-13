@@ -956,13 +956,32 @@ public bundle forge {
                     int cx = textX + c.caretScreenCol() * cw;
                     batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 }
-                // secondary carets (multi-cursor)
+                // secondary carets (multi-cursor), each with its own Ctrl+D selection highlight
                 mutable int mc = 0;
                 while (mc < c.extraCaretCount()) {
                     int esr = c.extraCaretScreenRow(mc);
-                    if (esr >= 0 && esr < visible && this.caretOn) {
-                        int ex = textX + c.extraCaretScreenCol(mc) * cw;
-                        batch.rect(ex, oy + this.topPad + esr * ch, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                    if (esr >= 0 && esr < visible) {
+                        int endCol = c.extraCaretScreenCol(mc);
+                        if (c.extraCaretHasSel(mc)) {
+                            int startCol = c.extraSelScreenCol(mc);
+                            mutable int a = startCol;
+                            mutable int b = endCol;
+                            if (b < a) {
+                                a = endCol;
+                                b = startCol;
+                            }
+                            if (a < 0) {
+                                a = 0;
+                            }
+                            if (b > a) {
+                                batch.rect(textX + a * cw, oy + this.topPad + esr * ch, (b - a) * cw, ch,
+                                           this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.22);
+                            }
+                        }
+                        if (this.caretOn) {
+                            int ex = textX + endCol * cw;
+                            batch.rect(ex, oy + this.topPad + esr * ch, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                        }
                     }
                     mc = mc + 1;
                 }

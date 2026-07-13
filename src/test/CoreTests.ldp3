@@ -122,6 +122,32 @@ public bundle forge {
                 a.eqInt(es2.cursorRow(), 0, "sel.caret-row");
                 a.eqInt(es2.cursorCol(), 1, "sel.caret-col");
 
+                // --- multi-cursor: Ctrl+D add-next-occurrence, then type-over replaces all ---
+                Editor md = new Editor(new TextBuffer() on heap) on heap;
+                md.document().loadText("foo bar foo\nfoo end");
+                md.setCaret(0, 0);
+                a.eqBool(md.selectNextOccurrence(), true, "mc.first-selects-word");
+                a.eqStr(md.selectionText(), "foo", "mc.word");
+                a.eqBool(md.hasMultipleCarets(), false, "mc.no-extra-yet");
+                a.eqBool(md.selectNextOccurrence(), true, "mc.second-adds");
+                a.eqInt(md.extraCaretCount(), 1, "mc.one-extra");
+                a.eqBool(md.selectNextOccurrence(), true, "mc.third-adds");
+                a.eqInt(md.extraCaretCount(), 2, "mc.two-extra");
+                md.typeMulti('X');
+                a.eqStr(md.document().line(0), "X bar X", "mc.replace-line0");
+                a.eqStr(md.document().line(1), "X end", "mc.replace-line1");
+                a.eqBool(md.hasMultipleCarets(), true, "mc.carets-remain");
+
+                // --- multi-cursor: Ctrl+Shift+L selects every occurrence at once ---
+                Editor ma = new Editor(new TextBuffer() on heap) on heap;
+                ma.document().loadText("id x id y id");
+                ma.setCaret(0, 0);
+                a.eqBool(ma.selectAllOccurrences(), true, "mc.all-ok");
+                a.eqInt(ma.extraCaretCount(), 2, "mc.all-two-extra");
+                a.eqStr(ma.selectionText(), "id", "mc.all-primary-sel");
+                ma.typeMulti('Z');
+                a.eqStr(ma.document().line(0), "Z x Z y Z", "mc.all-replaced");
+
                 // --- clipboard: copy/paste, cut, multi-line paste ---
                 Editor ec = new Editor(new TextBuffer() on heap) on heap;
                 ec.document().loadText("abc");
@@ -475,8 +501,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 28, "cmd.count");
-                a.eqInt(cr.filter("").size(), 28, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 30, "cmd.count");
+                a.eqInt(cr.filter("").size(), 30, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");

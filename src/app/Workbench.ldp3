@@ -592,6 +592,14 @@ public bundle forge {
                     c.duplicateLine();
                     return true;
                 }
+                if (id.equals("edit.addNextOccurrence")) {
+                    c.selectNextOccurrence();
+                    return true;
+                }
+                if (id.equals("edit.selectAllOccurrences")) {
+                    c.selectAllOccurrences();
+                    return true;
+                }
                 if (id.equals("run.build")) {
                     this.diagnose();
                     return true;
