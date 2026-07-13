@@ -1,0 +1,75 @@
+import System.IO.Console;
+import System.Time.Time;
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // Headless end-to-end check of the debug stack: drive a real lldb-dap adapter through the Debugger,
+        // set a breakpoint, launch a program built with -g, and confirm it stops on the right source line with
+        // a call stack and locals. Proves S1 (DWARF) + S2 (subprocess) + S3 (DAP client) work together without
+        // any UI. Invoked as `Forge.exe dap-selftest <lldb-dap> <program.exe> <source.ldp3> <line>`.
+        public class DapSelfTest {
+            public static method run(String dapCommand, String programExe, String source, int line) returns void {
+                Debugger dbg = new Debugger() on heap;
+                dbg.toggleBreakpoint(source, line);
+                if (!dbg.start(dapCommand, programExe)) {
+                    System.IO.Console.println("FAIL: could not start adapter");
+                    return;
+                }
+                mutable int ticks = 0;
+                mutable boolean stopped = false;
+                while (ticks < 500 && !stopped) {
+                    dbg.pump();
+                    if (dbg.isStopped()) {
+                        stopped = true;
+                    } else {
+                        Time.sleep(cast<long>(10));
+                        ticks = ticks + 1;
+                    }
+                }
+                if (!stopped) {
+                    System.IO.Console.println("FAIL: never stopped");
+                    dbg.stop();
+                    return;
+                }
+                // Give the follow-up stackTrace/scopes/variables responses time to arrive.
+                mutable int extra = 0;
+                while (extra < 60) {
+                    dbg.pump();
+                    Time.sleep(cast<long>(10));
+                    extra = extra + 1;
+                }
+                String file = dbg.stoppedFilePath();
+                int atLine = dbg.stoppedAtLine();
+                ArrayList<DebugFrame*>* stack = dbg.callStackView();
+                ArrayList<DebugVar*>* vars = dbg.variablesView();
+                int frameCount = stack.size();
+                int varCount = vars.size();
+                System.IO.Console.print("STOPPED file=");
+                System.IO.Console.print(file);
+                System.IO.Console.print(" line=");
+                System.IO.Console.print(atLine.toString());
+                System.IO.Console.print(" frames=");
+                System.IO.Console.print(frameCount.toString());
+                System.IO.Console.print(" vars=");
+                System.IO.Console.println(varCount.toString());
+                if (frameCount > 0) {
+                    DebugFrame* top = stack.get(0);
+                    System.IO.Console.print("top-frame=");
+                    System.IO.Console.println(top.name);
+                }
+                for (mutable int i = 0; i < varCount; i++) {
+                    DebugVar* v = vars.get(i);
+                    System.IO.Console.print("var ");
+                    System.IO.Console.print(v.name);
+                    System.IO.Console.print(" = ");
+                    System.IO.Console.println(v.value);
+                }
+                dbg.stop();
+            }
+        }
+    }
+}

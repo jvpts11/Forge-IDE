@@ -1,5 +1,6 @@
 import test.CoreTests;
 import gfx.GuiApp;
+import System.IO.Console;
 
 program Forge;
 
@@ -25,6 +26,15 @@ public bundle forge {
                     }
                     if (args[0].equals("serve")) {
                         GuiApp.serve();
+                        return;
+                    }
+                    if (args[0].equals("dap-selftest")) {
+                        // dap-selftest <lldb-dap> <program.exe> <source> <line>: headless end-to-end debug check.
+                        if (args.length() < 5) {
+                            System.IO.Console.println("usage: dap-selftest <lldb-dap> <program.exe> <source> <line>");
+                            return;
+                        }
+                        DapSelfTest.run(args[1], args[2], args[3], args[4].toInt());
                         return;
                     }
                     // any other argument is a file or project directory to open
