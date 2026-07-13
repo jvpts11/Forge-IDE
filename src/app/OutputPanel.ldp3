@@ -44,6 +44,13 @@ public bundle forge {
                 this.navLine = new ArrayList<int>() on heap;
                 this.visible = true;
             }
+            // Append one line to the panel (keeping it visible), e.g. streaming a debugged program's output.
+            public method appendLine(String line) returns void {
+                this.lines.add(line);
+                this.navFile.add("");
+                this.navLine.add(0);
+                this.visible = true;
+            }
             // Show a prepared list of lines (e.g. find-references results). Not navigable.
             public method showLines(String caption, ArrayList<String>* body) returns void {
                 this.title = caption;

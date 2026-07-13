@@ -763,6 +763,14 @@ public bundle forge {
                 } else if (cmd.equals("dbgstop")) {
                     wb.debugger().stop();
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("outdump")) {
+                    ArrayList<String>* ls = wb.output().lines;    // dump the output/console panel lines
+                    mutable int oi = 0;
+                    while (oi < ls.size()) {
+                        System.IO.Console.println("OUT| " + ls.get(oi));
+                        oi = oi + 1;
+                    }
+                    System.IO.Console.println("ok");
                 } else if (cmd.equals("dbgstate")) {
                     Debugger* dbg = wb.debugger();
                     System.IO.Console.println("dbg active=" + GuiApp.boolStr(dbg.isActive())
@@ -1771,6 +1779,7 @@ public bundle forge {
                 // Drain any debug-adapter messages that arrived since the last frame (non-blocking): the
                 // stopped line, call stack, variables and program output update in step with the UI.
                 wb.debugger().pump();
+                wb.drainDebugOutput();
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);

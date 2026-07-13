@@ -37,6 +37,7 @@ public bundle forge {
             private mutable GitStatus* git;         // change marks for the active file's gutter
             private mutable Debugger* dbg;          // debug session (breakpoints, stopped line, stack, vars)
             private mutable String renameOldName;   // the identifier a pending rename prompt is renaming
+            private mutable int dbgOutConsumed;      // how many debug-output lines are already in the panel
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
 
@@ -51,6 +52,7 @@ public bundle forge {
                 this.git = new GitStatus() on heap;
                 this.dbg = new Debugger() on heap;
                 this.renameOldName = "";
+                this.dbgOutConsumed = 0;
                 this.treeDirty = false;
                 this.showMinimap = false;
                 this.docs.openNew();               // start on one empty document
@@ -60,6 +62,15 @@ public bundle forge {
             // frame so incoming adapter events update the UI without blocking.
             public method debugger() returns Debugger* {
                 return this.dbg;
+            }
+            // Move any new output the debugged program produced into the Debug Console panel. Called each
+            // frame right after pump(), so the program's stdout streams in live.
+            public method drainDebugOutput() returns void {
+                ArrayList<String>* out = this.dbg.outputView();
+                while (this.dbgOutConsumed < out.size()) {
+                    this.out.appendLine(out.get(this.dbgOutConsumed));
+                    this.dbgOutConsumed = this.dbgOutConsumed + 1;
+                }
             }
             // The active document's on-disk path (matched against breakpoints and the debugger's stopped file).
             public method activePath() returns String {
@@ -414,7 +425,8 @@ public bundle forge {
                 }
                 String dap = Debugger.findLldbDap();
                 if (this.dbg.start(dap, exe)) {
-                    this.out.banner("Debug", "Session started -- F5 continue, F10 step over, F11 step in, Shift+F5 stop.");
+                    this.dbgOutConsumed = 0;
+                    this.out.showLines("Debug Console", new ArrayList<String>() on heap);
                 } else {
                     this.out.banner("Debug", "Could not start the debug adapter (" + dap + "). Is lldb-dap installed?");
                 }
