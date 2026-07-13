@@ -469,6 +469,10 @@ public bundle forge {
                     ov.open(2);
                     return;
                 }
+                if (id.equals("edit.rename")) {
+                    GuiApp.beginRenameSymbol(wb, ov);
+                    return;
+                }
                 if (id.equals("git.commit")) {
                     ov.openPrompt("commit", "commit message: ");
                     return;
@@ -733,6 +737,11 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("unknown command");
                     }
+                } else if (cmd.equals("renamesym")) {
+                    String oldName = GuiApp.firstWord(arg);         // renamesym <old> <new>: whole-word rename
+                    String newName = GuiApp.rest(arg);
+                    int n = wb.renameSymbol(oldName, newName);
+                    System.IO.Console.println("ok renamed " + n.toString());
                 } else if (cmd.equals("project")) {
                     wb.setProjectDir(arg);                           // point build/debug at a project root
                     System.IO.Console.println("ok " + wb.projectLabel());
@@ -1076,6 +1085,20 @@ public bundle forge {
                 }
                 return "0";
             }
+            // Start a symbol rename: stash the identifier under the caret and open a prompt pre-filled with it.
+            private static method beginRenameSymbol(Workbench* wb, Overlay* ov) returns void {
+                String w = wb.active().wordAtCaret();
+                if (w.length() == 0) {
+                    return;
+                }
+                wb.setRenameTarget(w);
+                ov.openPrompt("renameSymbol", "rename '" + w + "' to: ");
+                mutable int i = 0;
+                while (i < w.length()) {
+                    ov.typeChar(w.charAt(i));
+                    i = i + 1;
+                }
+            }
             private static method rest(String s) returns String {
                 int sp = s.indexOf(" ");
                 if (sp < 0) {
@@ -1239,6 +1262,8 @@ public bundle forge {
                         }
                     } else if (e.isKey() && alt && shift && e.vk == 70) {    // Shift+Alt+F -> format document
                         wb.formatDocument();
+                    } else if (e.isKey() && shift && e.vk == 117) {          // Shift+F6 -> rename symbol
+                        GuiApp.beginRenameSymbol(wb, ov);
                     } else if (e.isKey() && e.vk == 116) {                   // F5 start/continue, Shift+F5 stop
                         if (shift) {
                             wb.debugger().stop();
@@ -1521,6 +1546,10 @@ public bundle forge {
                     wb.newFileOnDisk(ov.query);
                 } else if (ov.promptKind.equals("rename")) {
                     wb.renameActiveFile(ov.query);
+                } else if (ov.promptKind.equals("renameSymbol")) {
+                    int n = wb.renameSymbol(wb.renameTargetName(), ov.query);
+                    wb.output().banner("Rename", "Renamed " + n.toString() + " occurrence(s) of '"
+                        + wb.renameTargetName() + "'.");
                 }
                 return;
             }

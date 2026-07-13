@@ -73,7 +73,8 @@ public bundle forge {
                 edit.add("Duplicate Line", "edit.duplicateLine");
                 edit.add("Find", "edit.find");
                 edit.sep();
-                edit.add("Format Document", "edit.format");
+                edit.add("Rename Symbol  Shift+F6", "edit.rename");
+                edit.add("Format Document  Shift+Alt+F", "edit.format");
                 this.menus.add(edit);
 
                 Menu* view = new Menu("View") on heap;

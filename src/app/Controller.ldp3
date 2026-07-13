@@ -504,6 +504,9 @@ public bundle forge {
             public method replaceAll(String needle, String replacement) returns int {
                 int n = this.ed.replaceAll(needle, replacement); this.edited(); return n;
             }
+            public method renameSymbol(String oldName, String newName) returns int {
+                int n = this.ed.renameWord(oldName, newName, this.hl); this.edited(); return n;
+            }
             public method openFile(String path) returns void {
                 this.doc.openFile(path);
                 this.ed.moveDocStart();

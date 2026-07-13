@@ -1,5 +1,8 @@
 import System.Collections.ArrayList;
 import System.Text.Strings;
+import syntax.Highlighter;
+import syntax.Span;
+import syntax.Tok;
 
 program Forge;
 
@@ -172,6 +175,59 @@ public bundle forge {
                 }
                 this.clampCaret();
                 return all.size();
+            }
+
+            private static method isIdentChar(char c) returns boolean {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_';
+            }
+
+            // True if column `col` on `line` falls inside a string, char or comment token -- positions a
+            // symbol rename must leave alone (renaming `x` shouldn't rewrite "x=%d" or a // comment).
+            private static method inStringOrComment(Highlighter* hl, String line, int col) returns boolean {
+                ArrayList<Span> spans = hl.tokenize(line);
+                for (mutable int i = 0; i < spans.size(); i++) {
+                    Span sp = spans.get(i);
+                    if (col >= sp.start && col < sp.end) {
+                        return sp.kind == Tok.STRING || sp.kind == Tok.CHAR || sp.kind == Tok.COMMENT;
+                    }
+                }
+                return false;
+            }
+
+            // Rename every WHOLE-WORD occurrence of `oldName` to `newName` (a match preceded/followed by a
+            // non-identifier char) that is real code, as one undo step. Substring hits inside longer
+            // identifiers are left alone (so renaming `x` never touches `xs` or `max`), and matches inside
+            // strings/chars/comments are skipped via the highlighter. Returns the number of occurrences changed.
+            public method renameWord(String oldName, String newName, Highlighter* hl) returns int {
+                if (oldName.length() == 0) {
+                    return 0;
+                }
+                ArrayList<Match>* all = this.search.findAll(oldName);
+                ArrayList<Match>* whole = new ArrayList<Match>() on heap;
+                for (mutable int i = 0; i < all.size(); i++) {
+                    Match* m = all.get(i);
+                    String cur = this.buf.line(m.row);
+                    boolean leftOk = m.col == 0 || !Editor.isIdentChar(cur.charAt(m.col - 1));
+                    int after = m.col + m.length;
+                    boolean rightOk = after >= cur.length() || !Editor.isIdentChar(cur.charAt(after));
+                    if (leftOk && rightOk && !Editor.inStringOrComment(hl, cur, m.col)) {
+                        whole.add(m);
+                    }
+                }
+                if (whole.size() == 0) {
+                    return 0;
+                }
+                this.saveUndo();
+                this.clearSelection();
+                for (mutable int i = whole.size() - 1; i >= 0; i--) {
+                    Match* m = whole.get(i);
+                    String cur = this.buf.line(m.row);
+                    this.buf.setLine(m.row,
+                        cur.substring(0, m.col) + newName + cur.substring(m.col + m.length, cur.length()));
+                }
+                this.clampCaret();
+                return whole.size();
             }
 
             // --- clipboard: copy/cut the selection, paste at the caret (replacing any selection) ---

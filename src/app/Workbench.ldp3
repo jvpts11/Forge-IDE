@@ -36,6 +36,7 @@ public bundle forge {
             private mutable String projectName;     // from ldp3.toml, shown in the status bar
             private mutable GitStatus* git;         // change marks for the active file's gutter
             private mutable Debugger* dbg;          // debug session (breakpoints, stopped line, stack, vars)
+            private mutable String renameOldName;   // the identifier a pending rename prompt is renaming
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
 
@@ -49,6 +50,7 @@ public bundle forge {
                 this.projectName = "";
                 this.git = new GitStatus() on heap;
                 this.dbg = new Debugger() on heap;
+                this.renameOldName = "";
                 this.treeDirty = false;
                 this.showMinimap = false;
                 this.docs.openNew();               // start on one empty document
@@ -287,6 +289,21 @@ public bundle forge {
             // not whatever directory Forge was launched from).
             public method runShell(String caption, String cmd) returns void {
                 this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
+            }
+
+            // Symbol rename (Shift+F6): the shell stashes the identifier under the caret here, then applies the
+            // new name to every whole-word occurrence when the prompt is confirmed.
+            public method setRenameTarget(String w) returns void {
+                this.renameOldName = w;
+            }
+            public method renameTargetName() returns String {
+                return this.renameOldName;
+            }
+            public method renameSymbol(String oldName, String newName) returns int {
+                if (newName.length() == 0 || oldName.equals(newName)) {
+                    return 0;
+                }
+                return this.docs.active().renameSymbol(oldName, newName);
             }
 
             // Format the active file in place with `ldp3 fmt`, then reload it (Shift+Alt+F). The caret line is
