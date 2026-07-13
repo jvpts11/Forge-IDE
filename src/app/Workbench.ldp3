@@ -823,6 +823,51 @@ public bundle forge {
                 this.closeActiveTab();
                 this.treeDirty = true;
             }
+            // Insert a code-template snippet at the caret, indented to the current line's leading whitespace so
+            // the body lands at the right nesting. Returns false for an unknown id.
+            public method insertSnippet(String id) returns boolean {
+                Controller* c = this.docs.active();
+                int row = c.editor().cursorRow();
+                String cur = c.editor().document().line(row);
+                String ind = Workbench.leadingWhite(cur);
+                String body = Workbench.snippetBody(id, ind);
+                if (body.length() == 0) {
+                    return false;
+                }
+                c.insertText(body);
+                return true;
+            }
+            private static method leadingWhite(String s) returns String {
+                mutable int i = 0;
+                while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t')) {
+                    i = i + 1;
+                }
+                return s.substring(0, i);
+            }
+            // The body for a snippet id. The first line is inserted where the caret sits (assumed at the
+            // indent); continuation lines carry `ind` plus their own nesting.
+            private static method snippetBody(String id, String ind) returns String {
+                String nl = "\n";
+                if (id.equals("snippet.class")) {
+                    return "public class Name {" + nl
+                        + ind + "    public constructor Name() {" + nl
+                        + ind + "    }" + nl
+                        + ind + "}";
+                }
+                if (id.equals("snippet.method")) {
+                    return "public method name() returns void {" + nl
+                        + ind + "}";
+                }
+                if (id.equals("snippet.forLoop")) {
+                    return "for (mutable int i = 0; i < n; i++) {" + nl
+                        + ind + "}";
+                }
+                if (id.equals("snippet.main")) {
+                    return "public static method main(string[] args) returns void {" + nl
+                        + ind + "}";
+                }
+                return "";
+            }
             public method treeNeedsRefresh() returns boolean {
                 if (this.treeDirty) {
                     this.treeDirty = false;
@@ -914,6 +959,9 @@ public bundle forge {
                 if (id.equals("nav.forward")) {
                     this.navGoForward();
                     return true;
+                }
+                if (id.startsWith("snippet.")) {
+                    return this.insertSnippet(id);
                 }
                 if (id.equals("run.build")) {
                     this.diagnose();

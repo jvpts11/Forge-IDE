@@ -217,6 +217,14 @@ public bundle forge {
                 }
                 a.eqBool(hasBread, true, "psym.suggests-cross-file");
 
+                // --- code snippets: insert a template at the caret ---
+                Workbench wsnip = new Workbench(24, 80) on heap;
+                a.eqBool(wsnip.insertSnippet("snippet.forLoop"), true, "snippet.for-ok");
+                a.eqStr(wsnip.active().editor().document().line(0),
+                        "for (mutable int i = 0; i < n; i++) {", "snippet.for-l0");
+                a.eqStr(wsnip.active().editor().document().line(1), "}", "snippet.for-l1");
+                a.eqBool(wsnip.insertSnippet("snippet.bogus"), false, "snippet.unknown");
+
                 // --- clipboard: copy/paste, cut, multi-line paste ---
                 Editor ec = new Editor(new TextBuffer() on heap) on heap;
                 ec.document().loadText("abc");
@@ -570,8 +578,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 34, "cmd.count");
-                a.eqInt(cr.filter("").size(), 34, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 38, "cmd.count");
+                a.eqInt(cr.filter("").size(), 38, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");

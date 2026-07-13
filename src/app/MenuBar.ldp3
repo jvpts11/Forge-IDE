@@ -83,6 +83,11 @@ public bundle forge {
                 edit.sep();
                 edit.add("Rename Symbol  Shift+F6", "edit.rename");
                 edit.add("Format Document  Shift+Alt+F", "edit.format");
+                edit.sep();
+                edit.add("Snippet: Class", "snippet.class");
+                edit.add("Snippet: Method", "snippet.method");
+                edit.add("Snippet: For Loop", "snippet.forLoop");
+                edit.add("Snippet: Main Method", "snippet.main");
                 this.menus.add(edit);
 
                 Menu* view = new Menu("View") on heap;

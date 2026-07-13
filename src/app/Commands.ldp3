@@ -40,6 +40,10 @@ public bundle forge {
                 this.register("edit.shrinkSelection", "Shrink Selection");
                 this.register("nav.back", "Go Back");
                 this.register("nav.forward", "Go Forward");
+                this.register("snippet.class", "Snippet: Class");
+                this.register("snippet.method", "Snippet: Method");
+                this.register("snippet.forLoop", "Snippet: For Loop");
+                this.register("snippet.main", "Snippet: Main Method");
                 this.register("run.build", "Build Project");
                 this.register("run.program", "Run Project");
                 this.register("run.test", "Run Tests");
