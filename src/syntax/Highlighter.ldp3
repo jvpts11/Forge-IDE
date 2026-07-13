@@ -51,20 +51,36 @@ public bundle forge {
             private method addAll(HashSet<String>* set, String words) returns void {
                 ArrayList<String> parts = Strings.split(words, " ");
                 for (mutable int i = 0; i < parts.size(); i++) {
-                    if (parts.get(i).length() > 0) { set.add(parts.get(i)); }
+                    if (parts.get(i).length() > 0) {
+                        set.add(parts.get(i));
+                    }
                 }
             }
 
             // The colour group of a word (Tok.IDENT if it isn't a keyword). TYPENAME/FUNC are decided by the
             // tokenizer from context (CamelCase / a following '(').
             private method classify(String word) returns Tok {
-                if (this.control.contains(word)) { return Tok.CONTROL; }
-                if (this.modifier.contains(word)) { return Tok.MODIFIER; }
-                if (this.decl.contains(word)) { return Tok.DECL; }
-                if (this.types.contains(word)) { return Tok.TYPE; }
-                if (this.opword.contains(word)) { return Tok.OPWORD; }
-                if (this.constant.contains(word)) { return Tok.CONSTANT; }
-                if (this.selfkw.contains(word)) { return Tok.SELFKW; }
+                if (this.control.contains(word)) {
+                    return Tok.CONTROL;
+                }
+                if (this.modifier.contains(word)) {
+                    return Tok.MODIFIER;
+                }
+                if (this.decl.contains(word)) {
+                    return Tok.DECL;
+                }
+                if (this.types.contains(word)) {
+                    return Tok.TYPE;
+                }
+                if (this.opword.contains(word)) {
+                    return Tok.OPWORD;
+                }
+                if (this.constant.contains(word)) {
+                    return Tok.CONSTANT;
+                }
+                if (this.selfkw.contains(word)) {
+                    return Tok.SELFKW;
+                }
                 return Tok.IDENT;
             }
 
@@ -75,16 +91,24 @@ public bundle forge {
             // True when the next non-space character at or after `i` in `line` is `target`.
             private method nextNonSpaceIs(String line, int i, char target) returns boolean {
                 mutable int j = i;
-                while (j < line.length() && (line.charAt(j) == ' ' || line.charAt(j) == '\t')) { j = j + 1; }
+                while (j < line.length() && (line.charAt(j) == ' ' || line.charAt(j) == '\t')) {
+                    j = j + 1;
+                }
                 return j < line.length() && line.charAt(j) == target;
             }
-            private method isUpper(char c) returns boolean { return c >= 'A' && c <= 'Z'; }
+            private method isUpper(char c) returns boolean {
+                return c >= 'A' && c <= 'Z';
+            }
 
-            private method isDigit(char c) returns boolean { return c >= '0' && c <= '9'; }
+            private method isDigit(char c) returns boolean {
+                return c >= '0' && c <= '9';
+            }
             private method isAlpha(char c) returns boolean {
                 return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
             }
-            private method isAlnum(char c) returns boolean { return this.isAlpha(c) || this.isDigit(c); }
+            private method isAlnum(char c) returns boolean {
+                return this.isAlpha(c) || this.isDigit(c);
+            }
 
             // Break `line` into a complete, gap-free sequence of Spans.
             public method tokenize(String line) returns ArrayList<Span> {
@@ -95,7 +119,9 @@ public bundle forge {
                     char c = line.charAt(i);
                     int start = i;
                     if (c == ' ' || c == '\t') {
-                        while (i < n && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) { i = i + 1; }
+                        while (i < n && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
+                            i = i + 1;
+                        }
                         spans.add(new Span(start, i, Tok.WS) on heap);
                     } else if (c == '/' && i + 1 < n && line.charAt(i + 1) == '/') {
                         spans.add(new Span(start, n, Tok.COMMENT) on heap);
@@ -103,30 +129,46 @@ public bundle forge {
                     } else if (c == '"') {
                         i = i + 1;
                         while (i < n && line.charAt(i) != '"') {
-                            if (line.charAt(i) == '\\' && i + 1 < n) { i = i + 1; }
+                            if (line.charAt(i) == '\\' && i + 1 < n) {
+                                i = i + 1;
+                            }
                             i = i + 1;
                         }
-                        if (i < n) { i = i + 1; }
+                        if (i < n) {
+                            i = i + 1;
+                        }
                         spans.add(new Span(start, i, Tok.STRING) on heap);
                     } else if (c == '\'') {
                         i = i + 1;
                         while (i < n && line.charAt(i) != '\'') {
-                            if (line.charAt(i) == '\\' && i + 1 < n) { i = i + 1; }
+                            if (line.charAt(i) == '\\' && i + 1 < n) {
+                                i = i + 1;
+                            }
                             i = i + 1;
                         }
-                        if (i < n) { i = i + 1; }
+                        if (i < n) {
+                            i = i + 1;
+                        }
                         spans.add(new Span(start, i, Tok.CHAR) on heap);
                     } else if (this.isDigit(c)) {
-                        while (i < n && (this.isAlnum(line.charAt(i)) || line.charAt(i) == '.')) { i = i + 1; }
+                        while (i < n && (this.isAlnum(line.charAt(i)) || line.charAt(i) == '.')) {
+                            i = i + 1;
+                        }
                         spans.add(new Span(start, i, Tok.NUMBER) on heap);
                     } else if (this.isAlpha(c)) {
-                        while (i < n && this.isAlnum(line.charAt(i))) { i = i + 1; }
+                        while (i < n && this.isAlnum(line.charAt(i))) {
+                            i = i + 1;
+                        }
                         String word = line.substring(start, i);
                         mutable Tok kind = this.classify(word);
                         if (kind == Tok.IDENT) {
                             // an identifier: a call site (name followed by '(') or a CamelCase type reference
-                            if (this.nextNonSpaceIs(line, i, '(')) { kind = Tok.FUNC; }
-                            else if (this.isUpper(word.charAt(0))) { kind = Tok.TYPENAME; }
+                            if (this.nextNonSpaceIs(line, i, '(')) {
+                                kind = Tok.FUNC;
+                            }
+                            else if (this.isUpper(word.charAt(0))) {
+                                kind = Tok.TYPENAME;
+                            }
                         }
                         spans.add(new Span(start, i, kind) on heap);
                     } else {

@@ -35,12 +35,17 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < len) {
                         char ch = line.charAt(i);
-                        if (ch == '{') { stack.add(row); }
+                        if (ch == '{') {
+                            stack.add(row);
+                        }
                         else if (ch == '}') {
                             if (stack.size() > 0) {
                                 int openRow = stack.get(stack.size() - 1);
                                 stack.removeAt(stack.size() - 1);
-                                if (row > openRow) { opens.add(openRow); closes.add(row); }
+                                if (row > openRow) {
+                                    opens.add(openRow);
+                                    closes.add(row);
+                                }
                             }
                         }
                         i = i + 1;
@@ -55,8 +60,13 @@ public bundle forge {
                     int o = opens.get(k);
                     int c = closes.get(k);
                     int idx = this.indexOfOpen(o);
-                    if (idx < 0) { this.openLines.add(o); this.closeLines.add(c); }
-                    else if (c > this.closeLines.get(idx)) { this.closeLines.set(idx, c); }
+                    if (idx < 0) {
+                        this.openLines.add(o);
+                        this.closeLines.add(c);
+                    }
+                    else if (c > this.closeLines.get(idx)) {
+                        this.closeLines.set(idx, c);
+                    }
                     k = k + 1;
                 }
                 // prune collapsed heads that are no longer foldable
@@ -64,7 +74,9 @@ public bundle forge {
                 mutable int f = 0;
                 while (f < this.foldedHeads.size()) {
                     int h = this.foldedHeads.get(f);
-                    if (this.indexOfOpen(h) >= 0) { keep.add(h); }
+                    if (this.indexOfOpen(h) >= 0) {
+                        keep.add(h);
+                    }
                     f = f + 1;
                 }
                 this.foldedHeads = keep;
@@ -73,47 +85,68 @@ public bundle forge {
             private method indexOfOpen(int line) returns int {
                 mutable int i = 0;
                 while (i < this.openLines.size()) {
-                    if (this.openLines.get(i) == line) { return i; }
+                    if (this.openLines.get(i) == line) {
+                        return i;
+                    }
                     i = i + 1;
                 }
                 return 0 - 1;
             }
 
-            public method foldableCount() returns int { return this.openLines.size(); }
-            public method isFoldable(int line) returns boolean { return this.indexOfOpen(line) >= 0; }
+            public method foldableCount() returns int {
+                return this.openLines.size();
+            }
+            public method isFoldable(int line) returns boolean {
+                return this.indexOfOpen(line) >= 0;
+            }
             public method endOf(int line) returns int {
                 int idx = this.indexOfOpen(line);
-                if (idx < 0) { return 0 - 1; }
+                if (idx < 0) {
+                    return 0 - 1;
+                }
                 return this.closeLines.get(idx);
             }
             public method isFolded(int line) returns boolean {
                 mutable int i = 0;
                 while (i < this.foldedHeads.size()) {
-                    if (this.foldedHeads.get(i) == line) { return true; }
+                    if (this.foldedHeads.get(i) == line) {
+                        return true;
+                    }
                     i = i + 1;
                 }
                 return false;
             }
-            public method anyFolded() returns boolean { return this.foldedHeads.size() > 0; }
+            public method anyFolded() returns boolean {
+                return this.foldedHeads.size() > 0;
+            }
 
             // Toggle the fold whose header is `line` (no-op if the line isn't foldable).
             public method toggle(int line) returns void {
-                if (!this.isFoldable(line)) { return; }
+                if (!this.isFoldable(line)) {
+                    return;
+                }
                 mutable int i = 0;
                 while (i < this.foldedHeads.size()) {
-                    if (this.foldedHeads.get(i) == line) { this.foldedHeads.removeAt(i); return; }
+                    if (this.foldedHeads.get(i) == line) {
+                        this.foldedHeads.removeAt(i);
+                        return;
+                    }
                     i = i + 1;
                 }
                 this.foldedHeads.add(line);
             }
-            public method unfoldAll() returns void { this.foldedHeads = new ArrayList<int>() on heap; }
+            public method unfoldAll() returns void {
+                this.foldedHeads = new ArrayList<int>() on heap;
+            }
 
             // A line is hidden when it lies strictly inside any collapsed range (header excluded).
             public method isHidden(int line) returns boolean {
                 mutable int i = 0;
                 while (i < this.foldedHeads.size()) {
                     int h = this.foldedHeads.get(i);
-                    if (h < line && line <= this.endOf(h)) { return true; }
+                    if (h < line && line <= this.endOf(h)) {
+                        return true;
+                    }
                     i = i + 1;
                 }
                 return false;
@@ -121,7 +154,9 @@ public bundle forge {
             // The nearest visible line at or after `line` (skips hidden lines).
             public method firstVisibleFrom(int line, int lineCount) returns int {
                 mutable int v = line;
-                while (v < lineCount && this.isHidden(v)) { v = v + 1; }
+                while (v < lineCount && this.isHidden(v)) {
+                    v = v + 1;
+                }
                 return v;
             }
             // The fold header that hides `line`, or -1 if the line is visible.
@@ -131,7 +166,9 @@ public bundle forge {
                 while (i < this.foldedHeads.size()) {
                     int h = this.foldedHeads.get(i);
                     if (h < line && line <= this.endOf(h)) {
-                        if (best < 0 || h > best) { best = h; }
+                        if (best < 0 || h > best) {
+                            best = h;
+                        }
                     }
                     i = i + 1;
                 }
@@ -147,7 +184,9 @@ public bundle forge {
                     int o = this.openLines.get(i);
                     int c = this.closeLines.get(i);
                     if (o <= line && line <= c) {
-                        if (best < 0 || o > best) { best = o; }
+                        if (best < 0 || o > best) {
+                            best = o;
+                        }
                     }
                     i = i + 1;
                 }
@@ -158,7 +197,9 @@ public bundle forge {
                 int n = line.length();
                 mutable int i = 0;
                 while (i + 1 < n) {
-                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') { return line.substring(0, i); }
+                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') {
+                        return line.substring(0, i);
+                    }
                     i = i + 1;
                 }
                 return line;

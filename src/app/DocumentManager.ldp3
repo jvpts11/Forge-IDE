@@ -24,13 +24,25 @@ public bundle forge {
                 this.cols = cols;
             }
 
-            public method count() returns int { return this.tabs.size(); }
-            public method activeIndex() returns int { return this.active; }
-            public method hasActive() returns boolean { return this.active >= 0; }
-            public method active() returns Controller* { return this.tabs.get(this.active); }
-            public method at(int i) returns Controller* { return this.tabs.get(i); }
+            public method count() returns int {
+                return this.tabs.size();
+            }
+            public method activeIndex() returns int {
+                return this.active;
+            }
+            public method hasActive() returns boolean {
+                return this.active >= 0;
+            }
+            public method active() returns Controller* {
+                return this.tabs.get(this.active);
+            }
+            public method at(int i) returns Controller* {
+                return this.tabs.get(i);
+            }
             public method setActive(int i) returns void {
-                if (i >= 0 && i < this.tabs.size()) { this.active = i; }
+                if (i >= 0 && i < this.tabs.size()) {
+                    this.active = i;
+                }
             }
 
             // Open a fresh empty document and make it active.
@@ -57,24 +69,39 @@ public bundle forge {
 
             // Close tab `i`, keeping the active index pointing at a sensible neighbour.
             public method close(int i) returns void {
-                if (i < 0 || i >= this.tabs.size()) { return; }
+                if (i < 0 || i >= this.tabs.size()) {
+                    return;
+                }
                 this.tabs.removeAt(i);
-                if (this.tabs.size() == 0) { this.active = 0 - 1; return; }
-                if (this.active >= this.tabs.size()) { this.active = this.tabs.size() - 1; }
-                else if (this.active > i) { this.active = this.active - 1; }
+                if (this.tabs.size() == 0) {
+                    this.active = 0 - 1;
+                    return;
+                }
+                if (this.active >= this.tabs.size()) {
+                    this.active = this.tabs.size() - 1;
+                }
+                else if (this.active > i) {
+                    this.active = this.active - 1;
+                }
             }
 
             // Tab label: the file's basename (or "untitled"), with " *" when it has unsaved edits.
             public method title(int i) returns String {
                 String p = this.tabs.get(i).document().path();
                 mutable String name = "untitled";
-                if (p.length() > 0) { name = Paths.basename(p); }
-                if (this.tabs.get(i).document().isModified()) { return name + " *"; }
+                if (p.length() > 0) {
+                    name = Paths.basename(p);
+                }
+                if (this.tabs.get(i).document().isModified()) {
+                    return name + " *";
+                }
                 return name;
             }
             public method titles() returns ArrayList<String> {
                 ArrayList<String> out = new ArrayList<String>() on heap;
-                for (mutable int i = 0; i < this.tabs.size(); i++) { out.add(this.title(i)); }
+                for (mutable int i = 0; i < this.tabs.size(); i++) {
+                    out.add(this.title(i));
+                }
                 return out;
             }
             // The file paths of the open tabs (skipping untitled buffers) -- used to save/restore the session.
@@ -83,7 +110,9 @@ public bundle forge {
                 mutable int i = 0;
                 while (i < this.tabs.size()) {
                     String p = this.tabs.get(i).document().path();
-                    if (p.length() > 0) { out.add(p); }
+                    if (p.length() > 0) {
+                        out.add(p);
+                    }
                     i = i + 1;
                 }
                 return out;

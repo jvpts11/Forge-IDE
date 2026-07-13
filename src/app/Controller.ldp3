@@ -48,86 +48,203 @@ public bundle forge {
                 this.moved();
             }
 
-            public method editor() returns Editor* { return this.ed; }
-            public method viewport() returns Viewport* { return this.view; }
-            public method document() returns Document* { return this.doc; }
-            public method lineCount() returns int { return this.ed.document().lineCount(); }
-            public method setScrollMargin(int m) returns void { this.scrollMargin = m; }
-            public method setTabWidth(int n) returns void { this.ed.setTabWidth(n); }
+            public method editor() returns Editor* {
+                return this.ed;
+            }
+            public method viewport() returns Viewport* {
+                return this.view;
+            }
+            public method document() returns Document* {
+                return this.doc;
+            }
+            public method lineCount() returns int {
+                return this.ed.document().lineCount();
+            }
+            public method setScrollMargin(int m) returns void {
+                this.scrollMargin = m;
+            }
+            public method setTabWidth(int n) returns void {
+                this.ed.setTabWidth(n);
+            }
 
             // --- text-changing commands (route through the multi-caret variants; a single caret behaves as
             // before) ---
-            public method insertChar(char c) returns void { this.ed.typeMulti(c); this.edited(); }
-            public method insertText(String s) returns void { this.ed.insertText(s); this.edited(); }
-            public method newline() returns void { this.ed.enterMulti(); this.edited(); }
-            public method backspace() returns void { this.ed.backspaceMulti(); this.edited(); }
-            public method deleteForward() returns void { this.ed.deleteForward(); this.edited(); }
-            public method deleteWordLeft() returns void { this.ed.deleteWordLeft(); this.edited(); }
-            public method deleteWordRight() returns void { this.ed.deleteWordRight(); this.edited(); }
+            public method insertChar(char c) returns void {
+                this.ed.typeMulti(c);
+                this.edited();
+            }
+            public method insertText(String s) returns void {
+                this.ed.insertText(s);
+                this.edited();
+            }
+            public method newline() returns void {
+                this.ed.enterMulti();
+                this.edited();
+            }
+            public method backspace() returns void {
+                this.ed.backspaceMulti();
+                this.edited();
+            }
+            public method deleteForward() returns void {
+                this.ed.deleteForward();
+                this.edited();
+            }
+            public method deleteWordLeft() returns void {
+                this.ed.deleteWordLeft();
+                this.edited();
+            }
+            public method deleteWordRight() returns void {
+                this.ed.deleteWordRight();
+                this.edited();
+            }
             public method indent() returns void {
-                if (this.ed.hasSelection()) { this.ed.indentSelection(); } else { this.ed.indent(); }
+                if (this.ed.hasSelection()) {
+                    this.ed.indentSelection();
+                } else {
+                    this.ed.indent();
+                }
                 this.edited();
             }
             public method dedent() returns void {
-                if (this.ed.hasSelection()) { this.ed.dedentSelection(); } else { this.ed.dedent(); }
+                if (this.ed.hasSelection()) {
+                    this.ed.dedentSelection();
+                } else {
+                    this.ed.dedent();
+                }
                 this.edited();
             }
-            public method toggleComment() returns void { this.ed.toggleComment(); this.edited(); }
-            public method duplicateLine() returns void { this.ed.duplicateLine(); this.edited(); }
-            public method deleteLine() returns void { this.ed.deleteLine(); this.edited(); }
-            public method moveLineUp() returns void { this.ed.moveLineUp(); this.edited(); }
-            public method moveLineDown() returns void { this.ed.moveLineDown(); this.edited(); }
-            public method cut() returns void { this.ed.cut(); this.edited(); }
-            public method paste() returns void { this.ed.paste(); this.edited(); }
-            public method copy() returns void { this.ed.copy(); }
+            public method toggleComment() returns void {
+                this.ed.toggleComment();
+                this.edited();
+            }
+            public method duplicateLine() returns void {
+                this.ed.duplicateLine();
+                this.edited();
+            }
+            public method deleteLine() returns void {
+                this.ed.deleteLine();
+                this.edited();
+            }
+            public method moveLineUp() returns void {
+                this.ed.moveLineUp();
+                this.edited();
+            }
+            public method moveLineDown() returns void {
+                this.ed.moveLineDown();
+                this.edited();
+            }
+            public method cut() returns void {
+                this.ed.cut();
+                this.edited();
+            }
+            public method paste() returns void {
+                this.ed.paste();
+                this.edited();
+            }
+            public method copy() returns void {
+                this.ed.copy();
+            }
 
-            public method undo() returns boolean { boolean r = this.ed.undo(); this.edited(); return r; }
-            public method redo() returns boolean { boolean r = this.ed.redo(); this.edited(); return r; }
+            public method undo() returns boolean {
+                boolean r = this.ed.undo();
+                this.edited();
+                return r;
+            }
+            public method redo() returns boolean {
+                boolean r = this.ed.redo();
+                this.edited();
+                return r;
+            }
 
             // --- caret motion (extend == Shift held: extend the selection instead of clearing it) ---
             public method moveLeft(boolean extend) returns void {
-                if (extend) { this.ed.selectLeft(); } else { this.ed.moveLeft(); }
+                if (extend) {
+                    this.ed.selectLeft();
+                } else {
+                    this.ed.moveLeft();
+                }
                 this.moved();
             }
             public method moveRight(boolean extend) returns void {
-                if (extend) { this.ed.selectRight(); } else { this.ed.moveRight(); }
+                if (extend) {
+                    this.ed.selectRight();
+                } else {
+                    this.ed.moveRight();
+                }
                 this.moved();
             }
             public method moveUp(boolean extend) returns void {
-                if (extend) { this.ed.selectUp(); } else { this.ed.moveUp(); }
+                if (extend) {
+                    this.ed.selectUp();
+                } else {
+                    this.ed.moveUp();
+                }
                 this.moved();
             }
             public method moveDown(boolean extend) returns void {
-                if (extend) { this.ed.selectDown(); } else { this.ed.moveDown(); }
+                if (extend) {
+                    this.ed.selectDown();
+                } else {
+                    this.ed.moveDown();
+                }
                 this.moved();
             }
             public method moveWordLeft(boolean extend) returns void {
-                if (extend) { this.ed.selectWordLeft(); } else { this.ed.moveWordLeft(); }
+                if (extend) {
+                    this.ed.selectWordLeft();
+                } else {
+                    this.ed.moveWordLeft();
+                }
                 this.moved();
             }
             public method moveWordRight(boolean extend) returns void {
-                if (extend) { this.ed.selectWordRight(); } else { this.ed.moveWordRight(); }
+                if (extend) {
+                    this.ed.selectWordRight();
+                } else {
+                    this.ed.moveWordRight();
+                }
                 this.moved();
             }
             public method moveLineStart(boolean extend) returns void {
-                if (extend) { this.ed.selectLineStart(); } else { this.ed.moveLineStart(); }
+                if (extend) {
+                    this.ed.selectLineStart();
+                } else {
+                    this.ed.moveLineStart();
+                }
                 this.moved();
             }
             public method moveLineEnd(boolean extend) returns void {
-                if (extend) { this.ed.selectLineEnd(); } else { this.ed.moveLineEnd(); }
+                if (extend) {
+                    this.ed.selectLineEnd();
+                } else {
+                    this.ed.moveLineEnd();
+                }
                 this.moved();
             }
             public method moveDocStart(boolean extend) returns void {
-                if (extend) { this.ed.selectDocStart(); } else { this.ed.moveDocStart(); }
+                if (extend) {
+                    this.ed.selectDocStart();
+                } else {
+                    this.ed.moveDocStart();
+                }
                 this.moved();
             }
             public method moveDocEnd(boolean extend) returns void {
-                if (extend) { this.ed.selectDocEnd(); } else { this.ed.moveDocEnd(); }
+                if (extend) {
+                    this.ed.selectDocEnd();
+                } else {
+                    this.ed.moveDocEnd();
+                }
                 this.moved();
             }
-            public method selectAll() returns void { this.ed.selectAll(); this.moved(); }
+            public method selectAll() returns void {
+                this.ed.selectAll();
+                this.moved();
+            }
             // The bracket that pairs with the one at/near the caret (invalid Match if none) -- for highlighting.
-            public method matchingBracket() returns Match* { return this.ed.matchingBracket(); }
+            public method matchingBracket() returns Match* {
+                return this.ed.matchingBracket();
+            }
 
             // --- code intelligence ---
             // The identifier at document position (row, col), or "" if none.
@@ -225,11 +342,23 @@ public bundle forge {
             }
 
             // Mouse: place the caret at a document position (a hit-test result).
-            public method placeCaret(int row, int col) returns void { this.ed.setCaret(row, col); this.moved(); }
+            public method placeCaret(int row, int col) returns void {
+                this.ed.setCaret(row, col);
+                this.moved();
+            }
             // Mouse press then drag: anchor a selection, then extend it to the dragged position.
-            public method beginSelect(int row, int col) returns void { this.ed.beginSelect(row, col); this.moved(); }
-            public method extendSelectTo(int row, int col) returns void { this.ed.extendSelectTo(row, col); this.moved(); }
-            public method selectWordAt(int row, int col) returns void { this.ed.selectWordAt(row, col); this.moved(); }
+            public method beginSelect(int row, int col) returns void {
+                this.ed.beginSelect(row, col);
+                this.moved();
+            }
+            public method extendSelectTo(int row, int col) returns void {
+                this.ed.extendSelectTo(row, col);
+                this.moved();
+            }
+            public method selectWordAt(int row, int col) returns void {
+                this.ed.selectWordAt(row, col);
+                this.moved();
+            }
 
             // --- multi-cursor ---
             public method addCaretBelow() returns void {
@@ -263,7 +392,11 @@ public bundle forge {
             }
             // Mouse wheel: scroll the viewport by `delta` lines without moving the caret.
             public method scrollLines(int delta) returns void {
-                if (delta < 0) { this.view.scrollUp(0 - delta); } else { this.view.scrollDown(delta); }
+                if (delta < 0) {
+                    this.view.scrollUp(0 - delta);
+                } else {
+                    this.view.scrollDown(delta);
+                }
             }
             // Window resize: re-fit the viewport to the new pane size.
             public method resizeViewport(int rows, int cols) returns void {
@@ -275,20 +408,30 @@ public bundle forge {
             public method pageDown(boolean extend) returns void {
                 int amount = this.view.height() - 1;
                 for (mutable int i = 0; i < amount; i++) {
-                    if (extend) { this.ed.selectDown(); } else { this.ed.moveDown(); }
+                    if (extend) {
+                        this.ed.selectDown();
+                    } else {
+                        this.ed.moveDown();
+                    }
                 }
                 this.moved();
             }
             public method pageUp(boolean extend) returns void {
                 int amount = this.view.height() - 1;
                 for (mutable int i = 0; i < amount; i++) {
-                    if (extend) { this.ed.selectUp(); } else { this.ed.moveUp(); }
+                    if (extend) {
+                        this.ed.selectUp();
+                    } else {
+                        this.ed.moveUp();
+                    }
                 }
                 this.moved();
             }
 
             // --- search / file ---
-            public method matchCount(String needle) returns int { return this.ed.matchCount(needle); }
+            public method matchCount(String needle) returns int {
+                return this.ed.matchCount(needle);
+            }
             public method find(String needle) returns boolean {
                 boolean r = this.ed.find(needle); this.moved(); return r;
             }
@@ -306,14 +449,24 @@ public bundle forge {
             }
             // Save to disk (a no-op for an untitled buffer -- a Save As prompt is the shell's job).
             public method save() returns void {
-                if (this.doc.path().length() > 0) { this.doc.save(); }
+                if (this.doc.path().length() > 0) {
+                    this.doc.save();
+                }
             }
-            public method saveAs(String path) returns void { this.doc.saveAs(path); }
+            public method saveAs(String path) returns void {
+                this.doc.saveAs(path);
+            }
 
             // --- render queries (the UI reads these to paint one frame) ---
-            public method visibleRows() returns int { return this.view.lastLine() - this.view.firstLine(); }
-            public method firstLine() returns int { return this.view.firstLine(); }
-            public method firstColumn() returns int { return this.view.firstColumn(); }
+            public method visibleRows() returns int {
+                return this.view.lastLine() - this.view.firstLine();
+            }
+            public method firstLine() returns int {
+                return this.view.firstLine();
+            }
+            public method firstColumn() returns int {
+                return this.view.firstColumn();
+            }
             // The document row drawn at screen row `screenRow`, walking from the viewport top and skipping any
             // lines hidden by a collapsed fold. This is the single fold-aware mapping the UI reads through.
             public method lineNumberAt(int screenRow) returns int {
@@ -322,10 +475,14 @@ public bundle forge {
                 mutable int steps = screenRow;
                 while (steps > 0 && line < total - 1) {
                     line = line + 1;
-                    while (line < total && this.folds.isHidden(line)) { line = line + 1; }
+                    while (line < total && this.folds.isHidden(line)) {
+                        line = line + 1;
+                    }
                     steps = steps - 1;
                 }
-                if (line >= total) { line = total - 1; }
+                if (line >= total) {
+                    line = total - 1;
+                }
                 return line;
             }
             public method renderLine(int screenRow) returns String {
@@ -338,19 +495,29 @@ public bundle forge {
             // Negative if the line is above the viewport; -1 if the line is hidden by a fold.
             public method screenRowForDocLine(int docLine) returns int {
                 int top = this.folds.firstVisibleFrom(this.view.firstLine(), this.ed.document().lineCount());
-                if (docLine < top) { return docLine - top; }
-                if (this.folds.isHidden(docLine)) { return 0 - 1; }
+                if (docLine < top) {
+                    return docLine - top;
+                }
+                if (this.folds.isHidden(docLine)) {
+                    return 0 - 1;
+                }
                 mutable int count = 0;
                 mutable int line = top;
                 while (line < docLine) {
                     line = line + 1;
-                    if (!this.folds.isHidden(line)) { count = count + 1; }
+                    if (!this.folds.isHidden(line)) {
+                        count = count + 1;
+                    }
                 }
                 return count;
             }
             // Caret position relative to the viewport's top-left (fold-aware for the row).
-            public method caretScreenRow() returns int { return this.screenRowForDocLine(this.ed.cursorRow()); }
-            public method caretScreenCol() returns int { return this.ed.cursorCol() - this.view.firstColumn(); }
+            public method caretScreenRow() returns int {
+                return this.screenRowForDocLine(this.ed.cursorRow());
+            }
+            public method caretScreenCol() returns int {
+                return this.ed.cursorCol() - this.view.firstColumn();
+            }
 
             // Effective indentation (in leading spaces) for the indent guides at a line. A blank line carries
             // the guides of its surrounding block -- the deeper of the nearest non-blank line above and below
@@ -402,17 +569,27 @@ public bundle forge {
             }
 
             // --- folding ---
-            public method isFoldable(int docLine) returns boolean { return this.folds.isFoldable(docLine); }
-            public method isFolded(int docLine) returns boolean { return this.folds.isFolded(docLine); }
-            public method foldEnd(int docLine) returns int { return this.folds.endOf(docLine); }
-            public method anyFolded() returns boolean { return this.folds.anyFolded(); }
+            public method isFoldable(int docLine) returns boolean {
+                return this.folds.isFoldable(docLine);
+            }
+            public method isFolded(int docLine) returns boolean {
+                return this.folds.isFolded(docLine);
+            }
+            public method foldEnd(int docLine) returns int {
+                return this.folds.endOf(docLine);
+            }
+            public method anyFolded() returns boolean {
+                return this.folds.anyFolded();
+            }
             // Toggle the fold whose header is `docLine`. If the caret ends up hidden, move it to the header.
             public method toggleFold(int docLine) returns void {
                 this.folds.toggle(docLine);
                 int caret = this.ed.cursorRow();
                 if (this.folds.isHidden(caret)) {
                     int h = this.folds.headerHiding(caret);
-                    if (h >= 0) { this.ed.setCaret(h, 0); }
+                    if (h >= 0) {
+                        this.ed.setCaret(h, 0);
+                    }
                 }
                 this.moved();
             }
@@ -420,11 +597,19 @@ public bundle forge {
             // encloses the caret.
             public method toggleFoldAtCaret() returns void {
                 int caret = this.ed.cursorRow();
-                if (this.folds.isFoldable(caret)) { this.toggleFold(caret); return; }
+                if (this.folds.isFoldable(caret)) {
+                    this.toggleFold(caret);
+                    return;
+                }
                 int h = this.folds.enclosing(caret);
-                if (h >= 0) { this.toggleFold(h); }
+                if (h >= 0) {
+                    this.toggleFold(h);
+                }
             }
-            public method unfoldAll() returns void { this.folds.unfoldAll(); this.moved(); }
+            public method unfoldAll() returns void {
+                this.folds.unfoldAll();
+                this.moved();
+            }
         }
     }
 }

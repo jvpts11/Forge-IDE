@@ -22,10 +22,18 @@ public bundle forge {
                 this.totalLines = 1;
             }
 
-            public method firstLine() returns int { return this.top; }
-            public method firstColumn() returns int { return this.left; }
-            public method height() returns int { return this.rows; }
-            public method width() returns int { return this.cols; }
+            public method firstLine() returns int {
+                return this.top;
+            }
+            public method firstColumn() returns int {
+                return this.left;
+            }
+            public method height() returns int {
+                return this.rows;
+            }
+            public method width() returns int {
+                return this.cols;
+            }
 
             public method resize(int rows, int cols) returns void {
                 this.rows = rows;
@@ -40,7 +48,9 @@ public bundle forge {
             // One past the last visible line, clamped to the document's end.
             public method lastLine() returns int {
                 int last = this.top + this.rows;
-                if (last > this.totalLines) { return this.totalLines; }
+                if (last > this.totalLines) {
+                    return this.totalLines;
+                }
                 return last;
             }
             public method isLineVisible(int row) returns boolean {
@@ -64,20 +74,36 @@ public bundle forge {
                 } else if (col >= this.left + this.cols) {
                     this.left = col - this.cols + 1;
                 }
-                if (this.left < 0) { this.left = 0; }
+                if (this.left < 0) {
+                    this.left = 0;
+                }
                 return this.top != startTop || this.left != startLeft;
             }
 
-            public method scrollUp(int lines) returns void { this.top = this.top - lines; this.clampTop(); }
-            public method scrollDown(int lines) returns void { this.top = this.top + lines; this.clampTop(); }
-            public method pageUp() returns void { this.scrollUp(this.rows - 1); }
-            public method pageDown() returns void { this.scrollDown(this.rows - 1); }
+            public method scrollUp(int lines) returns void {
+                this.top = this.top - lines;
+                this.clampTop();
+            }
+            public method scrollDown(int lines) returns void {
+                this.top = this.top + lines;
+                this.clampTop();
+            }
+            public method pageUp() returns void {
+                this.scrollUp(this.rows - 1);
+            }
+            public method pageDown() returns void {
+                this.scrollDown(this.rows - 1);
+            }
 
             // Keep `top` in [0, max(0, totalLines - rows)] so the last screen isn't scrolled past the end.
             private method clampTop() returns void {
                 int maxTop = this.totalLines - this.rows;
-                if (this.top > maxTop) { this.top = maxTop; }
-                if (this.top < 0) { this.top = 0; }
+                if (this.top > maxTop) {
+                    this.top = maxTop;
+                }
+                if (this.top < 0) {
+                    this.top = 0;
+                }
             }
         }
     }

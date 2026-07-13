@@ -173,7 +173,9 @@ public bundle forge {
                     } else if (down && prevDown && dragging && !ov.isOpen()) {
                         GuiApp.dragExtend(screen, wb, win);                   // extend the selection
                     }
-                    if (!down) { dragging = false; }
+                    if (!down) {
+                        dragging = false;
+                    }
                     prevDown = down;
                     // a "File > Open Folder" click asked to switch projects: swap the tree live
                     if (req.path.length() > 0) {
@@ -190,14 +192,20 @@ public bundle forge {
                     }
                     // mouse wheel -> scroll the view (3 lines per notch)
                     int scroll = win.takeScroll();
-                    if (scroll != 0) { wb.active().scrollLines(0 - (scroll / 120) * 3); }
+                    if (scroll != 0) {
+                        wb.active().scrollLines(0 - (scroll / 120) * 3);
+                    }
                     // Ctrl+= / Ctrl+- zoom the editor font in and out (reloads the glyph atlas at the new
                     // size, then re-fits the viewport to the new metrics). Edge-triggered so one press = one step.
                     boolean zplus = win.modCtrl() && win.keyDown(187);   // VK_OEM_PLUS (the '=' key)
                     boolean zminus = win.modCtrl() && win.keyDown(189);  // VK_OEM_MINUS (the '-' key)
                     if ((zplus || zminus) && !prevZoom) {
-                        if (zplus && fontPx < 32) { fontPx = fontPx + 2; }
-                        if (zminus && fontPx > 10) { fontPx = fontPx - 2; }
+                        if (zplus && fontPx < 32) {
+                            fontPx = fontPx + 2;
+                        }
+                        if (zminus && fontPx > 10) {
+                            fontPx = fontPx - 2;
+                        }
                         screen.setFont(GuiApp.loadFont(win, fontPx));
                         wb.active().resizeViewport(screen.paneRowsFor(win.height()),
                                                    screen.paneColsFor(win.width()));
@@ -215,7 +223,9 @@ public bundle forge {
                     // blinks about twice a second.
                     win.setIBeam(GuiApp.overEditor(screen, win, ov, h2));
                     blink = blink + 1;
-                    if (blink >= 60) { blink = 0; }
+                    if (blink >= 60) {
+                        blink = 0;
+                    }
                     screen.setCaretOn(blink < 30);
                     GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
                     win.swap();
@@ -228,7 +238,9 @@ public bundle forge {
             // bar, above the status bar) and no modal overlay covers it -- the region that gets the I-beam.
             private static method overEditor(GpuScreen* screen, GlWindow* win, Overlay* ov, int screenH)
                     returns boolean {
-                if (ov.isOpen()) { return false; }
+                if (ov.isOpen()) {
+                    return false;
+                }
                 int mx = win.cursorX();
                 int my = win.cursorY();
                 return mx >= screen.treeWidth() && my >= screen.editorTop() && my < screenH - screen.statusH();
@@ -258,17 +270,30 @@ public bundle forge {
                     }
                     if (my < screen.menuH()) {
                         int ti = screen.menuTitleAtX(menu, mx);
-                        if (ti >= 0) { menu.toggle(ti); return; }
+                        if (ti >= 0) {
+                            menu.toggle(ti);
+                            return;
+                        }
                     }
                     menu.close();
                     return;
                 }
                 if (my < screen.menuH()) {
                     int tb = screen.toolButtonAt(mx, my, win.width());
-                    if (tb == 1) { menu.close(); wb.runCommand("run.program"); return; }
-                    if (tb == 0) { menu.close(); wb.runCommand("run.build"); return; }
+                    if (tb == 1) {
+                        menu.close();
+                        wb.runCommand("run.program");
+                        return;
+                    }
+                    if (tb == 0) {
+                        menu.close();
+                        wb.runCommand("run.build");
+                        return;
+                    }
                     int ti = screen.menuTitleAtX(menu, mx);
-                    if (ti >= 0) { menu.openAt(ti); }
+                    if (ti >= 0) {
+                        menu.openAt(ti);
+                    }
                     return;
                 }
                 if (my < screen.contentTop()) {
@@ -278,7 +303,10 @@ public bundle forge {
                         return;
                     }
                     int ti = screen.tabAtX(wb.documents(), mx);
-                    if (ti >= 0) { wb.documents().setActive(ti); wb.refreshGit(); }
+                    if (ti >= 0) {
+                        wb.documents().setActive(ti);
+                        wb.refreshGit();
+                    }
                     return;
                 }
                 if (mx < screen.treeWidth()) {
@@ -286,7 +314,11 @@ public bundle forge {
                     ArrayList<FileNode*>* rows = tree.visible();
                     if (ri >= 0 && ri < rows.size()) {
                         FileNode* node = rows.get(ri);
-                        if (node.isDir) { tree.toggle(node); } else { wb.openFile(node.path); }
+                        if (node.isDir) {
+                            tree.toggle(node);
+                        } else {
+                            wb.openFile(node.path);
+                        }
                     }
                     return;
                 }
@@ -308,7 +340,9 @@ public bundle forge {
                             int visRows = (panelH - headerH) / ch;
                             int total = wb.output().lineCount();
                             mutable int startRow = 0;
-                            if (total > visRows) { startRow = total - visRows; }
+                            if (total > visRows) {
+                                startRow = total - visRows;
+                            }
                             int idx = startRow + (my - bodyTop) / ch;
                             String nf = wb.output().navFileAt(idx);
                             int nl = wb.output().navLineAt(idx);
@@ -321,16 +355,22 @@ public bundle forge {
                     }
                 }
                 int screenRow = (my - screen.textOy()) / screen.lineH();
-                if (screenRow < 0) { return; }
+                if (screenRow < 0) {
+                    return;
+                }
                 Controller* c = wb.active();
                 // a click in the gutter (left of the code) toggles the fold on a foldable line
                 if (mx < screen.textOx()) {
                     int docLine = c.lineNumberAt(screenRow);
-                    if (c.isFoldable(docLine)) { c.toggleFold(docLine); }
+                    if (c.isFoldable(docLine)) {
+                        c.toggleFold(docLine);
+                    }
                     return;
                 }
                 mutable int col = (mx - screen.textOx()) / screen.charW();
-                if (col < 0) { col = 0; }
+                if (col < 0) {
+                    col = 0;
+                }
                 if (alt) {
                     c.addCaretAt(c.lineNumberAt(screenRow), c.firstColumn() + col);   // Alt+click adds a caret
                 } else {
@@ -372,9 +412,13 @@ public bundle forge {
             // Extend the selection to a pixel (mx, my) -- shared by the live drag and the serve `dragto` command.
             private static method dragExtendAt(GpuScreen* screen, Workbench* wb, int mx, int my) returns void {
                 mutable int sr = (my - screen.textOy()) / screen.lineH();
-                if (sr < 0) { sr = 0; }
+                if (sr < 0) {
+                    sr = 0;
+                }
                 mutable int col = (mx - screen.textOx()) / screen.charW();
-                if (col < 0) { col = 0; }
+                if (col < 0) {
+                    col = 0;
+                }
                 Controller* c = wb.active();
                 c.extendSelectTo(c.lineNumberAt(sr), c.firstColumn() + col);
                 return;
@@ -392,20 +436,51 @@ public bundle forge {
                     }
                     return;
                 }
-                if (id.equals("file.save")) { wb.active().save(); return; }
-                if (id.equals("file.saveAs")) { GuiApp.runSaveAs(win, wb); return; }
-                if (id.equals("edit.find")) { ov.open(2); return; }
-                if (id.equals("view.palette")) { ov.open(1); return; }
-                if (id.equals("view.fold")) { wb.active().toggleFoldAtCaret(); return; }
-                if (id.equals("view.unfoldAll")) { wb.active().unfoldAll(); return; }
+                if (id.equals("file.save")) {
+                    wb.active().save();
+                    return;
+                }
+                if (id.equals("file.saveAs")) {
+                    GuiApp.runSaveAs(win, wb);
+                    return;
+                }
+                if (id.equals("edit.find")) {
+                    ov.open(2);
+                    return;
+                }
+                if (id.equals("view.palette")) {
+                    ov.open(1);
+                    return;
+                }
+                if (id.equals("view.fold")) {
+                    wb.active().toggleFoldAtCaret();
+                    return;
+                }
+                if (id.equals("view.unfoldAll")) {
+                    wb.active().unfoldAll();
+                    return;
+                }
                 if (id.equals("file.close")) {
                     wb.closeActiveTab();
                     return;
                 }
-                if (id.equals("app.quit")) { Win32.PostMessageA(win.hwnd, 16, 0, 0); return; }   // WM_CLOSE
-                if (id.equals("help.stdlib")) { GuiApp.openReference(wb, "stdlib.ldp3"); return; }
-                if (id.equals("help.langref")) { GuiApp.openReference(wb, "language-reference.md"); return; }
-                if (id.equals("help.keywords")) { GuiApp.openReference(wb, "keywords.md"); return; }
+                if (id.equals("app.quit")) {
+                    Win32.PostMessageA(win.hwnd, 16, 0, 0);
+                    return;
+                }
+                // WM_CLOSE
+                if (id.equals("help.stdlib")) {
+                    GuiApp.openReference(wb, "stdlib.ldp3");
+                    return;
+                }
+                if (id.equals("help.langref")) {
+                    GuiApp.openReference(wb, "language-reference.md");
+                    return;
+                }
+                if (id.equals("help.keywords")) {
+                    GuiApp.openReference(wb, "keywords.md");
+                    return;
+                }
                 if (id.equals("help.about")) {
                     wb.output().banner("About Forge", "Forge -- the LDP3 IDE, written in LDP3.");
                     return;
@@ -419,7 +494,9 @@ public bundle forge {
             private static method runSaveAs(GlWindow* win, Workbench* wb) returns void {
                 Controller* c = wb.active();
                 mutable String suggested = Paths.basename(c.document().path());
-                if (suggested.length() == 0) { suggested = "untitled.ldp3"; }
+                if (suggested.length() == 0) {
+                    suggested = "untitled.ldp3";
+                }
                 String path = NativeDialog.saveFile(win.hwnd, suggested);
                 if (path.length() > 0) {
                     c.saveAs(path);
@@ -465,8 +542,12 @@ public bundle forge {
                     i = i + 1;
                 }
                 String r = sb.toString();
-                if (r.length() == 0) { return "App"; }
-                if (r.charAt(0) >= '0' && r.charAt(0) <= '9') { return "App" + r; }
+                if (r.length() == 0) {
+                    return "App";
+                }
+                if (r.charAt(0) >= '0' && r.charAt(0) <= '9') {
+                    return "App" + r;
+                }
                 return r;
             }
 
@@ -476,7 +557,9 @@ public bundle forge {
                 address buf = Memory.alloc(520);
                 int n = Win32.GetModuleFileNameA(0, cast<long>(buf), 520);
                 mutable String full = "";
-                if (n > 0) { full = Memory.readString(buf, n); }
+                if (n > 0) {
+                    full = Memory.readString(buf, n);
+                }
                 Memory.free(buf);
                 return Paths.dirname(full);
             }
@@ -538,8 +621,12 @@ public bundle forge {
                 while (running) {
                     win.pump();
                     String line = System.IO.Console.read();
-                    if (line.length() == 0) { running = false; }
-                    else if (GuiApp.firstWord(line).equals("quit")) { running = false; }
+                    if (line.length() == 0) {
+                        running = false;
+                    }
+                    else if (GuiApp.firstWord(line).equals("quit")) {
+                        running = false;
+                    }
                     else {
                         GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp, menu, req);
                         Win32.fflush(0);
@@ -557,10 +644,16 @@ public bundle forge {
                     mutable int i = 0;
                     while (i < arg.length()) {
                         char c = arg.charAt(i);
-                        if (ov.isOpen()) { ov.typeChar(c); } else { wb.handleKey(Key.ch(c)); }
+                        if (ov.isOpen()) {
+                            ov.typeChar(c);
+                        } else {
+                            wb.handleKey(Key.ch(c));
+                        }
                         i = i + 1;
                     }
-                    if (!ov.isOpen()) { comp.update(wb.active()); }
+                    if (!ov.isOpen()) {
+                        comp.update(wb.active());
+                    }
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("key")) {
                     GuiApp.serveKey(wb, ov, comp, arg);
@@ -588,7 +681,11 @@ public bundle forge {
                 } else if (cmd.equals("menu")) {
                     // menu <i> opens/toggles menu i; menu -1 closes any open menu
                     int mi = arg.toInt();
-                    if (mi < 0) { menu.close(); } else { menu.toggle(mi); }
+                    if (mi < 0) {
+                        menu.close();
+                    } else {
+                        menu.toggle(mi);
+                    }
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("menuitem")) {
                     // menuitem <i> runs item i of the currently open menu (scripted equivalent of a click)
@@ -616,18 +713,27 @@ public bundle forge {
                 } else if (cmd.equals("palette")) {
                     ov.open(1);
                     mutable int i = 0;
-                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    while (i < arg.length()) {
+                        ov.typeChar(arg.charAt(i));
+                        i = i + 1;
+                    }
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("find")) {
                     ov.open(2);
                     mutable int i = 0;
-                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    while (i < arg.length()) {
+                        ov.typeChar(arg.charAt(i));
+                        i = i + 1;
+                    }
                     wb.active().find(arg);
                     System.IO.Console.println("ok " + wb.active().matchCount(arg).toString() + " matches");
                 } else if (cmd.equals("findinfiles")) {
                     ov.openSearch(tree.allFiles());
                     mutable int i = 0;
-                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    while (i < arg.length()) {
+                        ov.typeChar(arg.charAt(i));
+                        i = i + 1;
+                    }
                     GuiApp.runGlobalSearch(ov, wb);
                     ov.close();
                     System.IO.Console.println("ok " + wb.output().lineCount().toString() + " result lines");
@@ -645,23 +751,35 @@ public bundle forge {
                 } else if (cmd.equals("symbols")) {
                     GuiApp.openSymbols(ov, wb);
                     mutable int i = 0;
-                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    while (i < arg.length()) {
+                        ov.typeChar(arg.charAt(i));
+                        i = i + 1;
+                    }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " symbols");
                 } else if (cmd.equals("wsymbols")) {
                     GuiApp.openWorkspaceSymbols(ov, wb, tree);
                     mutable int i = 0;
-                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    while (i < arg.length()) {
+                        ov.typeChar(arg.charAt(i));
+                        i = i + 1;
+                    }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " of "
                         + ov.items.size().toString() + " workspace symbols");
                 } else if (cmd.equals("quickopen")) {
                     ov.openFiles(tree.allFiles());
                     mutable int i = 0;
-                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    while (i < arg.length()) {
+                        ov.typeChar(arg.charAt(i));
+                        i = i + 1;
+                    }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " files");
                 } else if (cmd.equals("gotoline")) {
                     ov.open(5);
                     mutable int i = 0;
-                    while (i < arg.length()) { ov.typeChar(arg.charAt(i)); i = i + 1; }
+                    while (i < arg.length()) {
+                        ov.typeChar(arg.charAt(i));
+                        i = i + 1;
+                    }
                     GuiApp.runGoToLine(ov, wb);
                     ov.close();
                     System.IO.Console.println("ok ln=" + (wb.active().editor().cursorRow() + 1).toString());
@@ -708,7 +826,9 @@ public bundle forge {
                     if (wb.active().isFoldable(docLine)) {
                         wb.active().toggleFold(docLine);
                         mutable String st = "expanded";
-                        if (wb.active().isFolded(docLine)) { st = "folded"; }
+                        if (wb.active().isFolded(docLine)) {
+                            st = "folded";
+                        }
                         System.IO.Console.println("ok " + st);
                     } else {
                         System.IO.Console.println("ok not-foldable");
@@ -757,25 +877,58 @@ public bundle forge {
                 mutable String n = name;
                 mutable boolean more = true;
                 while (more) {
-                    if (n.startsWith("ctrl+")) { ctrl = true; n = n.substring(5, n.length()); }
-                    else if (n.startsWith("shift+")) { shift = true; n = n.substring(6, n.length()); }
-                    else if (n.startsWith("alt+")) { alt = true; n = n.substring(4, n.length()); }
-                    else { more = false; }
+                    if (n.startsWith("ctrl+")) {
+                        ctrl = true;
+                        n = n.substring(5, n.length());
+                    }
+                    else if (n.startsWith("shift+")) {
+                        shift = true;
+                        n = n.substring(6, n.length());
+                    }
+                    else if (n.startsWith("alt+")) {
+                        alt = true;
+                        n = n.substring(4, n.length());
+                    }
+                    else {
+                        more = false;
+                    }
                 }
                 int vk = GuiApp.vkForName(n);
                 if (ov.isOpen()) {
-                    if (vk == 27) { ov.close(); }
-                    else if (ov.mode == 2) { GuiApp.findKey(ov, wb, vk, ctrl, shift); }
-                    else if (vk == 8) { ov.backspace(); }
-                    else if (vk == 40) { ov.moveSel(1); }
-                    else if (vk == 38) { ov.moveSel(0 - 1); }
+                    if (vk == 27) {
+                        ov.close();
+                    }
+                    else if (ov.mode == 2) {
+                        GuiApp.findKey(ov, wb, vk, ctrl, shift);
+                    }
+                    else if (vk == 8) {
+                        ov.backspace();
+                    }
+                    else if (vk == 40) {
+                        ov.moveSel(1);
+                    }
+                    else if (vk == 38) {
+                        ov.moveSel(0 - 1);
+                    }
                     else if (vk == 13) {
-                        if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
-                        else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
-                        else if (ov.mode == 4) { GuiApp.runQuickOpen(ov, wb); }
-                        else if (ov.mode == 5) { GuiApp.runGoToLine(ov, wb); }
-                        else if (ov.mode == 6) { GuiApp.runGlobalSearch(ov, wb); }
-                        else { wb.active().find(ov.query); }
+                        if (ov.mode == 1) {
+                            GuiApp.runPaletteSelection(ov, wb);
+                        }
+                        else if (ov.mode == 3) {
+                            GuiApp.runSymbolSelection(ov, wb);
+                        }
+                        else if (ov.mode == 4) {
+                            GuiApp.runQuickOpen(ov, wb);
+                        }
+                        else if (ov.mode == 5) {
+                            GuiApp.runGoToLine(ov, wb);
+                        }
+                        else if (ov.mode == 6) {
+                            GuiApp.runGlobalSearch(ov, wb);
+                        }
+                        else {
+                            wb.active().find(ov.query);
+                        }
                         ov.close();
                     }
                 } else if (comp.active && GuiApp.completionKey(comp, wb, vk)) {
@@ -787,7 +940,11 @@ public bundle forge {
                     return;
                 } else {
                     GuiApp.dispatchKey(wb, vk, ctrl, shift, alt);
-                    if (vk == 8) { comp.update(wb.active()); } else { comp.dismiss(); }
+                    if (vk == 8) {
+                        comp.update(wb.active());
+                    } else {
+                        comp.dismiss();
+                    }
                 }
                 return;
             }
@@ -795,9 +952,13 @@ public bundle forge {
             private static method serveState(Workbench* wb) returns void {
                 Controller* c = wb.active();
                 mutable String path = c.document().path();
-                if (path.length() == 0) { path = "untitled"; }
+                if (path.length() == 0) {
+                    path = "untitled";
+                }
                 mutable int dirty = 0;
-                if (c.document().isModified()) { dirty = 1; }
+                if (c.document().isModified()) {
+                    dirty = 1;
+                }
                 System.IO.Console.println("state file=" + path
                     + " ln=" + (c.editor().cursorRow() + 1).toString()
                     + " col=" + (c.editor().cursorCol() + 1).toString()
@@ -809,34 +970,73 @@ public bundle forge {
 
             private static method firstWord(String s) returns String {
                 int sp = s.indexOf(" ");
-                if (sp < 0) { return s; }
+                if (sp < 0) {
+                    return s;
+                }
                 return s.substring(0, sp);
             }
             private static method rest(String s) returns String {
                 int sp = s.indexOf(" ");
-                if (sp < 0) { return ""; }
+                if (sp < 0) {
+                    return "";
+                }
                 return s.substring(sp + 1, s.length());
             }
             private static method vkForName(String name) returns int {
-                if (name.equals("enter")) { return 13; }
-                if (name.equals("backspace")) { return 8; }
-                if (name.equals("tab")) { return 9; }
-                if (name.equals("esc")) { return 27; }
-                if (name.equals("delete")) { return 46; }
-                if (name.equals("left")) { return 37; }
-                if (name.equals("up")) { return 38; }
-                if (name.equals("right")) { return 39; }
-                if (name.equals("down")) { return 40; }
-                if (name.equals("home")) { return 36; }
-                if (name.equals("end")) { return 35; }
-                if (name.equals("pageup")) { return 33; }
-                if (name.equals("pagedown")) { return 34; }
-                if (name.equals("slash")) { return 191; }
+                if (name.equals("enter")) {
+                    return 13;
+                }
+                if (name.equals("backspace")) {
+                    return 8;
+                }
+                if (name.equals("tab")) {
+                    return 9;
+                }
+                if (name.equals("esc")) {
+                    return 27;
+                }
+                if (name.equals("delete")) {
+                    return 46;
+                }
+                if (name.equals("left")) {
+                    return 37;
+                }
+                if (name.equals("up")) {
+                    return 38;
+                }
+                if (name.equals("right")) {
+                    return 39;
+                }
+                if (name.equals("down")) {
+                    return 40;
+                }
+                if (name.equals("home")) {
+                    return 36;
+                }
+                if (name.equals("end")) {
+                    return 35;
+                }
+                if (name.equals("pageup")) {
+                    return 33;
+                }
+                if (name.equals("pagedown")) {
+                    return 34;
+                }
+                if (name.equals("slash")) {
+                    return 191;
+                }
                 if (name.length() == 1) {
                     char c = name.charAt(0);
-                    if (c >= 'a' && c <= 'z') { return cast<int>(c) - 32; }   // 'a' -> VK 65
-                    if (c >= 'A' && c <= 'Z') { return cast<int>(c); }
-                    if (c >= '0' && c <= '9') { return cast<int>(c); }
+                    if (c >= 'a' && c <= 'z') {
+                        return cast<int>(c) - 32;
+                    }
+                    // 'a' -> VK 65
+                    if (c >= 'A' && c <= 'Z') {
+                        return cast<int>(c);
+                    }
+                    if (c >= '0' && c <= '9') {
+                        return cast<int>(c);
+                    }
                 }
                 return 0;
             }
@@ -948,9 +1148,15 @@ public bundle forge {
                         }
                     } else if (e.isKey()) {
                         GuiApp.dispatchKey(wb, e.vk, ctrl, shift, alt);
-                        if (e.vk == 8) { comp.update(wb.active()); } else { comp.dismiss(); }
+                        if (e.vk == 8) {
+                            comp.update(wb.active());
+                        } else {
+                            comp.dismiss();
+                        }
                         // after a save (Ctrl+S), the git change bars reflect the new on-disk state
-                        if (ctrl && !alt && e.vk == 83) { wb.refreshGit(); }
+                        if (ctrl && !alt && e.vk == 83) {
+                            wb.refreshGit();
+                        }
                     }
                 }
                 return;
@@ -958,10 +1164,26 @@ public bundle forge {
 
             // Handle a key while the completion popup is open. Returns true if it consumed the key.
             private static method completionKey(Completion* comp, Workbench* wb, int vk) returns boolean {
-                if (vk == 9 || vk == 13) { comp.accept(wb.active()); return true; }   // Tab / Enter
-                if (vk == 27) { comp.dismiss(); return true; }                        // Esc
-                if (vk == 40) { comp.moveSel(1); return true; }                       // Down
-                if (vk == 38) { comp.moveSel(0 - 1); return true; }                   // Up
+                if (vk == 9 || vk == 13) {
+                    comp.accept(wb.active());
+                    return true;
+                }
+                // Tab / Enter
+                if (vk == 27) {
+                    comp.dismiss();
+                    return true;
+                }
+                // Esc
+                if (vk == 40) {
+                    comp.moveSel(1);
+                    return true;
+                }
+                // Down
+                if (vk == 38) {
+                    comp.moveSel(0 - 1);
+                    return true;
+                }
+                // Up
                 return false;
             }
 
@@ -990,25 +1212,58 @@ public bundle forge {
                                                boolean shift, boolean alt) returns void {
                 if (e.isKey()) {
                     int vk = e.vk;
-                    if (vk == 27) { ov.close(); return; }               // Esc
-                    if (ov.mode == 2) { GuiApp.findKey(ov, wb, vk, ctrl, shift); return; }
-                    if (vk == 8) { ov.backspace(); return; }            // Backspace
-                    if (vk == 40) { ov.moveSel(1); return; }            // Down
-                    if (vk == 38) { ov.moveSel(0 - 1); return; }        // Up
+                    if (vk == 27) {
+                        ov.close();
+                        return;
+                    }
+                    // Esc
+                    if (ov.mode == 2) {
+                        GuiApp.findKey(ov, wb, vk, ctrl, shift);
+                        return;
+                    }
+                    if (vk == 8) {
+                        ov.backspace();
+                        return;
+                    }
+                    // Backspace
+                    if (vk == 40) {
+                        ov.moveSel(1);
+                        return;
+                    }
+                    // Down
+                    if (vk == 38) {
+                        ov.moveSel(0 - 1);
+                        return;
+                    }
+                    // Up
                     if (vk == 13) {                                     // Enter
-                        if (ov.mode == 1) { GuiApp.runPaletteSelection(ov, wb); }
-                        else if (ov.mode == 3) { GuiApp.runSymbolSelection(ov, wb); }
-                        else if (ov.mode == 4) { GuiApp.runQuickOpen(ov, wb); }
-                        else if (ov.mode == 5) { GuiApp.runGoToLine(ov, wb); }
-                        else if (ov.mode == 6) { GuiApp.runGlobalSearch(ov, wb); }
-                        else { wb.active().find(ov.query); }
+                        if (ov.mode == 1) {
+                            GuiApp.runPaletteSelection(ov, wb);
+                        }
+                        else if (ov.mode == 3) {
+                            GuiApp.runSymbolSelection(ov, wb);
+                        }
+                        else if (ov.mode == 4) {
+                            GuiApp.runQuickOpen(ov, wb);
+                        }
+                        else if (ov.mode == 5) {
+                            GuiApp.runGoToLine(ov, wb);
+                        }
+                        else if (ov.mode == 6) {
+                            GuiApp.runGlobalSearch(ov, wb);
+                        }
+                        else {
+                            wb.active().find(ov.query);
+                        }
                         ov.close();
                     }
                     return;
                 }
                 if (e.isChar()) {
                     int cp = e.code;
-                    if (cp >= 32 && cp != 127 && (!ctrl || alt)) { ov.typeChar(cast<char>(cp)); }
+                    if (cp >= 32 && cp != 127 && (!ctrl || alt)) {
+                        ov.typeChar(cast<char>(cp));
+                    }
                 }
                 return;
             }
@@ -1025,11 +1280,26 @@ public bundle forge {
             // next match (Shift+Enter the previous), Ctrl+Enter replaces every match with the replace text.
             private static method findKey(Overlay* ov, Workbench* wb, int vk, boolean ctrl, boolean shift)
                     returns void {
-                if (vk == 8) { ov.backspace(); return; }         // Backspace
-                if (vk == 9) { ov.toggleField(); return; }       // Tab
+                if (vk == 8) {
+                    ov.backspace();
+                    return;
+                }
+                // Backspace
+                if (vk == 9) {
+                    ov.toggleField();
+                    return;
+                }
+                // Tab
                 if (vk == 13) {                                  // Enter
-                    if (ctrl) { wb.active().replaceAll(ov.query, ov.replace); return; }
-                    if (shift) { wb.active().findPrevious(ov.query); } else { wb.active().find(ov.query); }
+                    if (ctrl) {
+                        wb.active().replaceAll(ov.query, ov.replace);
+                        return;
+                    }
+                    if (shift) {
+                        wb.active().findPrevious(ov.query);
+                    } else {
+                        wb.active().find(ov.query);
+                    }
                 }
                 return;
             }
@@ -1111,7 +1381,9 @@ public bundle forge {
             // `file:line: text`, in the output panel. Bounded so a huge project can't stall the search.
             private static method runGlobalSearch(Overlay* ov, Workbench* wb) returns void {
                 String q = ov.query;
-                if (q.length() == 0) { return; }
+                if (q.length() == 0) {
+                    return;
+                }
                 ArrayList<String>* results = new ArrayList<String>() on heap;
                 ArrayList<String>* navFiles = new ArrayList<String>() on heap;
                 ArrayList<int>* navLines = new ArrayList<int>() on heap;
@@ -1150,20 +1422,63 @@ public bundle forge {
             private static method dispatchKey(Workbench* wb, int vk, boolean ctrl, boolean shift, boolean alt)
                     returns void {
                 // A real Ctrl shortcut never has Alt held; Ctrl+Alt is AltGr (a character), so exclude it.
-                if (ctrl && !alt && vk >= 65 && vk <= 90) { wb.handleKey(Key.ctrlCh(cast<char>(vk + 32))); return; }
-                if (ctrl && !alt && vk == 191) { wb.handleKey(Key.ctrlCh('/')); return; }   // Ctrl+/ toggle comment
-                if (vk == 0x25) { wb.handleKey(new Key(KeyCode.LEFT, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x27) { wb.handleKey(new Key(KeyCode.RIGHT, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x26) { wb.handleKey(new Key(KeyCode.UP, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x28) { wb.handleKey(new Key(KeyCode.DOWN, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x08) { wb.handleKey(new Key(KeyCode.BACKSPACE, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x0D) { wb.handleKey(new Key(KeyCode.ENTER, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x2E) { wb.handleKey(new Key(KeyCode.DELETE, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x09) { wb.handleKey(new Key(KeyCode.TAB, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x24) { wb.handleKey(new Key(KeyCode.HOME, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x23) { wb.handleKey(new Key(KeyCode.END, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x21) { wb.handleKey(new Key(KeyCode.PAGE_UP, ' ', ctrl, shift, alt) on heap); return; }
-                if (vk == 0x22) { wb.handleKey(new Key(KeyCode.PAGE_DOWN, ' ', ctrl, shift, alt) on heap); return; }
+                if (ctrl && !alt && vk >= 65 && vk <= 90) {
+                    wb.handleKey(Key.ctrlCh(cast<char>(vk + 32)));
+                    return;
+                }
+                if (ctrl && !alt && vk == 191) {
+                    wb.handleKey(Key.ctrlCh('/'));
+                    return;
+                }
+                // Ctrl+/ toggle comment
+                if (vk == 0x25) {
+                    wb.handleKey(new Key(KeyCode.LEFT, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x27) {
+                    wb.handleKey(new Key(KeyCode.RIGHT, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x26) {
+                    wb.handleKey(new Key(KeyCode.UP, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x28) {
+                    wb.handleKey(new Key(KeyCode.DOWN, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x08) {
+                    wb.handleKey(new Key(KeyCode.BACKSPACE, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x0D) {
+                    wb.handleKey(new Key(KeyCode.ENTER, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x2E) {
+                    wb.handleKey(new Key(KeyCode.DELETE, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x09) {
+                    wb.handleKey(new Key(KeyCode.TAB, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x24) {
+                    wb.handleKey(new Key(KeyCode.HOME, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x23) {
+                    wb.handleKey(new Key(KeyCode.END, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x21) {
+                    wb.handleKey(new Key(KeyCode.PAGE_UP, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
+                if (vk == 0x22) {
+                    wb.handleKey(new Key(KeyCode.PAGE_DOWN, ' ', ctrl, shift, alt) on heap);
+                    return;
+                }
                 return;
             }
 
@@ -1248,7 +1563,10 @@ public bundle forge {
             private static method scriptDemo(Workbench* wb) returns void {
                 String s = "// typed live in Forge, then run() takes the keyboard.";
                 mutable int i = 0;
-                while (i < s.length()) { wb.handleKey(Key.ch(s.charAt(i))); i = i + 1; }
+                while (i < s.length()) {
+                    wb.handleKey(Key.ch(s.charAt(i)));
+                    i = i + 1;
+                }
                 wb.handleKey(new Key(KeyCode.ENTER, ' ', false, false, false) on heap);
                 return;
             }
@@ -1275,7 +1593,9 @@ public bundle forge {
                 }
                 screen.drawMenuBar(batch, menu, wb, mx, my, w);
                 screen.drawMenuDropdown(batch, menu, mx, my);
-                if (ov.isOpen()) { screen.drawOverlay(batch, ov, wb, w, h); }
+                if (ov.isOpen()) {
+                    screen.drawOverlay(batch, ov, wb, w, h);
+                }
                 batch.flush();
                 return;
             }

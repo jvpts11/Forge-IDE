@@ -31,14 +31,20 @@ public bundle forge {
                 this.focusReplace = false;
             }
 
-            public method isOpen() returns boolean { return this.mode != 0; }
+            public method isOpen() returns boolean {
+                return this.mode != 0;
+            }
             public method open(int m) returns void {
                 this.mode = m; this.query = ""; this.sel = 0;
                 this.replace = ""; this.focusReplace = false;
             }
-            public method close() returns void { this.mode = 0; }
+            public method close() returns void {
+                this.mode = 0;
+            }
             // Mode 2: Tab moves focus between the find and replace fields.
-            public method toggleField() returns void { this.focusReplace = !this.focusReplace; }
+            public method toggleField() returns void {
+                this.focusReplace = !this.focusReplace;
+            }
 
             // Open the symbol navigator over a prepared label/line list (current file; no per-item file).
             public method openSymbols(ArrayList<String>* labels, ArrayList<int>* lines) returns void {
@@ -81,7 +87,9 @@ public bundle forge {
                 String q = Overlay.lower(this.query);
                 mutable int i = 0;
                 while (i < this.items.size()) {
-                    if (q.length() == 0 || Overlay.lower(this.items.get(i)).indexOf(q) >= 0) { out.add(i); }
+                    if (q.length() == 0 || Overlay.lower(this.items.get(i)).indexOf(q) >= 0) {
+                        out.add(i);
+                    }
                     i = i + 1;
                 }
                 return out;
@@ -92,7 +100,9 @@ public bundle forge {
                 mutable int i = 0;
                 while (i < s.length()) {
                     mutable char c = s.charAt(i);
-                    if (c >= 'A' && c <= 'Z') { c = cast<char>(cast<int>(c) + 32); }
+                    if (c >= 'A' && c <= 'Z') {
+                        c = cast<char>(cast<int>(c) + 32);
+                    }
                     sb.appendChar(c);
                     i = i + 1;
                 }
@@ -126,7 +136,9 @@ public bundle forge {
             }
             public method moveSel(int delta) returns void {
                 mutable int s = this.sel + delta;
-                if (s < 0) { s = 0; }
+                if (s < 0) {
+                    s = 0;
+                }
                 this.sel = s;
             }
         }

@@ -24,7 +24,9 @@ public bundle forge {
                 this.text = new TextRenderer() on heap;
                 this.treeWidth = 22;
             }
-            public method setTreeWidth(int w) returns void { this.treeWidth = w; }
+            public method setTreeWidth(int w) returns void {
+                this.treeWidth = w;
+            }
 
             // "[active-tab*] other-tab ..." -- the active document in brackets, a '*' when it is dirty
             // (the title already carries the marker).
@@ -43,7 +45,9 @@ public bundle forge {
 
             // Truncate or pad `s` to exactly `width` columns.
             private method fit(String s, int width) returns String {
-                if (s.length() > width) { return s.substring(0, width); }
+                if (s.length() > width) {
+                    return s.substring(0, width);
+                }
                 return Strings.padRight(s, width, " ");
             }
 
@@ -56,7 +60,9 @@ public bundle forge {
                 ArrayList<FileNode*>* treeRows = tree.visible();
                 for (mutable int r = 0; r < editorRows.size(); r++) {
                     mutable String left = "";
-                    if (r < treeRows.size()) { left = tree.rowLabel(treeRows.get(r)); }
+                    if (r < treeRows.size()) {
+                        left = tree.rowLabel(treeRows.get(r));
+                    }
                     out.add(this.fit(left, this.treeWidth) + " |" + editorRows.get(r));
                 }
                 out.add(this.text.statusBar(c));

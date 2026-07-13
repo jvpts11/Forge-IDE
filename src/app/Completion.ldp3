@@ -31,23 +31,35 @@ public bundle forge {
             // Load the importable qualified names (one per line) that `import` completion offers -- generated
             // from the real stdlib prelude at build time. Silently no-ops if the file isn't present.
             public method loadImports(String path) returns void {
-                if (!File.exists(path)) { return; }
+                if (!File.exists(path)) {
+                    return;
+                }
                 ArrayList<String> ls = Files.readLines(path);
                 ArrayList<String>* out = new ArrayList<String>() on heap;
                 mutable int i = 0;
                 while (i < ls.size()) {
-                    if (ls.get(i).length() > 0) { out.add(ls.get(i)); }
+                    if (ls.get(i).length() > 0) {
+                        out.add(ls.get(i));
+                    }
                     i = i + 1;
                 }
                 this.imports = out;
             }
 
-            public method dismiss() returns void { this.active = false; }
+            public method dismiss() returns void {
+                this.active = false;
+            }
             public method moveSel(int delta) returns void {
-                if (!this.active) { return; }
+                if (!this.active) {
+                    return;
+                }
                 mutable int s = this.sel + delta;
-                if (s < 0) { s = this.items.size() - 1; }
-                if (s >= this.items.size()) { s = 0; }
+                if (s < 0) {
+                    s = this.items.size() - 1;
+                }
+                if (s >= this.items.size()) {
+                    s = 0;
+                }
                 this.sel = s;
             }
 
@@ -119,13 +131,18 @@ public bundle forge {
             private method updateImports(String upto) returns void {
                 String t = upto.trim();
                 mutable String path = "";
-                if (t.length() > 6) { path = t.substring(6, t.length()).trim(); }   // text after "import"
+                if (t.length() > 6) {
+                    path = t.substring(6, t.length()).trim();
+                }
+                // text after "import"
                 this.prefix = path;
                 ArrayList<String>* out = new ArrayList<String>() on heap;
                 mutable int i = 0;
                 while (i < this.imports.size() && out.size() < 40) {
                     String imp = this.imports.get(i);
-                    if (imp.startsWith(path) && !imp.equals(path)) { out.add(imp); }
+                    if (imp.startsWith(path) && !imp.equals(path)) {
+                        out.add(imp);
+                    }
                     i = i + 1;
                 }
                 if (out.size() == 0) {
@@ -148,7 +165,9 @@ public bundle forge {
                     while (i < len) {
                         if (this.isWordChar(line.charAt(i))) {
                             mutable int j = i;
-                            while (j < len && this.isWordChar(line.charAt(j))) { j = j + 1; }
+                            while (j < len && this.isWordChar(line.charAt(j))) {
+                                j = j + 1;
+                            }
                             String word = line.substring(i, j);
                             if (word.length() > pre.length() && word.startsWith(pre) && !this.has(out, word)) {
                                 out.add(word);
@@ -163,17 +182,28 @@ public bundle forge {
             }
             private method has(ArrayList<String>* xs, String w) returns boolean {
                 mutable int i = 0;
-                while (i < xs.size()) { if (xs.get(i).equals(w)) { return true; } i = i + 1; }
+                while (i < xs.size()) {
+                    if (xs.get(i).equals(w)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
                 return false;
             }
 
             // Accept the selected suggestion: insert the part of the word after the prefix.
             public method accept(Controller* c) returns void {
-                if (!this.active || this.sel < 0 || this.sel >= this.items.size()) { this.active = false; return; }
+                if (!this.active || this.sel < 0 || this.sel >= this.items.size()) {
+                    this.active = false;
+                    return;
+                }
                 String chosen = this.items.get(this.sel);
                 String suffix = chosen.substring(this.prefix.length(), chosen.length());
                 mutable int j = 0;
-                while (j < suffix.length()) { c.insertChar(suffix.charAt(j)); j = j + 1; }
+                while (j < suffix.length()) {
+                    c.insertChar(suffix.charAt(j));
+                    j = j + 1;
+                }
                 this.active = false;
             }
 

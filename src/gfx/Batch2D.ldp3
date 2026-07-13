@@ -62,9 +62,13 @@ public bundle forge {
             }
 
             private method ensure(int need) returns void {
-                if (this.count + need <= this.cap) { return; }
+                if (this.count + need <= this.cap) {
+                    return;
+                }
                 mutable int nc = this.cap * 2;
-                while (this.count + need > nc) { nc = nc * 2; }
+                while (this.count + need > nc) {
+                    nc = nc * 2;
+                }
                 address nb = Memory.alloc(cast<long>(nc * 4));
                 Memory.copy(nb, this.verts, cast<long>(this.count * 4));
                 Memory.free(this.verts);
@@ -112,7 +116,9 @@ public bundle forge {
 
             // Upload the accumulated vertices and issue the single draw call.
             public method flush() returns void {
-                if (this.count == 0) { return; }
+                if (this.count == 0) {
+                    return;
+                }
                 Wgl.glEnable(0x0BE2);                    // GL_BLEND
                 Wgl.glBlendFunc(0x0302, 0x0303);         // SRC_ALPHA, ONE_MINUS_SRC_ALPHA
                 this.gl.useProgram(this.prog);

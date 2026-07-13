@@ -14,7 +14,9 @@ public bundle forge {
                 this.caption = caption;
                 this.commandId = commandId;
             }
-            public method isSeparator() returns boolean { return this.commandId.equals("-"); }
+            public method isSeparator() returns boolean {
+                return this.commandId.equals("-");
+            }
         }
 
         // A top-level menu: a title and the list of items in its dropdown.
@@ -28,7 +30,9 @@ public bundle forge {
             public method add(String caption, String commandId) returns void {
                 this.items.add(new MenuItem(caption, commandId) on heap);
             }
-            public method sep() returns void { this.items.add(new MenuItem("-", "-") on heap); }
+            public method sep() returns void {
+                this.items.add(new MenuItem("-", "-") on heap);
+            }
         }
 
         // The window's menu bar: File / Edit / View / Run / Help, each a dropdown of commands. Tracks which
@@ -91,15 +95,33 @@ public bundle forge {
                 this.menus.add(help);
             }
 
-            public method count() returns int { return this.menus.size(); }
-            public method menuAt(int i) returns Menu* { return this.menus.get(i); }
-            public method title(int i) returns String { return this.menus.get(i).title; }
-            public method isOpen() returns boolean { return this.openIndex >= 0; }
-            public method openMenu() returns Menu* { return this.menus.get(this.openIndex); }
-            public method close() returns void { this.openIndex = 0 - 1; }
-            public method openAt(int i) returns void { this.openIndex = i; }
+            public method count() returns int {
+                return this.menus.size();
+            }
+            public method menuAt(int i) returns Menu* {
+                return this.menus.get(i);
+            }
+            public method title(int i) returns String {
+                return this.menus.get(i).title;
+            }
+            public method isOpen() returns boolean {
+                return this.openIndex >= 0;
+            }
+            public method openMenu() returns Menu* {
+                return this.menus.get(this.openIndex);
+            }
+            public method close() returns void {
+                this.openIndex = 0 - 1;
+            }
+            public method openAt(int i) returns void {
+                this.openIndex = i;
+            }
             public method toggle(int i) returns void {
-                if (this.openIndex == i) { this.openIndex = 0 - 1; } else { this.openIndex = i; }
+                if (this.openIndex == i) {
+                    this.openIndex = 0 - 1;
+                } else {
+                    this.openIndex = i;
+                }
             }
         }
     }

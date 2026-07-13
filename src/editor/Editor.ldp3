@@ -45,17 +45,37 @@ public bundle forge {
             }
 
             // Indentation width (spaces per level), configurable. indentUnit() is one level of spaces.
-            public method setTabWidth(int n) returns void { if (n > 0) { this.tabWidth = n; } }
-            public method tabSize() returns int { return this.tabWidth; }
-            private method indentUnit() returns String { return " ".repeat(this.tabWidth); }
+            public method setTabWidth(int n) returns void {
+                if (n > 0) {
+                    this.tabWidth = n;
+                }
+            }
+            public method tabSize() returns int {
+                return this.tabWidth;
+            }
+            private method indentUnit() returns String {
+                return " ".repeat(this.tabWidth);
+            }
 
             // --- bracket auto-close + matching ---
             private method closerFor(char c) returns char {
-                if (c == '(') { return ')'; }
-                if (c == '[') { return ']'; }
-                if (c == '{') { return '}'; }
-                if (c == cast<char>(34)) { return cast<char>(34); }   // "
-                if (c == cast<char>(39)) { return cast<char>(39); }   // '
+                if (c == '(') {
+                    return ')';
+                }
+                if (c == '[') {
+                    return ']';
+                }
+                if (c == '{') {
+                    return '}';
+                }
+                if (c == cast<char>(34)) {
+                    return cast<char>(34);
+                }
+                // "
+                if (c == cast<char>(39)) {
+                    return cast<char>(39);
+                }
+                // '
                 return cast<char>(0);
             }
             private method isCloserChar(char c) returns boolean {
@@ -71,7 +91,10 @@ public bundle forge {
             // typing a closer that already sits under the caret just steps over it. With a selection it
             // falls back to a plain replace.
             public method typeWithPairs(char c) returns void {
-                if (this.hasSelection()) { this.type(c); return; }
+                if (this.hasSelection()) {
+                    this.type(c);
+                    return;
+                }
                 if (this.isCloserChar(c) && this.nextCharIs(c)) {
                     this.rawRight();
                     return;
@@ -86,8 +109,12 @@ public bundle forge {
             // The matching bracket for a bracket at or just before the caret, or an invalid Match.
             public method matchingBracket() returns Match* {
                 Match* m = this.brackets.matchAt(this.row, this.col);
-                if (m.valid()) { return m; }
-                if (this.col > 0) { return this.brackets.matchAt(this.row, this.col - 1); }
+                if (m.valid()) {
+                    return m;
+                }
+                if (this.col > 0) {
+                    return this.brackets.matchAt(this.row, this.col - 1);
+                }
                 return m;
             }
 
@@ -95,19 +122,25 @@ public bundle forge {
             public method setSearchCase(boolean caseSensitive) returns void {
                 this.search.setCaseSensitive(caseSensitive);
             }
-            public method matchCount(String needle) returns int { return this.search.count(needle); }
+            public method matchCount(String needle) returns int {
+                return this.search.count(needle);
+            }
 
             // Move to and select the next/previous occurrence of `needle`. Returns false (leaving the caret
             // put) when there is no match. The match is selected so a following type()/paste() replaces it.
             public method find(String needle) returns boolean {
                 Match* m = this.search.findNext(needle, this.row, this.col);
-                if (!m.valid()) { return false; }
+                if (!m.valid()) {
+                    return false;
+                }
                 this.selectMatch(m);
                 return true;
             }
             public method findPrevious(String needle) returns boolean {
                 Match* m = this.search.findPrev(needle, this.row, this.col);
-                if (!m.valid()) { return false; }
+                if (!m.valid()) {
+                    return false;
+                }
                 this.selectMatch(m);
                 return true;
             }
@@ -122,9 +155,13 @@ public bundle forge {
             // Replace every occurrence of `needle` with `replacement`. Returns how many were replaced. One
             // undo step covers the whole sweep. Applied bottom-up so earlier match columns stay valid.
             public method replaceAll(String needle, String replacement) returns int {
-                if (needle.length() == 0) { return 0; }
+                if (needle.length() == 0) {
+                    return 0;
+                }
                 ArrayList<Match>* all = this.search.findAll(needle);
-                if (all.size() == 0) { return 0; }
+                if (all.size() == 0) {
+                    return 0;
+                }
                 this.saveUndo();
                 this.clearSelection();
                 for (mutable int i = all.size() - 1; i >= 0; i--) {
@@ -139,19 +176,27 @@ public bundle forge {
 
             // --- clipboard: copy/cut the selection, paste at the caret (replacing any selection) ---
             public method copy() returns void {
-                if (this.hasSelection()) { this.clip.set(this.selectionText()); }
+                if (this.hasSelection()) {
+                    this.clip.set(this.selectionText());
+                }
             }
             public method cut() returns void {
-                if (!this.hasSelection()) { return; }
+                if (!this.hasSelection()) {
+                    return;
+                }
                 this.clip.set(this.selectionText());
                 this.saveUndo();
                 this.deleteSelection();
             }
             public method paste() returns void {
                 String text = this.clip.get();
-                if (text.length() == 0) { return; }
+                if (text.length() == 0) {
+                    return;
+                }
                 this.saveUndo();
-                if (this.hasSelection()) { this.deleteSelection(); }
+                if (this.hasSelection()) {
+                    this.deleteSelection();
+                }
                 int addedRows = this.buf.insertText(this.row, this.col, text);
                 if (addedRows == 0) {
                     this.col = this.col + text.length();
@@ -161,7 +206,9 @@ public bundle forge {
                     this.col = parts.get(parts.size() - 1).length();
                 }
             }
-            public method clipboardText() returns String { return this.clip.get(); }
+            public method clipboardText() returns String {
+                return this.clip.get();
+            }
 
             // --- line operations (duplicate / delete / move up-down / indent-dedent), on the caret's line ---
             public method duplicateLine() returns void {
@@ -173,11 +220,15 @@ public bundle forge {
                 this.saveUndo();
                 this.clearSelection();
                 this.buf.removeLine(this.row);
-                if (this.row >= this.buf.lineCount()) { this.row = this.buf.lineCount() - 1; }
+                if (this.row >= this.buf.lineCount()) {
+                    this.row = this.buf.lineCount() - 1;
+                }
                 this.clampCol();
             }
             public method moveLineUp() returns void {
-                if (this.row == 0) { return; }
+                if (this.row == 0) {
+                    return;
+                }
                 this.saveUndo();
                 String cur = this.buf.line(this.row);
                 this.buf.setLine(this.row, this.buf.line(this.row - 1));
@@ -185,7 +236,9 @@ public bundle forge {
                 this.row = this.row - 1;
             }
             public method moveLineDown() returns void {
-                if (this.row >= this.buf.lineCount() - 1) { return; }
+                if (this.row >= this.buf.lineCount() - 1) {
+                    return;
+                }
                 this.saveUndo();
                 String cur = this.buf.line(this.row);
                 this.buf.setLine(this.row, this.buf.line(this.row + 1));
@@ -203,20 +256,30 @@ public bundle forge {
                 while (remove < this.tabWidth && remove < cur.length() && cur.charAt(remove) == ' ') {
                     remove = remove + 1;
                 }
-                if (remove == 0) { return; }
+                if (remove == 0) {
+                    return;
+                }
                 this.saveUndo();
                 this.buf.setLine(this.row, cur.substring(remove, cur.length()));
-                if (this.col >= remove) { this.col = this.col - remove; } else { this.col = 0; }
+                if (this.col >= remove) {
+                    this.col = this.col - remove;
+                } else {
+                    this.col = 0;
+                }
             }
 
             // Block indent/dedent: shift every line the selection touches by four spaces. The caret and the
             // anchor stay on their lines; their columns are clamped afterward.
             private method selMinRow() returns int {
-                if (this.selRow < this.row) { return this.selRow; }
+                if (this.selRow < this.row) {
+                    return this.selRow;
+                }
                 return this.row;
             }
             private method selMaxRow() returns int {
-                if (this.selRow > this.row) { return this.selRow; }
+                if (this.selRow > this.row) {
+                    return this.selRow;
+                }
                 return this.row;
             }
             public method indentSelection() returns void {
@@ -236,12 +299,16 @@ public bundle forge {
                 for (mutable int r = a; r <= b; r++) {
                     String s = this.buf.line(r);
                     mutable int rm = 0;
-                    while (rm < this.tabWidth && rm < s.length() && s.charAt(rm) == ' ') { rm = rm + 1; }
+                    while (rm < this.tabWidth && rm < s.length() && s.charAt(rm) == ' ') {
+                        rm = rm + 1;
+                    }
                     this.buf.setLine(r, s.substring(rm, s.length()));
                 }
                 this.clampCaret();
                 int selLen = this.buf.line(this.selRow).length();
-                if (this.selCol > selLen) { this.selCol = selLen; }
+                if (this.selCol > selLen) {
+                    this.selCol = selLen;
+                }
             }
 
             // --- word-wise motion & deletion (Ctrl+Arrows, Ctrl+Backspace / Ctrl+Delete) ---
@@ -255,24 +322,38 @@ public bundle forge {
                 String s = this.buf.line(this.row);
                 int len = s.length();
                 mutable int c = this.col;
-                while (c < len && !this.isWordChar(s.charAt(c))) { c = c + 1; }
-                while (c < len && this.isWordChar(s.charAt(c))) { c = c + 1; }
+                while (c < len && !this.isWordChar(s.charAt(c))) {
+                    c = c + 1;
+                }
+                while (c < len && this.isWordChar(s.charAt(c))) {
+                    c = c + 1;
+                }
                 return c;
             }
             // Mirror image: skip separators then word chars to the left, landing at the word's start.
             private method wordLeftCol() returns int {
                 String s = this.buf.line(this.row);
                 mutable int c = this.col;
-                while (c > 0 && !this.isWordChar(s.charAt(c - 1))) { c = c - 1; }
-                while (c > 0 && this.isWordChar(s.charAt(c - 1))) { c = c - 1; }
+                while (c > 0 && !this.isWordChar(s.charAt(c - 1))) {
+                    c = c - 1;
+                }
+                while (c > 0 && this.isWordChar(s.charAt(c - 1))) {
+                    c = c - 1;
+                }
                 return c;
             }
             private method rawWordRight() returns void {
-                if (this.col >= this.buf.line(this.row).length()) { this.rawRight(); return; }
+                if (this.col >= this.buf.line(this.row).length()) {
+                    this.rawRight();
+                    return;
+                }
                 this.col = this.wordRightCol();
             }
             private method rawWordLeft() returns void {
-                if (this.col == 0) { this.rawLeft(); return; }
+                if (this.col == 0) {
+                    this.rawLeft();
+                    return;
+                }
                 this.col = this.wordLeftCol();
             }
             public method moveWordRight() returns void {
@@ -285,19 +366,37 @@ public bundle forge {
                 this.clearExtraCarets();
                 this.rawWordLeft();
             }
-            public method selectWordRight() returns void { this.anchorSelection(); this.rawWordRight(); }
-            public method selectWordLeft()  returns void { this.anchorSelection(); this.rawWordLeft(); }
+            public method selectWordRight() returns void {
+                this.anchorSelection();
+                this.rawWordRight();
+            }
+            public method selectWordLeft()  returns void {
+                this.anchorSelection();
+                this.rawWordLeft();
+            }
 
             public method deleteWordLeft() returns void {
-                if (this.hasSelection()) { this.saveUndo(); this.deleteSelection(); return; }
-                if (this.col == 0) { this.backspace(); return; }   // at line start: join upward
+                if (this.hasSelection()) {
+                    this.saveUndo();
+                    this.deleteSelection();
+                    return;
+                }
+                if (this.col == 0) {
+                    this.backspace();
+                    return;
+                }
+                // at line start: join upward
                 int target = this.wordLeftCol();
                 this.saveUndo();
                 this.buf.deleteRange(this.row, target, this.row, this.col);
                 this.col = target;
             }
             public method deleteWordRight() returns void {
-                if (this.hasSelection()) { this.saveUndo(); this.deleteSelection(); return; }
+                if (this.hasSelection()) {
+                    this.saveUndo();
+                    this.deleteSelection();
+                    return;
+                }
                 int len = this.buf.line(this.row).length();
                 if (this.col >= len) {                             // at line end: pull the next line up
                     if (this.row < this.buf.lineCount() - 1) {
@@ -319,9 +418,15 @@ public bundle forge {
                 int len = s.length();
                 mutable int start = this.col;
                 mutable int end = this.col;
-                while (start > 0 && this.isWordChar(s.charAt(start - 1))) { start = start - 1; }
-                while (end < len && this.isWordChar(s.charAt(end))) { end = end + 1; }
-                if (start == end) { return; }
+                while (start > 0 && this.isWordChar(s.charAt(start - 1))) {
+                    start = start - 1;
+                }
+                while (end < len && this.isWordChar(s.charAt(end))) {
+                    end = end + 1;
+                }
+                if (start == end) {
+                    return;
+                }
                 this.selRow = this.row;
                 this.selCol = start;
                 this.hasSel = true;
@@ -333,7 +438,9 @@ public bundle forge {
             // lines are left alone. The marker is "// " inserted at each line's first non-blank column.
             private method firstNonBlank(String s) returns int {
                 mutable int i = 0;
-                while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t')) { i = i + 1; }
+                while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t')) {
+                    i = i + 1;
+                }
                 return i;
             }
             private method lineIsCommented(String s) returns boolean {
@@ -349,14 +456,20 @@ public bundle forge {
                 String s = this.buf.line(row);
                 int at = this.firstNonBlank(s);
                 mutable int rm = at + 2;                       // past the "//"
-                if (rm < s.length() && s.charAt(rm) == ' ') { rm = rm + 1; }   // and one space
+                if (rm < s.length() && s.charAt(rm) == ' ') {
+                    rm = rm + 1;
+                }
+                // and one space
                 this.buf.setLine(row, s.substring(0, at) + s.substring(rm, s.length()));
             }
             public method toggleComment() returns void {
                 this.saveUndo();
                 mutable int a = this.row;
                 mutable int b = this.row;
-                if (this.hasSelection()) { a = this.selMinRow(); b = this.selMaxRow(); }
+                if (this.hasSelection()) {
+                    a = this.selMinRow();
+                    b = this.selMaxRow();
+                }
                 mutable boolean allCommented = true;
                 for (mutable int r = a; r <= b; r++) {
                     String s = this.buf.line(r);
@@ -366,8 +479,15 @@ public bundle forge {
                 }
                 for (mutable int r = a; r <= b; r++) {
                     String s = this.buf.line(r);
-                    if (this.firstNonBlank(s) >= s.length()) { continue; }   // skip blank lines
-                    if (allCommented) { this.uncommentLine(r); } else { this.commentLine(r); }
+                    if (this.firstNonBlank(s) >= s.length()) {
+                        continue;
+                    }
+                    // skip blank lines
+                    if (allCommented) {
+                        this.uncommentLine(r);
+                    } else {
+                        this.commentLine(r);
+                    }
                 }
             }
 
@@ -379,17 +499,25 @@ public bundle forge {
                     this.hasSel = true;
                 }
             }
-            public method clearSelection() returns void { this.hasSel = false; }
+            public method clearSelection() returns void {
+                this.hasSel = false;
+            }
             public method hasSelection() returns boolean {
                 return this.hasSel && !(this.selRow == this.row && this.selCol == this.col);
             }
             private method anchorBeforeCaret() returns boolean {
-                if (this.selRow < this.row) { return true; }
-                if (this.selRow > this.row) { return false; }
+                if (this.selRow < this.row) {
+                    return true;
+                }
+                if (this.selRow > this.row) {
+                    return false;
+                }
                 return this.selCol <= this.col;
             }
             public method selectionText() returns String {
-                if (!this.hasSelection()) { return ""; }
+                if (!this.hasSelection()) {
+                    return "";
+                }
                 if (this.anchorBeforeCaret()) {
                     return this.buf.getRange(this.selRow, this.selCol, this.row, this.col);
                 }
@@ -397,7 +525,10 @@ public bundle forge {
             }
             // Delete the selection and put the caret at its start. Does NOT snapshot undo -- callers wrap it.
             public method deleteSelection() returns void {
-                if (!this.hasSelection()) { this.hasSel = false; return; }
+                if (!this.hasSelection()) {
+                    this.hasSel = false;
+                    return;
+                }
                 if (this.anchorBeforeCaret()) {
                     this.buf.deleteRange(this.selRow, this.selCol, this.row, this.col);
                     this.row = this.selRow;
@@ -408,9 +539,15 @@ public bundle forge {
                 this.hasSel = false;
             }
 
-            public method cursorRow() returns int { return this.row; }
-            public method cursorCol() returns int { return this.col; }
-            public method document() returns TextBuffer* { return this.buf; }
+            public method cursorRow() returns int {
+                return this.row;
+            }
+            public method cursorCol() returns int {
+                return this.col;
+            }
+            public method document() returns TextBuffer* {
+                return this.buf;
+            }
 
             // Place the caret at (row, col), clamped into the document, clearing any selection -- a mouse
             // click lands here.
@@ -418,13 +555,21 @@ public bundle forge {
                 this.clearSelection();
                 this.clearExtraCarets();
                 mutable int rr = row;
-                if (rr < 0) { rr = 0; }
-                if (rr >= this.buf.lineCount()) { rr = this.buf.lineCount() - 1; }
+                if (rr < 0) {
+                    rr = 0;
+                }
+                if (rr >= this.buf.lineCount()) {
+                    rr = this.buf.lineCount() - 1;
+                }
                 this.row = rr;
                 mutable int cc = col;
-                if (cc < 0) { cc = 0; }
+                if (cc < 0) {
+                    cc = 0;
+                }
                 int len = this.buf.line(this.row).length();
-                if (cc > len) { cc = len; }
+                if (cc > len) {
+                    cc = len;
+                }
                 this.col = cc;
             }
 
@@ -462,22 +607,50 @@ public bundle forge {
             // Mouse drag: move the caret to (row, col) while keeping the anchor -> grow/shrink the selection.
             public method extendSelectTo(int row, int col) returns void {
                 mutable int rr = row;
-                if (rr < 0) { rr = 0; }
-                if (rr >= this.buf.lineCount()) { rr = this.buf.lineCount() - 1; }
+                if (rr < 0) {
+                    rr = 0;
+                }
+                if (rr >= this.buf.lineCount()) {
+                    rr = this.buf.lineCount() - 1;
+                }
                 this.row = rr;
                 mutable int cc = col;
-                if (cc < 0) { cc = 0; }
+                if (cc < 0) {
+                    cc = 0;
+                }
                 int len = this.buf.line(this.row).length();
-                if (cc > len) { cc = len; }
+                if (cc > len) {
+                    cc = len;
+                }
                 this.col = cc;
                 this.hasSel = true;
             }
 
             // Ordered selection bounds (start <= end), for rendering. Only meaningful when hasSelection().
-            public method selStartRow() returns int { if (this.anchorBeforeCaret()) { return this.selRow; } return this.row; }
-            public method selStartCol() returns int { if (this.anchorBeforeCaret()) { return this.selCol; } return this.col; }
-            public method selEndRow() returns int { if (this.anchorBeforeCaret()) { return this.row; } return this.selRow; }
-            public method selEndCol() returns int { if (this.anchorBeforeCaret()) { return this.col; } return this.selCol; }
+            public method selStartRow() returns int {
+                if (this.anchorBeforeCaret()) {
+                    return this.selRow;
+                }
+                return this.row;
+            }
+            public method selStartCol() returns int {
+                if (this.anchorBeforeCaret()) {
+                    return this.selCol;
+                }
+                return this.col;
+            }
+            public method selEndRow() returns int {
+                if (this.anchorBeforeCaret()) {
+                    return this.row;
+                }
+                return this.selRow;
+            }
+            public method selEndCol() returns int {
+                if (this.anchorBeforeCaret()) {
+                    return this.col;
+                }
+                return this.selCol;
+            }
 
             // Record the current state before a mutating edit; a fresh edit invalidates the redo history.
             // A multi-caret edit takes one snapshot up front and suppresses the per-sub-edit snapshots so the
@@ -497,7 +670,9 @@ public bundle forge {
             }
 
             public method undo() returns boolean {
-                if (this.undoStack.size() == 0) { return false; }
+                if (this.undoStack.size() == 0) {
+                    return false;
+                }
                 this.redoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
                 int last = this.undoStack.size() - 1;
                 this.restore(this.undoStack.get(last));
@@ -506,7 +681,9 @@ public bundle forge {
             }
 
             public method redo() returns boolean {
-                if (this.redoStack.size() == 0) { return false; }
+                if (this.redoStack.size() == 0) {
+                    return false;
+                }
                 this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
                 int last = this.redoStack.size() - 1;
                 this.restore(this.redoStack.get(last));
@@ -698,7 +875,9 @@ public bundle forge {
 
             public method type(char c) returns void {
                 this.saveUndo();
-                if (this.hasSelection()) { this.deleteSelection(); }
+                if (this.hasSelection()) {
+                    this.deleteSelection();
+                }
                 this.buf.insertChar(this.row, this.col, c);
                 this.col = this.col + 1;
             }
@@ -717,7 +896,9 @@ public bundle forge {
             // level (four spaces) when the caret follows an opening brace.
             public method enter() returns void {
                 this.saveUndo();
-                if (this.hasSelection()) { this.deleteSelection(); }
+                if (this.hasSelection()) {
+                    this.deleteSelection();
+                }
                 String cur = this.buf.line(this.row);
                 int ind = this.leadingIndent(cur, this.col);
                 boolean opensBlock = this.col > 0 && cur.charAt(this.col - 1) == '{';
@@ -738,7 +919,9 @@ public bundle forge {
             // This is the path for pasting and bulk loading, so pre-formatted code lands exactly as given.
             public method insertText(String text) returns void {
                 this.saveUndo();
-                if (this.hasSelection()) { this.deleteSelection(); }
+                if (this.hasSelection()) {
+                    this.deleteSelection();
+                }
                 int added = this.buf.insertText(this.row, this.col, text);
                 if (added == 0) {
                     this.col = this.col + text.length();
@@ -755,35 +938,49 @@ public bundle forge {
                     this.deleteSelection();
                     return;
                 }
-                if (this.col == 0 && this.row == 0) { return; }
+                if (this.col == 0 && this.row == 0) {
+                    return;
+                }
                 this.saveUndo();
                 boolean joining = this.col == 0;
                 int newCol = this.buf.backspace(this.row, this.col);
-                if (joining) { this.row = this.row - 1; }
+                if (joining) {
+                    this.row = this.row - 1;
+                }
                 this.col = newCol;
             }
 
             // Raw caret moves (no selection side effect). The public moveX clear the selection first; the
             // selectX anchor it and extend -- that's Shift+arrow.
             private method rawLeft() returns void {
-                if (this.col > 0) { this.col = this.col - 1; }
+                if (this.col > 0) {
+                    this.col = this.col - 1;
+                }
                 else if (this.row > 0) {
                     this.row = this.row - 1;
                     this.col = this.buf.line(this.row).length();
                 }
             }
             private method rawRight() returns void {
-                if (this.col < this.buf.line(this.row).length()) { this.col = this.col + 1; }
+                if (this.col < this.buf.line(this.row).length()) {
+                    this.col = this.col + 1;
+                }
                 else if (this.row < this.buf.lineCount() - 1) {
                     this.row = this.row + 1;
                     this.col = 0;
                 }
             }
             private method rawUp() returns void {
-                if (this.row > 0) { this.row = this.row - 1; this.clampCol(); }
+                if (this.row > 0) {
+                    this.row = this.row - 1;
+                    this.clampCol();
+                }
             }
             private method rawDown() returns void {
-                if (this.row < this.buf.lineCount() - 1) { this.row = this.row + 1; this.clampCol(); }
+                if (this.row < this.buf.lineCount() - 1) {
+                    this.row = this.row + 1;
+                    this.clampCol();
+                }
             }
             // Smart Home: first press goes to the first non-blank column, a second press to column 0.
             private method rawLineStart() returns void {
@@ -793,10 +990,19 @@ public bundle forge {
                        && (s.charAt(firstNonBlank) == ' ' || s.charAt(firstNonBlank) == '\t')) {
                     firstNonBlank = firstNonBlank + 1;
                 }
-                if (this.col == firstNonBlank) { this.col = 0; } else { this.col = firstNonBlank; }
+                if (this.col == firstNonBlank) {
+                    this.col = 0;
+                } else {
+                    this.col = firstNonBlank;
+                }
             }
-            private method rawLineEnd() returns void { this.col = this.buf.line(this.row).length(); }
-            private method rawDocStart() returns void { this.row = 0; this.col = 0; }
+            private method rawLineEnd() returns void {
+                this.col = this.buf.line(this.row).length();
+            }
+            private method rawDocStart() returns void {
+                this.row = 0;
+                this.col = 0;
+            }
             private method rawDocEnd() returns void {
                 this.row = this.buf.lineCount() - 1;
                 this.col = this.buf.line(this.row).length();
@@ -843,14 +1049,38 @@ public bundle forge {
                 this.rawDocEnd();
             }
 
-            public method selectLeft()  returns void { this.anchorSelection(); this.rawLeft(); }
-            public method selectRight() returns void { this.anchorSelection(); this.rawRight(); }
-            public method selectUp()    returns void { this.anchorSelection(); this.rawUp(); }
-            public method selectDown()  returns void { this.anchorSelection(); this.rawDown(); }
-            public method selectLineStart() returns void { this.anchorSelection(); this.rawLineStart(); }
-            public method selectLineEnd()   returns void { this.anchorSelection(); this.rawLineEnd(); }
-            public method selectDocStart()  returns void { this.anchorSelection(); this.rawDocStart(); }
-            public method selectDocEnd()    returns void { this.anchorSelection(); this.rawDocEnd(); }
+            public method selectLeft()  returns void {
+                this.anchorSelection();
+                this.rawLeft();
+            }
+            public method selectRight() returns void {
+                this.anchorSelection();
+                this.rawRight();
+            }
+            public method selectUp()    returns void {
+                this.anchorSelection();
+                this.rawUp();
+            }
+            public method selectDown()  returns void {
+                this.anchorSelection();
+                this.rawDown();
+            }
+            public method selectLineStart() returns void {
+                this.anchorSelection();
+                this.rawLineStart();
+            }
+            public method selectLineEnd()   returns void {
+                this.anchorSelection();
+                this.rawLineEnd();
+            }
+            public method selectDocStart()  returns void {
+                this.anchorSelection();
+                this.rawDocStart();
+            }
+            public method selectDocEnd()    returns void {
+                this.anchorSelection();
+                this.rawDocEnd();
+            }
             public method selectAll() returns void {
                 this.selRow = 0;
                 this.selCol = 0;
@@ -861,7 +1091,11 @@ public bundle forge {
             // Delete the character to the right of the caret (the Delete key); at a line end, pull the next
             // line up. With a selection, delete that instead.
             public method deleteForward() returns void {
-                if (this.hasSelection()) { this.saveUndo(); this.deleteSelection(); return; }
+                if (this.hasSelection()) {
+                    this.saveUndo();
+                    this.deleteSelection();
+                    return;
+                }
                 int len = this.buf.line(this.row).length();
                 if (this.col < len) {
                     this.saveUndo();
@@ -875,13 +1109,19 @@ public bundle forge {
 
             private method clampCol() returns void {
                 int len = this.buf.line(this.row).length();
-                if (this.col > len) { this.col = len; }
+                if (this.col > len) {
+                    this.col = len;
+                }
             }
 
             // Clamp both coordinates back into the buffer after a bulk edit (e.g. replaceAll).
             private method clampCaret() returns void {
-                if (this.row >= this.buf.lineCount()) { this.row = this.buf.lineCount() - 1; }
-                if (this.row < 0) { this.row = 0; }
+                if (this.row >= this.buf.lineCount()) {
+                    this.row = this.buf.lineCount() - 1;
+                }
+                if (this.row < 0) {
+                    this.row = 0;
+                }
                 this.clampCol();
             }
         }

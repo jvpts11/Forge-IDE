@@ -21,10 +21,18 @@ public bundle forge {
                 this.modified = false;
             }
 
-            public method buffer() returns TextBuffer* { return this.buf; }
-            public method path() returns String { return this.path; }
-            public method isModified() returns boolean { return this.modified; }
-            public method markModified() returns void { this.modified = true; }
+            public method buffer() returns TextBuffer* {
+                return this.buf;
+            }
+            public method path() returns String {
+                return this.path;
+            }
+            public method isModified() returns boolean {
+                return this.modified;
+            }
+            public method markModified() returns void {
+                this.modified = true;
+            }
 
             // Read a file from disk into the buffer, replacing its contents.
             public method openFile(String p) returns void {

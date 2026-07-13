@@ -42,7 +42,9 @@ public bundle forge {
                 this.load(this.rootNode);
             }
 
-            public method root() returns FileNode* { return this.rootNode; }
+            public method root() returns FileNode* {
+                return this.rootNode;
+            }
 
             // Every file under the project root (recursive), skipping build/vcs dirs -- powers quick-open.
             // Bounded in depth and count so a huge tree doesn't stall the picker.
@@ -82,7 +84,9 @@ public bundle forge {
             // Populate a directory node's children (idempotent), skipping ignored entries. Each entry's kind
             // comes from File.isDir.
             private method load(FileNode* node) returns void {
-                if (node.loaded || !node.isDir) { return; }
+                if (node.loaded || !node.isDir) {
+                    return;
+                }
                 node.loaded = true;
                 ArrayList<String> entries = Files.listDir(node.path);
                 for (mutable int i = 0; i < entries.size(); i++) {
@@ -97,8 +101,12 @@ public bundle forge {
 
             // Expand or collapse a directory node; the first expand loads its children.
             public method toggle(FileNode* node) returns void {
-                if (!node.isDir) { return; }
-                if (!node.expanded) { this.load(node); }
+                if (!node.isDir) {
+                    return;
+                }
+                if (!node.expanded) {
+                    this.load(node);
+                }
                 node.expanded = !node.expanded;
             }
 
@@ -122,7 +130,11 @@ public bundle forge {
             public method rowLabel(FileNode* node) returns String {
                 mutable String marker = "  ";
                 if (node.isDir) {
-                    if (node.expanded) { marker = "v "; } else { marker = "> "; }
+                    if (node.expanded) {
+                        marker = "v ";
+                    } else {
+                        marker = "> ";
+                    }
                 }
                 return "  ".repeat(node.depth) + marker + node.name;
             }
@@ -141,7 +153,9 @@ public bundle forge {
             }
             // True if `a` should sort after `b`.
             private method after(FileNode* a, FileNode* b) returns boolean {
-                if (a.isDir != b.isDir) { return !a.isDir; }
+                if (a.isDir != b.isDir) {
+                    return !a.isDir;
+                }
                 return a.name.compareTo(b.name) > 0;
             }
         }

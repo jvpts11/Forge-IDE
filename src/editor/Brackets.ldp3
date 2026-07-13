@@ -9,29 +9,51 @@ public bundle forge {
         // Match sentinel (valid() == false when there is no partner). Does not own the buffer.
         public class Brackets {
             private mutable TextBuffer* buf;
-            public constructor Brackets(TextBuffer* buf) { this.buf = buf; }
+            public constructor Brackets(TextBuffer* buf) {
+                this.buf = buf;
+            }
 
-            private method none() returns Match* { return new Match(0 - 1, 0 - 1, 0) on heap; }
-            private method isOpen(char c) returns boolean { return c == '(' || c == '[' || c == '{'; }
-            private method isClose(char c) returns boolean { return c == ')' || c == ']' || c == '}'; }
+            private method none() returns Match* {
+                return new Match(0 - 1, 0 - 1, 0) on heap;
+            }
+            private method isOpen(char c) returns boolean {
+                return c == '(' || c == '[' || c == '{';
+            }
+            private method isClose(char c) returns boolean {
+                return c == ')' || c == ']' || c == '}';
+            }
             private method closeFor(char c) returns char {
-                if (c == '(') { return ')'; }
-                if (c == '[') { return ']'; }
+                if (c == '(') {
+                    return ')';
+                }
+                if (c == '[') {
+                    return ']';
+                }
                 return '}';
             }
             private method openFor(char c) returns char {
-                if (c == ')') { return '('; }
-                if (c == ']') { return '['; }
+                if (c == ')') {
+                    return '(';
+                }
+                if (c == ']') {
+                    return '[';
+                }
                 return '{';
             }
 
             // The matching bracket for the character at (row, col), or the no-match sentinel.
             public method matchAt(int row, int col) returns Match* {
                 String line = this.buf.line(row);
-                if (col < 0 || col >= line.length()) { return this.none(); }
+                if (col < 0 || col >= line.length()) {
+                    return this.none();
+                }
                 char c = line.charAt(col);
-                if (this.isOpen(c)) { return this.scanForward(row, col, c, this.closeFor(c)); }
-                if (this.isClose(c)) { return this.scanBackward(row, col, c, this.openFor(c)); }
+                if (this.isOpen(c)) {
+                    return this.scanForward(row, col, c, this.closeFor(c));
+                }
+                if (this.isClose(c)) {
+                    return this.scanBackward(row, col, c, this.openFor(c));
+                }
                 return this.none();
             }
 
@@ -43,10 +65,14 @@ public bundle forge {
                     String line = this.buf.line(r);
                     while (c < line.length()) {
                         char ch = line.charAt(c);
-                        if (ch == open) { depth = depth + 1; }
+                        if (ch == open) {
+                            depth = depth + 1;
+                        }
                         else if (ch == close) {
                             depth = depth - 1;
-                            if (depth == 0) { return new Match(r, c, 1) on heap; }
+                            if (depth == 0) {
+                                return new Match(r, c, 1) on heap;
+                            }
                         }
                         c = c + 1;
                     }
@@ -65,16 +91,22 @@ public bundle forge {
                     while (c >= 0) {
                         if (c < line.length()) {
                             char ch = line.charAt(c);
-                            if (ch == close) { depth = depth + 1; }
+                            if (ch == close) {
+                                depth = depth + 1;
+                            }
                             else if (ch == open) {
                                 depth = depth - 1;
-                                if (depth == 0) { return new Match(r, c, 1) on heap; }
+                                if (depth == 0) {
+                                    return new Match(r, c, 1) on heap;
+                                }
                             }
                         }
                         c = c - 1;
                     }
                     r = r - 1;
-                    if (r >= 0) { c = this.buf.line(r).length() - 1; }
+                    if (r >= 0) {
+                        c = this.buf.line(r).length() - 1;
+                    }
                 }
                 return this.none();
             }

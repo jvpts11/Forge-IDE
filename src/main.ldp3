@@ -11,10 +11,22 @@ public bundle forge {
         public class Main {
             public static method main(string[] args) returns void {
                 if (args.length() > 0) {
-                    if (args[0].equals("test")) { CoreTests.run(); return; }
-                    if (args[0].equals("shot")) { GuiApp.shot("frame.ppm"); return; }
-                    if (args[0].equals("uitest")) { GuiApp.uitest("frame.ppm"); return; }
-                    if (args[0].equals("serve")) { GuiApp.serve(); return; }
+                    if (args[0].equals("test")) {
+                        CoreTests.run();
+                        return;
+                    }
+                    if (args[0].equals("shot")) {
+                        GuiApp.shot("frame.ppm");
+                        return;
+                    }
+                    if (args[0].equals("uitest")) {
+                        GuiApp.uitest("frame.ppm");
+                        return;
+                    }
+                    if (args[0].equals("serve")) {
+                        GuiApp.serve();
+                        return;
+                    }
                     // any other argument is a file or project directory to open
                     GuiApp.run(args[0]);
                     return;

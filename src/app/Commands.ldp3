@@ -44,14 +44,18 @@ public bundle forge {
             public method register(String id, String title) returns void {
                 this.commands.add(new Command(id, title) on heap);
             }
-            public method all() returns ArrayList<Command>* { return this.commands; }
+            public method all() returns ArrayList<Command>* {
+                return this.commands;
+            }
 
             // Subsequence fuzzy score: every query char must appear in `title` in order (case-insensitive).
             // Consecutive matches and matches at word starts score higher. -1 means no match.
             public method fuzzyScore(String query, String title) returns int {
                 String q = query.toLower();
                 String t = title.toLower();
-                if (q.length() == 0) { return 0; }
+                if (q.length() == 0) {
+                    return 0;
+                }
                 mutable int ti = 0;
                 mutable int qi = 0;
                 mutable int score = 0;
@@ -60,14 +64,18 @@ public bundle forge {
                     if (t.charAt(ti) == q.charAt(qi)) {
                         streak = streak + 1;
                         score = score + streak;
-                        if (ti == 0 || t.charAt(ti - 1) == ' ') { score = score + 3; }
+                        if (ti == 0 || t.charAt(ti - 1) == ' ') {
+                            score = score + 3;
+                        }
                         qi = qi + 1;
                     } else {
                         streak = 0;
                     }
                     ti = ti + 1;
                 }
-                if (qi < q.length()) { return 0 - 1; }
+                if (qi < q.length()) {
+                    return 0 - 1;
+                }
                 return score;
             }
 
@@ -76,7 +84,9 @@ public bundle forge {
                 ArrayList<Command>* out = new ArrayList<Command>() on heap;
                 for (mutable int i = 0; i < this.commands.size(); i++) {
                     Command* cmd = this.commands.get(i);
-                    if (this.fuzzyScore(query, cmd.title) >= 0) { out.add(cmd); }
+                    if (this.fuzzyScore(query, cmd.title) >= 0) {
+                        out.add(cmd);
+                    }
                 }
                 for (mutable int i = 1; i < out.size(); i++) {
                     Command* key = out.get(i);

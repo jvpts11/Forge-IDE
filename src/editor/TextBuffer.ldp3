@@ -18,25 +18,40 @@ public bundle forge {
                 this.lines.add("");
             }
 
-            public method lineCount() returns int { return this.lines.size(); }
-            public method line(int row) returns String { return this.lines.get(row); }
+            public method lineCount() returns int {
+                return this.lines.size();
+            }
+            public method line(int row) returns String {
+                return this.lines.get(row);
+            }
 
             // Whole-line helpers for line operations (duplicate / delete / move / indent).
-            public method setLine(int row, String text) returns void { this.lines.set(row, text); }
-            public method insertLine(int row, String text) returns void { this.lines.insertAt(row, text); }
+            public method setLine(int row, String text) returns void {
+                this.lines.set(row, text);
+            }
+            public method insertLine(int row, String text) returns void {
+                this.lines.insertAt(row, text);
+            }
             public method removeLine(int row) returns void {
                 this.lines.removeAt(row);
-                if (this.lines.size() == 0) { this.lines.add(""); }   // never zero lines
+                if (this.lines.size() == 0) {
+                    this.lines.add("");
+                }
+                // never zero lines
             }
 
             // Replace the whole document with `text`, split on newlines. Empty input is one empty line.
             public method loadText(String text) returns void {
                 this.lines = Strings.split(text, "\n");
-                if (this.lines.size() == 0) { this.lines.add(""); }
+                if (this.lines.size() == 0) {
+                    this.lines.add("");
+                }
             }
 
             // Serialize the document back to a single String with '\n' between lines.
-            public method text() returns String { return Strings.join(this.lines, "\n"); }
+            public method text() returns String {
+                return Strings.join(this.lines, "\n");
+            }
 
             // Insert character `c` at (row, col): everything from col on shifts right.
             public method insertChar(int row, int col, char c) returns void {
@@ -58,7 +73,9 @@ public bundle forge {
             // The text of the range (r1,c1)..(r2,c2), ordered so (r1,c1) <= (r2,c2). Multi-line ranges keep
             // the '\n' between lines.
             public method getRange(int r1, int c1, int r2, int c2) returns String {
-                if (r1 == r2) { return this.lines.get(r1).substring(c1, c2); }
+                if (r1 == r2) {
+                    return this.lines.get(r1).substring(c1, c2);
+                }
                 StringBuilder sb = new StringBuilder() on heap;
                 String first = this.lines.get(r1);
                 sb.append(first.substring(c1, first.length()));
@@ -82,7 +99,9 @@ public bundle forge {
                 String last = this.lines.get(r2);
                 String tail = last.substring(c2, last.length());
                 this.lines.set(r1, head + tail);
-                for (mutable int k = r2; k > r1; k--) { this.lines.removeAt(k); }
+                for (mutable int k = r2; k > r1; k--) {
+                    this.lines.removeAt(k);
+                }
             }
 
             // Insert `text` (possibly multi-line) at (row, col). Returns the row count added (0 for a

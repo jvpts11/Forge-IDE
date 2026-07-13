@@ -76,7 +76,9 @@ public bundle forge {
                     Memory.write<byte>(fileBuf + cast<address>(f), cast<byte>(0));
                     f = f + 1;
                 }
-                if (suggested.length() > 0) { Memory.writeString(fileBuf, suggested); }
+                if (suggested.length() > 0) {
+                    Memory.writeString(fileBuf, suggested);
+                }
                 // filter pairs "label\0pattern\0...\0\0"
                 address filter = Memory.alloc(64);
                 mutable int fp = 0;

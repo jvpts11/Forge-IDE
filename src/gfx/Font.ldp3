@@ -32,9 +32,15 @@ public bundle forge {
                 this.ascent = a.ascent;
             }
 
-            public method texture() returns int { return this.tex; }
-            public method advance() returns int { return this.cellW; }
-            public method lineHeight() returns int { return this.cellH; }
+            public method texture() returns int {
+                return this.tex;
+            }
+            public method advance() returns int {
+                return this.cellW;
+            }
+            public method lineHeight() returns int {
+                return this.cellH;
+            }
 
             // Draw one glyph at pixel (x, y) tinted (r,g,b,a). A glyph outside the atlas range draws nothing.
             // The batch is taken by pointer -- it accumulates shared mutable state (a value copy would be
@@ -42,7 +48,9 @@ public bundle forge {
             public method drawChar(Batch2D* batch, int x, int y, char c, float r, float g, float bl, float a)
                     returns void {
                 int idx = cast<int>(c) - this.first;
-                if (idx < 0 || idx >= this.count) { return; }
+                if (idx < 0 || idx >= this.count) {
+                    return;
+                }
                 int col = idx % this.cols;
                 int row = idx / this.cols;
                 float u0 = cast<float>(col * this.cellW) / cast<float>(this.atlasW);

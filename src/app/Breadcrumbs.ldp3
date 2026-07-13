@@ -26,7 +26,9 @@ public bundle forge {
                     String raw = c.editor().document().line(row);
                     String line = Breadcrumbs.stripComment(raw);
                     String d = Breadcrumbs.declName(line);
-                    if (d.length() > 0) { pending = d; }
+                    if (d.length() > 0) {
+                        pending = d;
+                    }
                     mutable int i = 0;
                     int n = line.length();
                     while (i < n) {
@@ -64,7 +66,9 @@ public bundle forge {
                 int total = c.editor().document().lineCount();
                 while (row <= firstDocLine && row < total) {
                     String line = Breadcrumbs.stripComment(c.editor().document().line(row));
-                    if (Breadcrumbs.declName(line).length() > 0) { pendingLine = row; }
+                    if (Breadcrumbs.declName(line).length() > 0) {
+                        pendingLine = row;
+                    }
                     mutable int i = 0;
                     int n = line.length();
                     while (i < n) {
@@ -90,7 +94,9 @@ public bundle forge {
                 ArrayList<int>* out = new ArrayList<int>() on heap;
                 mutable int k = 0;
                 while (k < headerLines.size()) {
-                    if (headerLines.get(k) < firstDocLine) { out.add(headerLines.get(k)); }
+                    if (headerLines.get(k) < firstDocLine) {
+                        out.add(headerLines.get(k));
+                    }
                     k = k + 1;
                 }
                 return out;
@@ -103,12 +109,18 @@ public bundle forge {
                 mutable int i = 0;
                 int n = line.length();
                 while (i < n) {
-                    while (i < n && !Breadcrumbs.isIdentChar(line.charAt(i))) { i = i + 1; }
+                    while (i < n && !Breadcrumbs.isIdentChar(line.charAt(i))) {
+                        i = i + 1;
+                    }
                     mutable int start = i;
-                    while (i < n && Breadcrumbs.isIdentChar(line.charAt(i))) { i = i + 1; }
+                    while (i < n && Breadcrumbs.isIdentChar(line.charAt(i))) {
+                        i = i + 1;
+                    }
                     if (i > start) {
                         String word = line.substring(start, i);
-                        if (Breadcrumbs.isDeclKeyword(prev)) { return word; }
+                        if (Breadcrumbs.isDeclKeyword(prev)) {
+                            return word;
+                        }
                         prev = word;
                     }
                 }
@@ -132,7 +144,9 @@ public bundle forge {
                 int n = line.length();
                 mutable int i = 0;
                 while (i + 1 < n) {
-                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') { return line.substring(0, i); }
+                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') {
+                        return line.substring(0, i);
+                    }
                     i = i + 1;
                 }
                 return line;

@@ -10,31 +10,42 @@ public bundle forge {
         public class Asserts {
             private mutable int passed;
             private mutable int failed;
-            public constructor Asserts() { this.passed = 0; this.failed = 0; }
+            public constructor Asserts() {
+                this.passed = 0;
+                this.failed = 0;
+            }
 
             public method eqStr(String actual, String expected, String name) returns void {
-                if (actual.equals(expected)) { this.passed = this.passed + 1; }
+                if (actual.equals(expected)) {
+                    this.passed = this.passed + 1;
+                }
                 else {
                     this.failed = this.failed + 1;
                     System.IO.Console.printf("FAIL %s: [%s] != [%s]\n", name, actual, expected);
                 }
             }
             public method eqInt(int actual, int expected, String name) returns void {
-                if (actual == expected) { this.passed = this.passed + 1; }
+                if (actual == expected) {
+                    this.passed = this.passed + 1;
+                }
                 else {
                     this.failed = this.failed + 1;
                     System.IO.Console.printf("FAIL %s: %d != %d\n", name, actual, expected);
                 }
             }
             public method eqBool(boolean actual, boolean expected, String name) returns void {
-                if (actual == expected) { this.passed = this.passed + 1; }
+                if (actual == expected) {
+                    this.passed = this.passed + 1;
+                }
                 else {
                     this.failed = this.failed + 1;
                     System.IO.Console.printf("FAIL %s (boolean mismatch)\n", name);
                 }
             }
 
-            public method failCount() returns int { return this.failed; }
+            public method failCount() returns int {
+                return this.failed;
+            }
 
             public method summary(String suite) returns void {
                 if (this.failed == 0) {

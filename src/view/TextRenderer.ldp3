@@ -18,23 +18,34 @@ public bundle forge {
         // the caller. The renderer owns a Highlighter -- colouring is a view concern.
         public class TextRenderer {
             private mutable Highlighter* hl;
-            public constructor TextRenderer() { this.hl = new Highlighter() on heap; }
+            public constructor TextRenderer() {
+                this.hl = new Highlighter() on heap;
+            }
 
             // Digits needed to print the largest line number, at least 3 for a steady gutter.
             private method gutterWidth(int totalLines) returns int {
                 mutable int digits = 1;
                 mutable int n = totalLines;
-                while (n >= 10) { n = n / 10; digits = digits + 1; }
-                if (digits < 3) { digits = 3; }
+                while (n >= 10) {
+                    n = n / 10;
+                    digits = digits + 1;
+                }
+                if (digits < 3) {
+                    digits = 3;
+                }
                 return digits;
             }
 
             // The visible window of `line`, starting at column `from`, at most `width` columns.
             private method clip(String line, int from, int width) returns String {
                 int len = line.length();
-                if (from >= len) { return ""; }
+                if (from >= len) {
+                    return "";
+                }
                 mutable int end = from + width;
-                if (end > len) { end = len; }
+                if (end > len) {
+                    end = len;
+                }
                 return line.substring(from, end);
             }
 
@@ -65,9 +76,13 @@ public bundle forge {
             // A one-line status bar: path (or [No Name]), a '*' when modified, caret position, line count.
             public method statusBar(Controller* c) returns String {
                 mutable String path = c.document().path();
-                if (path.length() == 0) { path = "[No Name]"; }
+                if (path.length() == 0) {
+                    path = "[No Name]";
+                }
                 mutable String dirty = "";
-                if (c.document().isModified()) { dirty = " *"; }
+                if (c.document().isModified()) {
+                    dirty = " *";
+                }
                 int line = c.editor().cursorRow() + 1;
                 int col = c.editor().cursorCol() + 1;
                 return path + dirty + "  Ln " + line.toString() + ", Col " + col.toString()
@@ -83,23 +98,66 @@ public bundle forge {
                 sb.append("m");
                 return sb.toString();
             }
-            private method reset() returns String { return this.esc("0"); }
+            private method reset() returns String {
+                return this.esc("0");
+            }
             // Foreground colour code per token class; empty means "leave default".
             private method colorFor(Tok kind) returns String {
-                if (kind == Tok.DECL)     { return this.esc("38;5;179"); }   // amber
-                if (kind == Tok.CONTROL)  { return this.esc("38;5;176"); }   // magenta
-                if (kind == Tok.MODIFIER) { return this.esc("38;5;75"); }    // blue
-                if (kind == Tok.TYPE)     { return this.esc("38;5;79"); }    // teal
-                if (kind == Tok.TYPENAME) { return this.esc("38;5;115"); }   // light teal
-                if (kind == Tok.OPWORD)   { return this.esc("38;5;173"); }   // coral
-                if (kind == Tok.SELFKW)   { return this.esc("38;5;174"); }   // rose
-                if (kind == Tok.CONSTANT) { return this.esc("38;5;180"); }   // gold
-                if (kind == Tok.FUNC)     { return this.esc("38;5;187"); }   // yellow
-                if (kind == Tok.KEYWORD)  { return this.esc("38;5;179"); }   // amber (fallback)
-                if (kind == Tok.NUMBER)   { return this.esc("38;5;151"); }   // light green
-                if (kind == Tok.STRING)   { return this.esc("38;5;114"); }   // green
-                if (kind == Tok.CHAR)     { return this.esc("38;5;114"); }
-                if (kind == Tok.COMMENT)  { return this.esc("38;5;65"); }    // grey-green
+                if (kind == Tok.DECL) {
+                    return this.esc("38;5;179");
+                }
+                // amber
+                if (kind == Tok.CONTROL) {
+                    return this.esc("38;5;176");
+                }
+                // magenta
+                if (kind == Tok.MODIFIER) {
+                    return this.esc("38;5;75");
+                }
+                // blue
+                if (kind == Tok.TYPE) {
+                    return this.esc("38;5;79");
+                }
+                // teal
+                if (kind == Tok.TYPENAME) {
+                    return this.esc("38;5;115");
+                }
+                // light teal
+                if (kind == Tok.OPWORD) {
+                    return this.esc("38;5;173");
+                }
+                // coral
+                if (kind == Tok.SELFKW) {
+                    return this.esc("38;5;174");
+                }
+                // rose
+                if (kind == Tok.CONSTANT) {
+                    return this.esc("38;5;180");
+                }
+                // gold
+                if (kind == Tok.FUNC) {
+                    return this.esc("38;5;187");
+                }
+                // yellow
+                if (kind == Tok.KEYWORD) {
+                    return this.esc("38;5;179");
+                }
+                // amber (fallback)
+                if (kind == Tok.NUMBER) {
+                    return this.esc("38;5;151");
+                }
+                // light green
+                if (kind == Tok.STRING) {
+                    return this.esc("38;5;114");
+                }
+                // green
+                if (kind == Tok.CHAR) {
+                    return this.esc("38;5;114");
+                }
+                if (kind == Tok.COMMENT) {
+                    return this.esc("38;5;65");
+                }
+                // grey-green
                 return "";
             }
             private method colorize(String text) returns String {

@@ -21,7 +21,9 @@ public bundle forge {
                 this.severity = severity;
                 this.message = message;
             }
-            public method isError() returns boolean { return this.severity == 0; }
+            public method isError() returns boolean {
+                return this.severity == 0;
+            }
         }
     }
 }

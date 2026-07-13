@@ -49,7 +49,9 @@ public bundle forge {
             public method refreshGit() returns void {
                 this.git.refresh(this.projectDir, this.docs.active().document().path());
             }
-            public method gitStatus() returns GitStatus* { return this.git; }
+            public method gitStatus() returns GitStatus* {
+                return this.git;
+            }
 
             // Point build/run and the project label at a workspace directory. Reads its ldp3.toml (if any)
             // for the program name, so the shell knows which project it's driving.
@@ -57,15 +59,21 @@ public bundle forge {
                 this.projectDir = dir;
                 this.projectName = Workbench.readProjectName(dir);
             }
-            public method projectRoot() returns String { return this.projectDir; }
-            public method projectLabel() returns String { return this.projectName; }
+            public method projectRoot() returns String {
+                return this.projectDir;
+            }
+            public method projectLabel() returns String {
+                return this.projectName;
+            }
             public method hasProject() returns boolean {
                 return File.exists(Paths.join(this.projectDir, "ldp3.toml"));
             }
             // Pull `name = "..."` out of the [program]/[library] section of an ldp3.toml, or "" if absent.
             private static method readProjectName(String dir) returns String {
                 String toml = Paths.join(dir, "ldp3.toml");
-                if (!File.exists(toml)) { return ""; }
+                if (!File.exists(toml)) {
+                    return "";
+                }
                 ArrayList<String> ls = Files.readLines(toml);
                 mutable int i = 0;
                 while (i < ls.size()) {
@@ -87,14 +95,22 @@ public bundle forge {
             }
 
             // --- diagnostics: run the LDP3 compiler and surface its errors/warnings inline ---
-            public method diagnostics() returns ArrayList<Diagnostic>* { return this.diags; }
-            public method errorCount() returns int { return this.countBySeverity(0); }
-            public method warningCount() returns int { return this.countBySeverity(1); }
+            public method diagnostics() returns ArrayList<Diagnostic>* {
+                return this.diags;
+            }
+            public method errorCount() returns int {
+                return this.countBySeverity(0);
+            }
+            public method warningCount() returns int {
+                return this.countBySeverity(1);
+            }
             private method countBySeverity(int sev) returns int {
                 mutable int c = 0;
                 mutable int i = 0;
                 while (i < this.diags.size()) {
-                    if (this.diags.get(i).severity == sev) { c = c + 1; }
+                    if (this.diags.get(i).severity == sev) {
+                        c = c + 1;
+                    }
                     i = i + 1;
                 }
                 return c;
@@ -116,7 +132,9 @@ public bundle forge {
                         int m = raw.indexOf(".ldp3:");
                         String rel = raw.substring(0, m + 5);
                         mutable String sev = "error";
-                        if (d.severity == 1) { sev = "warning"; }
+                        if (d.severity == 1) {
+                            sev = "warning";
+                        }
                         body.add(d.file + ":" + d.line.toString() + ":" + d.col.toString() + "  "
                                  + sev + ": " + d.message);
                         navFiles.add(Paths.join(this.projectDir, rel));
@@ -134,27 +152,43 @@ public bundle forge {
             // Parse `path.ldp3:LINE:COL: severity: message`; returns a sentinel (line < 0) if it doesn't match.
             private static method parseLine(String s) returns Diagnostic* {
                 int m = s.indexOf(".ldp3:");
-                if (m < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                if (m < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
                 String path = s.substring(0, m + 5);
                 String rest = s.substring(m + 6, s.length());
                 int c1 = rest.indexOf(":");
-                if (c1 < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                if (c1 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
                 String rest2 = rest.substring(c1 + 1, rest.length());
                 int c2 = rest2.indexOf(":");
-                if (c2 < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                if (c2 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
                 String rest3 = rest2.substring(c2 + 1, rest2.length()).trim();
                 int c3 = rest3.indexOf(":");
-                if (c3 < 0) { return new Diagnostic("", 0 - 1, 0, 0, "") on heap; }
+                if (c3 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
                 mutable int sev = 0;
-                if (rest3.substring(0, c3).trim().equals("warning")) { sev = 1; }
+                if (rest3.substring(0, c3).trim().equals("warning")) {
+                    sev = 1;
+                }
                 return new Diagnostic(Paths.basename(path), rest.substring(0, c1).toInt(),
                                       rest2.substring(0, c2).toInt(), sev,
                                       rest3.substring(c3 + 1, rest3.length()).trim()) on heap;
             }
 
-            public method documents() returns DocumentManager* { return this.docs; }
-            public method registry() returns CommandRegistry* { return this.commands; }
-            public method active() returns Controller* { return this.docs.active(); }
+            public method documents() returns DocumentManager* {
+                return this.docs;
+            }
+            public method registry() returns CommandRegistry* {
+                return this.commands;
+            }
+            public method active() returns Controller* {
+                return this.docs.active();
+            }
             public method openFile(String path) returns Controller* {
                 Controller* c = this.docs.openFile(path);
                 this.refreshGit();
@@ -226,7 +260,9 @@ public bundle forge {
                 return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
                     || (ch >= '0' && ch <= '9') || ch == '_';
             }
-            public method output() returns OutputPanel* { return this.out; }
+            public method output() returns OutputPanel* {
+                return this.out;
+            }
             // Run a shell command on the project and show its output in the bottom panel.
             // Run a shell command in the project directory (so `ldp3 build`/`ldp3 run` drive the open project,
             // not whatever directory Forge was launched from).
@@ -236,7 +272,9 @@ public bundle forge {
 
             // Feed a decoded key to the active document's editor. Returns whether it was handled.
             public method handleKey(Key* k) returns boolean {
-                if (!this.docs.hasActive()) { return false; }
+                if (!this.docs.hasActive()) {
+                    return false;
+                }
                 return this.keymap.dispatch(this.docs.active(), k);
             }
 
@@ -244,18 +282,50 @@ public bundle forge {
             // (open/save-as a path, find/replace a term) are dispatched by the shell with their arguments,
             // so this returns false for them. Returns whether the id was handled here.
             public method runCommand(String id) returns boolean {
-                if (id.equals("file.new")) { this.docs.openNew(); return true; }
-                if (!this.docs.hasActive()) { return false; }
+                if (id.equals("file.new")) {
+                    this.docs.openNew();
+                    return true;
+                }
+                if (!this.docs.hasActive()) {
+                    return false;
+                }
                 Controller* c = this.docs.active();
-                if (id.equals("file.save")) { c.save(); return true; }
-                if (id.equals("edit.undo")) { c.undo(); return true; }
-                if (id.equals("edit.redo")) { c.redo(); return true; }
-                if (id.equals("edit.selectAll")) { c.selectAll(); return true; }
-                if (id.equals("edit.duplicateLine")) { c.duplicateLine(); return true; }
-                if (id.equals("run.build")) { this.diagnose(); return true; }
-                if (id.equals("run.program")) { this.runShell("Run", "ldp3 run"); return true; }
-                if (id.equals("run.test")) { this.runShell("Tests", "ldp3 test"); return true; }
-                if (id.equals("view.output")) { this.out.toggle(); return true; }
+                if (id.equals("file.save")) {
+                    c.save();
+                    return true;
+                }
+                if (id.equals("edit.undo")) {
+                    c.undo();
+                    return true;
+                }
+                if (id.equals("edit.redo")) {
+                    c.redo();
+                    return true;
+                }
+                if (id.equals("edit.selectAll")) {
+                    c.selectAll();
+                    return true;
+                }
+                if (id.equals("edit.duplicateLine")) {
+                    c.duplicateLine();
+                    return true;
+                }
+                if (id.equals("run.build")) {
+                    this.diagnose();
+                    return true;
+                }
+                if (id.equals("run.program")) {
+                    this.runShell("Run", "ldp3 run");
+                    return true;
+                }
+                if (id.equals("run.test")) {
+                    this.runShell("Tests", "ldp3 test");
+                    return true;
+                }
+                if (id.equals("view.output")) {
+                    this.out.toggle();
+                    return true;
+                }
                 return false;
             }
         }

@@ -106,7 +106,9 @@ public bundle forge {
             }
             // Persist the open file paths for `projectDir`, one per line.
             public static method saveSession(String projectDir, ArrayList<String>* paths) returns void {
-                if (projectDir.length() == 0 || projectDir.equals(".")) { return; }
+                if (projectDir.length() == 0 || projectDir.equals(".")) {
+                    return;
+                }
                 StringBuilder sb = new StringBuilder() on heap;
                 mutable int i = 0;
                 while (i < paths.size()) {

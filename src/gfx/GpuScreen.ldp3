@@ -46,26 +46,56 @@ public bundle forge {
             }
 
             // The live loop toggles this to blink the caret; shot/serve leave it on so the caret always shows.
-            public method setCaretOn(boolean visible) returns void { this.caretOn = visible; }
+            public method setCaretOn(boolean visible) returns void {
+                this.caretOn = visible;
+            }
 
-            public method fontTexture() returns int { return this.font.texture(); }
+            public method fontTexture() returns int {
+                return this.font.texture();
+            }
             // Swap the glyph atlas -- used by zoom to change the font size.
-            public method setFont(Font* f) returns void { this.font = f; }
-            public method gutterPx() returns int { return this.gutterChars * this.font.advance() + 16; }
-            public method menuH() returns int { return this.font.lineHeight() + 8; }
-            public method tabH() returns int { return this.font.lineHeight() + 12; }
-            public method crumbH() returns int { return this.font.lineHeight() + 6; }
-            public method statusH() returns int { return this.font.lineHeight() + 8; }
+            public method setFont(Font* f) returns void {
+                this.font = f;
+            }
+            public method gutterPx() returns int {
+                return this.gutterChars * this.font.advance() + 16;
+            }
+            public method menuH() returns int {
+                return this.font.lineHeight() + 8;
+            }
+            public method tabH() returns int {
+                return this.font.lineHeight() + 12;
+            }
+            public method crumbH() returns int {
+                return this.font.lineHeight() + 6;
+            }
+            public method statusH() returns int {
+                return this.font.lineHeight() + 8;
+            }
             // Pixel y where the tab bar / tree / breadcrumb bar begin, below the menu bar.
-            public method contentTop() returns int { return this.menuH() + this.tabH(); }
+            public method contentTop() returns int {
+                return this.menuH() + this.tabH();
+            }
             // Pixel y where the editor code begins, below the breadcrumb bar.
-            public method editorTop() returns int { return this.contentTop() + this.crumbH(); }
-            public method treeWidth() returns int { return this.treeW; }
-            public method charW() returns int { return this.font.advance(); }
-            public method lineH() returns int { return this.font.lineHeight(); }
+            public method editorTop() returns int {
+                return this.contentTop() + this.crumbH();
+            }
+            public method treeWidth() returns int {
+                return this.treeW;
+            }
+            public method charW() returns int {
+                return this.font.advance();
+            }
+            public method lineH() returns int {
+                return this.font.lineHeight();
+            }
             // Pixel origin of the code text (for mouse hit-testing).
-            public method textOx() returns int { return this.treeW + this.gutterPx() + 6; }
-            public method textOy() returns int { return this.editorTop() + this.topPad; }
+            public method textOx() returns int {
+                return this.treeW + this.gutterPx() + 6;
+            }
+            public method textOy() returns int {
+                return this.editorTop() + this.topPad;
+            }
             // Which tab index is under pixel x in the tab bar (-1 if none) -- mirrors drawTabBar's layout.
             public method tabAtX(DocumentManager* docs, int mx) returns int {
                 int cw = this.font.advance();
@@ -155,7 +185,11 @@ public bundle forge {
                     mutable float r = 0.502;
                     mutable float g = 0.588;
                     mutable float b = 0.584;
-                    if (last) { r = 0.804; g = 0.851; b = 0.843; }
+                    if (last) {
+                        r = 0.804;
+                        g = 0.851;
+                        b = 0.843;
+                    }
                     this.font.drawText(batch, x, ty, seg, r, g, b, 1.0);
                     x = x + (seg.length() + 1) * cw;
                     if (!last) {
@@ -169,8 +203,12 @@ public bundle forge {
             // The start screen shown when no project is open: the Forge banner, the New Project / Open Folder /
             // Open Project actions, and the list of recent projects to click. Layout is mirrored by welcomeHit.
             // btnX(k)/btnW give the three action buttons a shared geometry both methods use.
-            private method welcomeX0(int screenW) returns int { return screenW / 2 - 260; }
-            private method welcomeBtnW() returns int { return 168; }
+            private method welcomeX0(int screenW) returns int {
+                return screenW / 2 - 260;
+            }
+            private method welcomeBtnW() returns int {
+                return 168;
+            }
             private method welcomeBtnX(int screenW, int k) returns int {
                 return this.welcomeX0(screenW) + k * (this.welcomeBtnW() + 12);
             }
@@ -223,7 +261,9 @@ public bundle forge {
             private method welcomeButton(Batch2D* batch, int x, int y, int w, int h, String caption,
                                          boolean hover) returns void {
                 mutable float bg = 0.063;
-                if (hover) { bg = 0.114; }
+                if (hover) {
+                    bg = 0.114;
+                }
                 batch.rect(x, y, w, h, bg, 0.106, 0.114, 1.0);
                 batch.rect(x, y, 3, h, 0.918, 0.706, 0.392, 1.0);
                 this.font.drawText(batch, x + 14, y + 10, caption, 0.804, 0.851, 0.843, 1.0);
@@ -241,7 +281,9 @@ public bundle forge {
                     mutable int k = 0;
                     while (k < 3) {
                         int bx = this.welcomeBtnX(screenW, k);
-                        if (mx >= bx && mx < bx + btnW) { return 0 - 1 - k; }
+                        if (mx >= bx && mx < bx + btnW) {
+                            return 0 - 1 - k;
+                        }
                         k = k + 1;
                     }
                     return 0 - 10;
@@ -291,11 +333,15 @@ public bundle forge {
                 boolean overBuild = my >= 0 && my < mh && mx >= bbx && mx < bbx + this.toolBtnW();
                 boolean overRun = my >= 0 && my < mh && mx >= rbx && mx < rbx + this.toolBtnW();
                 mutable float bb = 0.063;
-                if (overBuild) { bb = 0.118; }
+                if (overBuild) {
+                    bb = 0.118;
+                }
                 batch.rect(bbx, 4, this.toolBtnW(), mh - 8, bb, 0.106, 0.114, 1.0);
                 this.font.drawText(batch, bbx + cw, ty, "Build", 0.804, 0.851, 0.843, 1.0);
                 mutable float rb = 0.063;
-                if (overRun) { rb = 0.118; }
+                if (overRun) {
+                    rb = 0.118;
+                }
                 batch.rect(rbx, 4, this.toolBtnW(), mh - 8, rb, 0.106, 0.114, 1.0);
                 // a small green play triangle
                 int triX = rbx + cw;
@@ -311,25 +357,37 @@ public bundle forge {
                     this.font.drawText(batch, px, ty, proj, 0.502, 0.588, 0.584, 1.0);
                 }
             }
-            private method toolBtnW() returns int { return 7 * this.font.advance(); }
-            public method runButtonX(int screenW) returns int { return screenW - this.toolBtnW() - 10; }
+            private method toolBtnW() returns int {
+                return 7 * this.font.advance();
+            }
+            public method runButtonX(int screenW) returns int {
+                return screenW - this.toolBtnW() - 10;
+            }
             public method buildButtonX(int screenW) returns int {
                 return this.runButtonX(screenW) - this.toolBtnW() - 6;
             }
             // Which menu-bar toolbar button is under (mx, my): 1 = Run, 0 = Build, -1 = none.
             public method toolButtonAt(int mx, int my, int screenW) returns int {
                 int mh = this.menuH();
-                if (my < 0 || my >= mh) { return 0 - 1; }
+                if (my < 0 || my >= mh) {
+                    return 0 - 1;
+                }
                 int rbx = this.runButtonX(screenW);
-                if (mx >= rbx && mx < rbx + this.toolBtnW()) { return 1; }
+                if (mx >= rbx && mx < rbx + this.toolBtnW()) {
+                    return 1;
+                }
                 int bbx = this.buildButtonX(screenW);
-                if (mx >= bbx && mx < bbx + this.toolBtnW()) { return 0; }
+                if (mx >= bbx && mx < bbx + this.toolBtnW()) {
+                    return 0;
+                }
                 return 0 - 1;
             }
 
             // The open menu's dropdown, anchored under its title. Does nothing if no menu is open.
             public method drawMenuDropdown(Batch2D* batch, MenuBar* mb, int mx, int my) returns void {
-                if (!mb.isOpen()) { return; }
+                if (!mb.isOpen()) {
+                    return;
+                }
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 int mh = this.menuH();
@@ -373,7 +431,9 @@ public bundle forge {
                 mutable int i = 0;
                 while (i < m.items.size()) {
                     int l = m.items.get(i).caption.length();
-                    if (l > maxc) { maxc = l; }
+                    if (l > maxc) {
+                        maxc = l;
+                    }
                     i = i + 1;
                 }
                 return (maxc + 4) * cw;
@@ -384,7 +444,10 @@ public bundle forge {
                 int cw = this.font.advance();
                 mutable int x = 8;
                 mutable int i = 0;
-                while (i < idx) { x = x + (mb.title(i).length() + 2) * cw; i = i + 1; }
+                while (i < idx) {
+                    x = x + (mb.title(i).length() + 2) * cw;
+                    i = i + 1;
+                }
                 return x;
             }
             // Which menu title is under pixel x in the bar (-1 if none). Only meaningful when my < menuH().
@@ -394,7 +457,9 @@ public bundle forge {
                 mutable int i = 0;
                 while (i < mb.count()) {
                     int tw = (mb.title(i).length() + 2) * cw;
-                    if (mx >= x && mx < x + tw) { return i; }
+                    if (mx >= x && mx < x + tw) {
+                        return i;
+                    }
                     x = x + tw;
                     i = i + 1;
                 }
@@ -402,23 +467,31 @@ public bundle forge {
             }
             // Which dropdown item is under pixel (mx, my) for the open menu (-1 if none or on a separator).
             public method dropdownItemAt(MenuBar* mb, int mx, int my) returns int {
-                if (!mb.isOpen()) { return 0 - 1; }
+                if (!mb.isOpen()) {
+                    return 0 - 1;
+                }
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 int mh = this.menuH();
                 Menu* m = mb.openMenu();
                 int x = this.menuTitleX(mb, mb.openIndex);
                 int dw = this.dropdownWidth(m, cw);
-                if (mx < x || mx >= x + dw || my < mh) { return 0 - 1; }
+                if (mx < x || mx >= x + dw || my < mh) {
+                    return 0 - 1;
+                }
                 int rowH = ch + 6;
                 mutable int y = mh + 3;
                 mutable int i = 0;
                 while (i < m.items.size()) {
                     MenuItem* it = m.items.get(i);
                     mutable int h = rowH;
-                    if (it.isSeparator()) { h = 7; }
+                    if (it.isSeparator()) {
+                        h = 7;
+                    }
                     if (my >= y && my < y + h) {
-                        if (it.isSeparator()) { return 0 - 1; }
+                        if (it.isSeparator()) {
+                            return 0 - 1;
+                        }
                         return i;
                     }
                     y = y + h;
@@ -431,14 +504,22 @@ public bundle forge {
             // to the number of lines (so an empty or short panel is small, not a big blank box), capped at
             // ~40% of the window.
             public method outputPanelHeight(OutputPanel* panel, int screenH) returns int {
-                if (!panel.visible) { return 0; }
+                if (!panel.visible) {
+                    return 0;
+                }
                 int ch = this.font.lineHeight();
                 int headerH = ch + 8;
                 mutable int maxRows = (screenH * 4 / 10) / ch;
-                if (maxRows < 3) { maxRows = 3; }
+                if (maxRows < 3) {
+                    maxRows = 3;
+                }
                 mutable int rows = panel.lineCount();
-                if (rows < 1) { rows = 1; }
-                if (rows > maxRows) { rows = maxRows; }
+                if (rows < 1) {
+                    rows = 1;
+                }
+                if (rows > maxRows) {
+                    rows = maxRows;
+                }
                 return headerH + rows * ch + 8;
             }
             // The build/run output panel: a titled band at the bottom of the editor area with a close button,
@@ -454,13 +535,17 @@ public bundle forge {
                 int xbx = ox + pw - 2 * cw;
                 boolean overX = mx >= xbx - cw && mx < xbx + cw && my >= oy && my < oy + ch + 8;
                 mutable float xr = 0.502;
-                if (overX) { xr = 0.902; }
+                if (overX) {
+                    xr = 0.902;
+                }
                 this.font.drawText(batch, xbx, oy + 4, "x", xr, 0.588, 0.584, 1.0);
                 int headerH = ch + 8;
                 int rows = (ph - headerH) / ch;
                 int total = panel.lineCount();
                 mutable int start = 0;
-                if (total > rows) { start = total - rows; }
+                if (total > rows) {
+                    start = total - rows;
+                }
                 mutable int i = start;
                 mutable int y = oy + headerH;
                 while (i < total) {
@@ -492,8 +577,12 @@ public bundle forge {
                 this.font.drawText(batch, cw, ty, "LDP3", 0.125, 0.086, 0.043, 1.0);
                 // file name + dirty marker
                 mutable String name = c.document().path();
-                if (name.length() == 0) { name = "untitled"; }
-                if (c.document().isModified()) { name = name + " *"; }
+                if (name.length() == 0) {
+                    name = "untitled";
+                }
+                if (c.document().isModified()) {
+                    name = name + " *";
+                }
                 this.font.drawText(batch, chipW + cw, ty, name, 0.804, 0.851, 0.843, 1.0);
                 // diagnostics count (errors red, warnings amber)
                 int errs = wb.errorCount();
@@ -502,7 +591,9 @@ public bundle forge {
                     int dx = chipW + cw + (name.length() + 3) * cw;
                     String ecnt = "x" + errs.toString();
                     mutable float er = 0.902;
-                    if (errs == 0) { er = 0.4; }
+                    if (errs == 0) {
+                        er = 0.4;
+                    }
                     this.font.drawText(batch, dx, ty, ecnt, er, 0.318, 0.263, 1.0);
                     String wcnt = "!" + warns.toString();
                     this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, 0.902, 0.706, 0.318, 1.0);
@@ -660,7 +751,9 @@ public bundle forge {
                 // so you always see what scope the code belongs to. Draws the innermost few over the top rows.
                 ArrayList<int>* sticky = Breadcrumbs.stickyLines(c, firstLine);
                 mutable int sc = sticky.size();
-                if (sc > 3) { sc = 3; }
+                if (sc > 3) {
+                    sc = 3;
+                }
                 int startIdx = sticky.size() - sc;
                 mutable int s = 0;
                 while (s < sc) {
@@ -718,13 +811,20 @@ public bundle forge {
                             mutable float dr = 0.902;
                             mutable float dg = 0.318;
                             mutable float db = 0.263;
-                            if (d.severity != 0) { dg = 0.706; db = 0.318; }
+                            if (d.severity != 0) {
+                                dg = 0.706;
+                                db = 0.318;
+                            }
                             batch.rect(ox + 3, y + ch / 2 - 3, 6, 6, dr, dg, db, 1.0);
                             String txt = c.editor().document().line(d.line - 1);
                             mutable int startCol = d.col - 1;
-                            if (startCol < 0) { startCol = 0; }
+                            if (startCol < 0) {
+                                startCol = 0;
+                            }
                             mutable int uw = (txt.length() - startCol) * cw;
-                            if (uw < cw) { uw = cw; }
+                            if (uw < cw) {
+                                uw = cw;
+                            }
                             batch.rect(textX + startCol * cw, y + ch - 2, uw, 2, dr, dg, db, 0.85);
                         }
                         di = di + 1;
@@ -769,15 +869,21 @@ public bundle forge {
                 batch.rect(x, oy, rw, ph, 0.027, 0.055, 0.063, 1.0);      // track
                 Controller* c = wb.active();
                 int total = c.lineCount();
-                if (total <= 0) { return; }
+                if (total <= 0) {
+                    return;
+                }
                 int first = c.firstLine();
                 int vis = c.visibleRows();
                 int thumbY = oy + (first * ph) / total;
                 mutable int thumbH = (vis * ph) / total;
-                if (thumbH < 24) { thumbH = 24; }
+                if (thumbH < 24) {
+                    thumbH = 24;
+                }
                 batch.rect(x + 2, thumbY, rw - 4, thumbH, 0.918, 0.706, 0.392, 0.28);   // amber thumb
                 String base = Paths.basename(c.document().path());
-                if (base.length() == 0) { return; }
+                if (base.length() == 0) {
+                    return;
+                }
                 ArrayList<Diagnostic>* ds = wb.diagnostics();
                 mutable int i = 0;
                 while (i < ds.size()) {
@@ -787,7 +893,10 @@ public bundle forge {
                         mutable float r = 0.902;
                         mutable float g = 0.318;
                         mutable float b = 0.263;
-                        if (d.severity != 0) { g = 0.706; b = 0.318; }
+                        if (d.severity != 0) {
+                            g = 0.706;
+                            b = 0.318;
+                        }
                         batch.rect(x, ty, rw, 2, r, g, b, 1.0);
                     }
                     i = i + 1;
@@ -805,11 +914,17 @@ public bundle forge {
                     int screenRow = c.screenRowForDocLine(row);
                     if (screenRow >= 0 && screenRow < visible) {
                         mutable int startCol = 0;
-                        if (row == sr) { startCol = sc; }
+                        if (row == sr) {
+                            startCol = sc;
+                        }
                         mutable int endCol = c.editor().document().line(row).length();
-                        if (row == er) { endCol = ec; }
+                        if (row == er) {
+                            endCol = ec;
+                        }
                         mutable int wsel = (endCol - startCol) * cw;
-                        if (wsel < cw && row < er) { wsel = cw; }
+                        if (wsel < cw && row < er) {
+                            wsel = cw;
+                        }
                         int x = textX + startCol * cw;
                         batch.rect(x, oy + this.topPad + screenRow * ch, wsel, ch, 0.918, 0.706, 0.392, 0.22);
                     }
@@ -850,7 +965,9 @@ public bundle forge {
                                            int visible) returns void {
                 String word = c.wordAtCaret();
                 int wlen = word.length();
-                if (wlen < 2) { return; }
+                if (wlen < 2) {
+                    return;
+                }
                 int total = c.lineCount();
                 int caretRow = c.editor().cursorRow();
                 int caretCol = c.editor().cursorCol();
@@ -883,11 +1000,17 @@ public bundle forge {
                 int wlen = word.length();
                 mutable int j = 0;
                 while (j < wlen) {
-                    if (line.charAt(i + j) != word.charAt(j)) { return false; }
+                    if (line.charAt(i + j) != word.charAt(j)) {
+                        return false;
+                    }
                     j = j + 1;
                 }
-                if (i > 0 && GpuScreen.isWordCh(line.charAt(i - 1))) { return false; }
-                if (i + wlen < line.length() && GpuScreen.isWordCh(line.charAt(i + wlen))) { return false; }
+                if (i > 0 && GpuScreen.isWordCh(line.charAt(i - 1))) {
+                    return false;
+                }
+                if (i + wlen < line.length() && GpuScreen.isWordCh(line.charAt(i + wlen))) {
+                    return false;
+                }
                 return true;
             }
             private static method isWordCh(char ch) returns boolean {
@@ -898,7 +1021,9 @@ public bundle forge {
             // Draw a subtle boxed cell around a matched bracket at screen row `sr`, column `col`.
             private method drawBracketCell(Batch2D* batch, int sr, int col, int textX, int oy, int cw, int ch,
                                            int visible) returns void {
-                if (sr < 0 || sr >= visible) { return; }
+                if (sr < 0 || sr >= visible) {
+                    return;
+                }
                 int x = textX + col * cw;
                 int y = oy + this.topPad + sr * ch;
                 batch.rect(x, y, cw, ch, 0.549, 0.784, 0.624, 0.16);
@@ -910,8 +1035,12 @@ public bundle forge {
             // The column of the bracket the caret sits on/after (-1 if none) -- mirrors Editor.matchingBracket.
             private method caretBracketCol(Controller* c, int row, int col) returns int {
                 String line = c.editor().document().line(row);
-                if (col < line.length() && this.isBracket(line.charAt(col))) { return col; }
-                if (col > 0 && this.isBracket(line.charAt(col - 1))) { return col - 1; }
+                if (col < line.length() && this.isBracket(line.charAt(col))) {
+                    return col;
+                }
+                if (col > 0 && this.isBracket(line.charAt(col - 1))) {
+                    return col - 1;
+                }
                 return 0 - 1;
             }
             private method isBracket(char ch) returns boolean {
@@ -919,16 +1048,22 @@ public bundle forge {
             }
             private method matchAt(String line, String q, int pos) returns boolean {
                 int m = q.length();
-                if (pos + m > line.length()) { return false; }
+                if (pos + m > line.length()) {
+                    return false;
+                }
                 mutable int j = 0;
                 while (j < m) {
-                    if (this.lc(line.charAt(pos + j)) != this.lc(q.charAt(j))) { return false; }
+                    if (this.lc(line.charAt(pos + j)) != this.lc(q.charAt(j))) {
+                        return false;
+                    }
                     j = j + 1;
                 }
                 return true;
             }
             private method lc(char c) returns char {
-                if (c >= 'A' && c <= 'Z') { return cast<char>(cast<int>(c) + 32); }
+                if (c >= 'A' && c <= 'Z') {
+                    return cast<char>(cast<int>(c) + 32);
+                }
                 return c;
             }
 
@@ -944,7 +1079,9 @@ public bundle forge {
                 int px = cx - comp.prefix.length() * cw;
                 int py = cy + ch;
                 mutable int shown = comp.items.size();
-                if (shown > 10) { shown = 10; }
+                if (shown > 10) {
+                    shown = 10;
+                }
                 int pw = 280;
                 int pph = shown * (ch + 2) + 6;
                 batch.rect(px, py, pw, pph, 0.063, 0.106, 0.114, 1.0);
@@ -952,7 +1089,9 @@ public bundle forge {
                 mutable int i = 0;
                 while (i < shown) {
                     int ry = py + 3 + i * (ch + 2);
-                    if (i == comp.sel) { batch.rect(px + 2, ry - 1, pw - 4, ch + 2, 0.918, 0.706, 0.392, 0.18); }
+                    if (i == comp.sel) {
+                        batch.rect(px + 2, ry - 1, pw - 4, ch + 2, 0.918, 0.706, 0.392, 0.18);
+                    }
                     this.font.drawText(batch, px + 8, ry, comp.items.get(i), 0.804, 0.851, 0.843, 1.0);
                     i = i + 1;
                 }
@@ -993,12 +1132,24 @@ public bundle forge {
             // --- modal overlays (drawn on top of the frame) ---
             public method drawOverlay(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW, int screenH)
                     returns void {
-                if (ov.mode == 1) { this.drawPalette(batch, ov, wb, screenW, screenH); }
-                else if (ov.mode == 2) { this.drawFindBar(batch, ov, wb, screenW); }
-                else if (ov.mode == 3) { this.drawSymbols(batch, ov, screenW, screenH); }
-                else if (ov.mode == 4) { this.drawQuickOpen(batch, ov, screenW, screenH); }
-                else if (ov.mode == 5) { this.drawGoToLine(batch, ov, screenW); }
-                else if (ov.mode == 6) { this.drawFindInFiles(batch, ov, screenW); }
+                if (ov.mode == 1) {
+                    this.drawPalette(batch, ov, wb, screenW, screenH);
+                }
+                else if (ov.mode == 2) {
+                    this.drawFindBar(batch, ov, wb, screenW);
+                }
+                else if (ov.mode == 3) {
+                    this.drawSymbols(batch, ov, screenW, screenH);
+                }
+                else if (ov.mode == 4) {
+                    this.drawQuickOpen(batch, ov, screenW, screenH);
+                }
+                else if (ov.mode == 5) {
+                    this.drawGoToLine(batch, ov, screenW);
+                }
+                else if (ov.mode == 6) {
+                    this.drawFindInFiles(batch, ov, screenW);
+                }
             }
 
             // Find-in-files box (Ctrl+Shift+F): a centered input; Enter greps the project into the output panel.
@@ -1080,7 +1231,9 @@ public bundle forge {
                 int by = 70;
                 ArrayList<int>* m = ov.matches();
                 mutable int shown = m.size();
-                if (shown > 14) { shown = 14; }
+                if (shown > 14) {
+                    shown = 14;
+                }
                 int bh = ch + 12 + shown * (ch + 4) + 8;
                 batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);        // dim backdrop
                 batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
@@ -1094,7 +1247,9 @@ public bundle forge {
                 while (i < shown) {
                     int orig = m.get(i);
                     int ry = by + ch + 12 + i * (ch + 4);
-                    if (i == ov.sel) { batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18); }
+                    if (i == ov.sel) {
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18);
+                    }
                     this.font.drawText(batch, bx + 16, ry, ov.items.get(orig), 0.804, 0.851, 0.843, 1.0);
                     String ln = ":" + ov.targets.get(orig).toString();
                     this.font.drawText(batch, bx + bw - 16 - ln.length() * cw, ry, ln, 0.376, 0.478, 0.475, 1.0);
@@ -1111,7 +1266,9 @@ public bundle forge {
                 int by = 70;
                 ArrayList<Command>* results = wb.registry().filter(ov.query);
                 mutable int shown = results.size();
-                if (shown > 12) { shown = 12; }
+                if (shown > 12) {
+                    shown = 12;
+                }
                 int bh = ch + 12 + shown * (ch + 4) + 8;
                 batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);        // dim backdrop
                 batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
@@ -1125,7 +1282,9 @@ public bundle forge {
                 mutable int i = 0;
                 while (i < shown) {
                     int ry = by + ch + 12 + i * (ch + 4);
-                    if (i == ov.sel) { batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18); }
+                    if (i == ov.sel) {
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, 0.918, 0.706, 0.392, 0.18);
+                    }
                     Command* cmd = results.get(i);
                     this.font.drawText(batch, bx + 16, ry, cmd.title, 0.804, 0.851, 0.843, 1.0);
                     int idx = bx + bw - 16 - cmd.id.length() * cw;
@@ -1151,7 +1310,9 @@ public bundle forge {
                 this.drawField(batch, bx, fy, cw, ch, "find", ov.query, !ov.focusReplace);
                 int total = wb.active().matchCount(ov.query);
                 mutable String cnt = total.toString() + " found";
-                if (ov.query.length() == 0) { cnt = ""; }
+                if (ov.query.length() == 0) {
+                    cnt = "";
+                }
                 this.font.drawText(batch, bx + bw - (cnt.length() + 1) * cw, fy, cnt, 0.502, 0.588, 0.584, 1.0);
                 // replace row
                 int ry = by + 6 + rowH;
@@ -1168,7 +1329,11 @@ public bundle forge {
                 mutable float lr = 0.376;
                 mutable float lg = 0.478;
                 mutable float lb = 0.475;
-                if (focused) { lr = 0.918; lg = 0.706; lb = 0.392; }
+                if (focused) {
+                    lr = 0.918;
+                    lg = 0.706;
+                    lb = 0.392;
+                }
                 this.font.drawText(batch, bx + 12, y, caption, lr, lg, lb, 1.0);
                 this.font.drawText(batch, bx + 12 + 5 * cw, y, text, 0.804, 0.851, 0.843, 1.0);
                 if (focused) {
@@ -1212,25 +1377,72 @@ public bundle forge {
                     returns void {
                 Tok k = sp.kind;
                 int x = textX + sp.start * cw;
-                if (k == Tok.WS) { return; }
+                if (k == Tok.WS) {
+                    return;
+                }
                 // A multi-hue scheme in the Forge world: amber for structural declarations (the identity
                 // colour), teal for types, magenta for control flow, blue for modifiers, coral for word
                 // operators and self-refs, yellow for calls, green for literals/comments.
-                if (k == Tok.DECL)     { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.918, 0.706, 0.392, 1.0); return; }
-                if (k == Tok.CONTROL)  { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.831, 0.573, 0.706, 1.0); return; }
-                if (k == Tok.MODIFIER) { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.435, 0.678, 0.796, 1.0); return; }
-                if (k == Tok.TYPE)     { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.376, 0.788, 0.678, 1.0); return; }
-                if (k == Tok.TYPENAME) { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.545, 0.831, 0.741, 1.0); return; }
-                if (k == Tok.OPWORD)   { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.898, 0.588, 0.443, 1.0); return; }
-                if (k == Tok.SELFKW)   { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.882, 0.529, 0.505, 1.0); return; }
-                if (k == Tok.CONSTANT) { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.847, 0.706, 0.482, 1.0); return; }
-                if (k == Tok.FUNC)     { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.863, 0.863, 0.667, 1.0); return; }
-                if (k == Tok.KEYWORD)  { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.918, 0.706, 0.392, 1.0); return; }
-                if (k == Tok.NUMBER)   { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.710, 0.808, 0.659, 1.0); return; }
-                if (k == Tok.STRING)   { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0); return; }
-                if (k == Tok.CHAR)     { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0); return; }
-                if (k == Tok.COMMENT)  { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.384, 0.549, 0.408, 1.0); return; }
-                if (k == Tok.PUNCT)    { this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.565, 0.635, 0.631, 1.0); return; }
+                if (k == Tok.DECL) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.918, 0.706, 0.392, 1.0);
+                    return;
+                }
+                if (k == Tok.CONTROL) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.831, 0.573, 0.706, 1.0);
+                    return;
+                }
+                if (k == Tok.MODIFIER) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.435, 0.678, 0.796, 1.0);
+                    return;
+                }
+                if (k == Tok.TYPE) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.376, 0.788, 0.678, 1.0);
+                    return;
+                }
+                if (k == Tok.TYPENAME) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.545, 0.831, 0.741, 1.0);
+                    return;
+                }
+                if (k == Tok.OPWORD) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.898, 0.588, 0.443, 1.0);
+                    return;
+                }
+                if (k == Tok.SELFKW) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.882, 0.529, 0.505, 1.0);
+                    return;
+                }
+                if (k == Tok.CONSTANT) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.847, 0.706, 0.482, 1.0);
+                    return;
+                }
+                if (k == Tok.FUNC) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.863, 0.863, 0.667, 1.0);
+                    return;
+                }
+                if (k == Tok.KEYWORD) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.918, 0.706, 0.392, 1.0);
+                    return;
+                }
+                if (k == Tok.NUMBER) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.710, 0.808, 0.659, 1.0);
+                    return;
+                }
+                if (k == Tok.STRING) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0);
+                    return;
+                }
+                if (k == Tok.CHAR) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.561, 0.780, 0.624, 1.0);
+                    return;
+                }
+                if (k == Tok.COMMENT) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.384, 0.549, 0.408, 1.0);
+                    return;
+                }
+                if (k == Tok.PUNCT) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.565, 0.635, 0.631, 1.0);
+                    return;
+                }
                 this.font.drawSub(batch, x, y, line, sp.start, sp.end, 0.804, 0.851, 0.843, 1.0);
             }
         }
