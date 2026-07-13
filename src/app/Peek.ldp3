@@ -1,0 +1,58 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // The state of an inline "peek definition" popup (Alt+F12): a window of source lines around a symbol's
+        // declaration, rendered over the editor so you can read the definition without leaving the current
+        // file. `active` gates the whole thing; Esc clears it, Enter jumps to it for real.
+        public class Peek {
+            public mutable boolean active;
+            public mutable String file;               // basename, shown in the header
+            public mutable String fullPath;           // opened if the user presses Enter to jump
+            public mutable int startLine;             // 0-based first line of the window within the file
+            public mutable int defLine;               // 0-based line of the declaration itself (highlighted)
+            public mutable ArrayList<String>* lines;  // the windowed source lines
+
+            public constructor Peek() {
+                this.active = false;
+                this.file = "";
+                this.fullPath = "";
+                this.startLine = 0;
+                this.defLine = 0;
+                this.lines = new ArrayList<String>() on heap;
+            }
+
+            public method clear() returns void {
+                this.active = false;
+            }
+            public method isActive() returns boolean {
+                return this.active;
+            }
+            // Populate the window (a few lines of context on each side of `declLine`) and show it.
+            public method show(String path, String base, ArrayList<String> allLines, int declLine) returns void {
+                mutable int start = declLine - 2;
+                if (start < 0) {
+                    start = 0;
+                }
+                mutable int end = start + 14;
+                if (end > allLines.size()) {
+                    end = allLines.size();
+                }
+                this.lines = new ArrayList<String>() on heap;
+                mutable int i = start;
+                while (i < end) {
+                    this.lines.add(allLines.get(i));
+                    i = i + 1;
+                }
+                this.fullPath = path;
+                this.file = base;
+                this.startLine = start;
+                this.defLine = declLine;
+                this.active = true;
+            }
+        }
+    }
+}

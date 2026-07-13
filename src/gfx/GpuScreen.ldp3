@@ -21,6 +21,8 @@ import io.FileTree;
 import io.FileNode;
 import syntax.Tok;
 import syntax.Span;
+import syntax.Highlighter;
+import app.Peek;
 import editor.Match;
 import System.Collections.ArrayList;
 import System.IO.Paths;
@@ -41,6 +43,7 @@ public bundle forge {
             private mutable int treeW;
             private mutable boolean caretOn;   // caret visibility for blink (the live loop toggles it)
             private mutable Theme* theme;      // the whole colour palette; swap to re-skin the IDE
+            private mutable Highlighter* hl;   // tokenises peek-popup lines (from files that aren't open)
 
             public constructor GpuScreen(Font* font) {
                 this.font = font;
@@ -49,6 +52,7 @@ public bundle forge {
                 this.treeW = 230;
                 this.caretOn = true;
                 this.theme = Theme.makeDark();
+                this.hl = new Highlighter() on heap;
             }
 
             public method colors() returns Theme* {
@@ -188,6 +192,9 @@ public bundle forge {
                 this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
                 this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
                 this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw, screenH - etop - sh - panelH);
+                if (wb.peekView().isActive()) {
+                    this.drawPeek(batch, wb, tw, etop, screenW - tw, screenH - etop - sh - panelH);
+                }
                 if (termOpen) {
                     this.drawTerminal(batch, wb.terminal(), tw, screenH - sh - panelH, screenW - tw, panelH);
                 } else if (panelH > 0) {
@@ -1132,6 +1139,57 @@ public bundle forge {
                     i = i + 1;
                 }
                 return i;
+            }
+
+            // Inline peek-definition popup (Alt+F12): a bordered card of the definition's source shown just
+            // below the caret (or above it if there is no room), read-only and syntax-highlighted. The
+            // declaration line is banded; Enter jumps to it, Esc closes it.
+            private method drawPeek(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph) returns void {
+                Peek* pk = wb.peekView();
+                Controller* c = wb.active();
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int caretRow = c.caretScreenRow();
+                int rows = pk.lines.size();
+                int bodyH = (rows + 1) * ch + 10;
+                mutable int py = oy + this.topPad + (caretRow + 1) * ch + 2;
+                if (caretRow < 0) {
+                    py = oy + this.topPad + 2;
+                }
+                if (py + bodyH > oy + ph) {
+                    mutable int above = oy + this.topPad + caretRow * ch - bodyH - 2;
+                    if (above < oy + this.topPad) {
+                        above = oy + this.topPad;
+                    }
+                    py = above;
+                }
+                batch.rect(ox, py, pw, bodyH, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 0.98);
+                batch.rect(ox, py, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
+                batch.rect(ox, py + bodyH - 1, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
+                this.font.drawText(batch, ox + 8, py + 4, "> " + pk.file + ":" + (pk.defLine + 1).toString()
+                    + "   (Enter to open  Esc to close)",
+                    this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int i = 0;
+                while (i < rows) {
+                    int ly = py + ch + 6 + i * ch;
+                    int docLine = pk.startLine + i;
+                    if (docLine == pk.defLine) {
+                        batch.rect(ox, ly, pw, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.12);
+                    }
+                    String num = (docLine + 1).toString();
+                    this.font.drawText(batch, ox + 8, ly, num,
+                        this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, 1.0);
+                    String line = pk.lines.get(i);
+                    int px = ox + 8 + 6 * cw;
+                    ArrayList<Span> spans = this.hl.tokenize(line);
+                    mutable int si = 0;
+                    while (si < spans.size()) {
+                        this.drawSpan(batch, px, ly, cw, line, spans.get(si));
+                        si = si + 1;
+                    }
+                    i = i + 1;
+                }
+                return;
             }
 
             private method drawOverviewRuler(Batch2D* batch, Workbench* wb, int rightX, int oy, int ph)

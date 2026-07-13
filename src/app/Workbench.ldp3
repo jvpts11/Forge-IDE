@@ -48,6 +48,7 @@ public bundle forge {
             private mutable int lastNavRow;
             private mutable int lastNavCol;
             private mutable boolean navInit;
+            private mutable Peek* peek;              // inline peek-definition popup (Alt+F12)
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -71,7 +72,65 @@ public bundle forge {
                 this.lastNavRow = 0;
                 this.lastNavCol = 0;
                 this.navInit = false;
+                this.peek = new Peek() on heap;
                 this.docs.openNew();               // start on one empty document
+            }
+
+            public method peekView() returns Peek* {
+                return this.peek;
+            }
+            // Alt+F12: resolve the definition of the identifier under the caret (current file first, then the
+            // whole project) and show it inline in a peek popup instead of jumping. Returns true if found.
+            public method peekDefinition(ArrayList<String>* files) returns boolean {
+                Controller* c = this.docs.active();
+                String w = c.wordAtCaret();
+                if (w.length() == 0) {
+                    return false;
+                }
+                int localLine = Symbols.definitionLine(c, w);
+                if (localLine >= 0) {
+                    this.peek.show(c.document().path(), Paths.basename(c.document().path()),
+                                   Workbench.docLines(c), localLine);
+                    return true;
+                }
+                String activePath = c.document().path();
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (path.endsWith(".ldp3") && !path.equals(activePath)) {
+                        ArrayList<String> ls = Files.readLines(path);
+                        int line = Symbols.definitionLineIn(ls, w);
+                        if (line >= 0) {
+                            this.peek.show(path, Paths.basename(path), ls, line);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            // Enter while a peek is open: jump to it for real (open its file, place the caret on the decl line).
+            public method peekJump() returns void {
+                if (!this.peek.isActive()) {
+                    return;
+                }
+                String path = this.peek.fullPath;
+                int line = this.peek.defLine;
+                this.peek.clear();
+                if (path.length() > 0 && !path.equals(this.activePath())) {
+                    this.openFile(path);
+                }
+                this.docs.active().placeCaret(line, 0);
+            }
+            private static method docLines(Controller* c) returns ArrayList<String> {
+                ArrayList<String> out = new ArrayList<String>() on heap;
+                int n = c.editor().document().lineCount();
+                mutable int i = 0;
+                while (i < n) {
+                    out.add(c.editor().document().line(i));
+                    i = i + 1;
+                }
+                return out;
             }
 
             // Called once per frame (and before serve introspection): if the caret made a "far" jump -- a file

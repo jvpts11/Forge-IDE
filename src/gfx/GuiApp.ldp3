@@ -963,6 +963,14 @@ public bundle forge {
                         r = Paths.basename(wb.activePath()) + ":" + (wb.active().editor().cursorRow() + 1).toString();
                     }
                     System.IO.Console.println("ok " + r);
+                } else if (cmd.equals("peek")) {
+                    boolean found = wb.peekDefinition(tree.allFiles());
+                    mutable String r = "not-found";
+                    if (found) {
+                        r = wb.peekView().file + ":" + (wb.peekView().defLine + 1).toString()
+                            + " lines=" + wb.peekView().lines.size().toString();
+                    }
+                    System.IO.Console.println("ok peek " + r);
                 } else if (cmd.equals("fold")) {
                     // fold <line> toggles the fold whose header is that 1-based line
                     int docLine = arg.toInt() - 1;
@@ -1289,6 +1297,10 @@ public bundle forge {
                         menu.close();
                     } else if (comp.active && e.isKey() && GuiApp.completionKey(comp, wb, e.vk)) {
                         // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
+                    } else if (wb.peekView().isActive() && e.isKey() && e.vk == 27) {   // Esc closes the peek
+                        wb.peekView().clear();
+                    } else if (wb.peekView().isActive() && e.isKey() && e.vk == 13) {   // Enter opens the peek
+                        wb.peekJump();
                     } else if (e.isKey() && ctrl && shift && e.vk == 83) {   // Ctrl+Shift+S -> save as
                         GuiApp.runSaveAs(win, wb);
                     } else if (e.isKey() && ctrl && shift && e.vk == 80) {   // Ctrl+Shift+P -> palette
@@ -1349,9 +1361,11 @@ public bundle forge {
                         } else {
                             wb.debugger().stepInto();
                         }
-                    } else if (e.isKey() && e.vk == 123) {                   // F12 def, Shift+F12 references
+                    } else if (e.isKey() && e.vk == 123) {                   // F12 def, Shift+F12 refs, Alt+F12 peek
                         if (shift) {
                             wb.findReferencesAcross(tree.allFiles());
+                        } else if (alt) {
+                            wb.peekDefinition(tree.allFiles());
                         } else {
                             GuiApp.gotoDef(wb, tree);
                         }
