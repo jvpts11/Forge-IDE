@@ -74,6 +74,9 @@ public bundle forge {
                 edit.add("Duplicate Line", "edit.duplicateLine");
                 edit.add("Join Lines  Ctrl+J", "edit.joinLines");
                 edit.add("Sort Lines Ascending", "edit.sortLines");
+                edit.add("Transform to Uppercase", "edit.upperCase");
+                edit.add("Transform to Lowercase", "edit.lowerCase");
+                edit.add("Go to Matching Bracket  Ctrl+Shift+\\", "edit.matchBracket");
                 edit.add("Add Next Occurrence  Ctrl+D", "edit.addNextOccurrence");
                 edit.add("Select All Occurrences  Ctrl+Shift+L", "edit.selectAllOccurrences");
                 edit.add("Expand Selection  Shift+Alt+Right", "edit.expandSelection");

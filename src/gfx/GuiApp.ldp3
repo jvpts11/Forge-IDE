@@ -1346,6 +1346,8 @@ public bundle forge {
                         GuiApp.openSymbols(ov, wb);
                     } else if (e.isKey() && ctrl && !shift && e.vk == 84) {  // Ctrl+T -> workspace symbols
                         GuiApp.openWorkspaceSymbols(ov, wb, tree);
+                    } else if (e.isKey() && ctrl && shift && e.vk == 220) {  // Ctrl+Shift+\ -> matching bracket
+                        wb.active().goToMatchingBracket();
                     } else if (e.isKey() && ctrl && shift && e.vk == 219) {  // Ctrl+Shift+[ -> fold at caret
                         wb.active().toggleFoldAtCaret();
                     } else if (e.isKey() && ctrl && shift && e.vk == 70) {   // Ctrl+Shift+F -> find in files

@@ -960,6 +960,18 @@ public bundle forge {
                     c.sortSelectedLines();
                     return true;
                 }
+                if (id.equals("edit.upperCase")) {
+                    c.transformCase(true);
+                    return true;
+                }
+                if (id.equals("edit.lowerCase")) {
+                    c.transformCase(false);
+                    return true;
+                }
+                if (id.equals("edit.matchBracket")) {
+                    c.goToMatchingBracket();
+                    return true;
+                }
                 if (id.equals("edit.addNextOccurrence")) {
                     c.selectNextOccurrence();
                     return true;

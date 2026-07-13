@@ -37,6 +37,9 @@ public bundle forge {
                 this.register("edit.joinLines", "Join Lines");
                 this.register("edit.sortLines", "Sort Lines Ascending");
                 this.register("refactor.extractVariable", "Refactor: Extract Variable");
+                this.register("edit.upperCase", "Transform to Uppercase");
+                this.register("edit.lowerCase", "Transform to Lowercase");
+                this.register("edit.matchBracket", "Go to Matching Bracket");
                 this.register("edit.addNextOccurrence", "Add Next Occurrence to Selection");
                 this.register("edit.selectAllOccurrences", "Select All Occurrences");
                 this.register("edit.expandSelection", "Expand Selection");

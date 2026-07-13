@@ -444,6 +444,74 @@ public bundle forge {
                 this.col = this.buf.line(a).length();
             }
 
+            // Move the caret to the bracket matching the one at/just before it (Ctrl+Shift+\). No-op if the
+            // caret isn't on a bracket with a partner.
+            public method goToMatchingBracket() returns void {
+                Match* m = this.matchingBracket();
+                if (m.valid()) {
+                    this.clearSelection();
+                    this.row = m.row;
+                    this.col = m.col;
+                }
+            }
+            // Upper- or lower-case the selected text in place (positions unchanged, so the selection is kept),
+            // as one undo step. A no-op without a selection.
+            public method transformCase(boolean upper) returns void {
+                if (!this.hasSelection()) {
+                    return;
+                }
+                mutable int sr = this.selRow;
+                mutable int sc = this.selCol;
+                mutable int er = this.row;
+                mutable int ec = this.col;
+                if (!this.anchorBeforeCaret()) {
+                    sr = this.row;
+                    sc = this.col;
+                    er = this.selRow;
+                    ec = this.selCol;
+                }
+                this.saveUndo();
+                mutable int r = sr;
+                while (r <= er) {
+                    String line = this.buf.line(r);
+                    mutable int from = 0;
+                    if (r == sr) {
+                        from = sc;
+                    }
+                    mutable int to = line.length();
+                    if (r == er) {
+                        to = ec;
+                    }
+                    StringBuilder sb = new StringBuilder() on heap;
+                    sb.append(line.substring(0, from));
+                    mutable int i = from;
+                    while (i < to) {
+                        char ch = line.charAt(i);
+                        if (upper) {
+                            sb.appendChar(Editor.upperCh(ch));
+                        } else {
+                            sb.appendChar(Editor.lowerCh(ch));
+                        }
+                        i = i + 1;
+                    }
+                    sb.append(line.substring(to, line.length()));
+                    this.buf.setLine(r, sb.toString());
+                    r = r + 1;
+                }
+            }
+            private static method upperCh(char c) returns char {
+                if (c >= 'a' && c <= 'z') {
+                    return cast<char>(cast<int>(c) - 32);
+                }
+                return c;
+            }
+            private static method lowerCh(char c) returns char {
+                if (c >= 'A' && c <= 'Z') {
+                    return cast<char>(cast<int>(c) + 32);
+                }
+                return c;
+            }
+
             // Extract the selected single-line expression into a new `var <name> = <expr>;` declaration on the
             // line above (at the same indent), replacing the selection with `<name>`. One undo step; the caret
             // lands on the new usage. Returns false unless there's a non-empty single-line selection.

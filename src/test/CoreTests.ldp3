@@ -216,6 +216,23 @@ public bundle forge {
                 a.eqStr(sur.document().line(0), "(hello) world", "surround.wrap");
                 a.eqStr(sur.selectionText(), "hello", "surround.keeps-sel");
 
+                // --- transform case (upper/lower) of the selection, in place ---
+                Editor tcase = new Editor(new TextBuffer() on heap) on heap;
+                tcase.document().loadText("Hello World");
+                tcase.beginSelect(0, 0);
+                tcase.extendSelectTo(0, 5);
+                tcase.transformCase(true);
+                a.eqStr(tcase.document().line(0), "HELLO World", "case.upper");
+                tcase.transformCase(false);
+                a.eqStr(tcase.document().line(0), "hello World", "case.lower");
+
+                // --- go to matching bracket ---
+                Editor mb = new Editor(new TextBuffer() on heap) on heap;
+                mb.document().loadText("f(a, b)");
+                mb.setCaret(0, 1);
+                mb.goToMatchingBracket();
+                a.eqInt(mb.cursorCol(), 6, "match.jump");
+
                 // --- expand / shrink selection (Shift+Alt+Right/Left): word -> inside () -> whole () ---
                 Editor ex = new Editor(new TextBuffer() on heap) on heap;
                 ex.document().loadText("foo(bar, baz)");
@@ -635,8 +652,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 41, "cmd.count");
-                a.eqInt(cr.filter("").size(), 41, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 44, "cmd.count");
+                a.eqInt(cr.filter("").size(), 44, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");

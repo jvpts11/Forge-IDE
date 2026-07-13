@@ -193,6 +193,14 @@ public bundle forge {
                 this.moved();
                 return r;
             }
+            public method goToMatchingBracket() returns void {
+                this.ed.goToMatchingBracket();
+                this.moved();
+            }
+            public method transformCase(boolean upper) returns void {
+                this.ed.transformCase(upper);
+                this.moved();
+            }
             public method duplicateLine() returns void {
                 this.ed.duplicateLine();
                 this.edited();
