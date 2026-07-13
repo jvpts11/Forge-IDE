@@ -289,6 +289,34 @@ public bundle forge {
                 this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
             }
 
+            // Build the current project with debug info (ldp3 build --debug) and start a debug session on the
+            // resulting exe. Breakpoints already set in the gutter are sent on launch. F5 when idle.
+            public method startDebugging() returns void {
+                if (this.dbg.isActive()) {
+                    return;
+                }
+                if (!this.hasProject()) {
+                    this.out.banner("Debug", "Open an ldp3.toml project first -- there is nothing to debug.");
+                    return;
+                }
+                ProcessResult br = Process.run("cd /d \"" + this.projectDir + "\" && ldp3 build --debug 2>&1");
+                if (!br.success()) {
+                    this.out.banner("Debug build failed", br.output);
+                    return;
+                }
+                String exe = Paths.join(this.projectDir, Paths.join("build-output", this.projectName + ".exe"));
+                if (!File.exists(exe)) {
+                    this.out.banner("Debug", "Built executable not found: " + exe);
+                    return;
+                }
+                String dap = Debugger.findLldbDap();
+                if (this.dbg.start(dap, exe)) {
+                    this.out.banner("Debug", "Session started -- F5 continue, F10 step over, F11 step in, Shift+F5 stop.");
+                } else {
+                    this.out.banner("Debug", "Could not start the debug adapter (" + dap + "). Is lldb-dap installed?");
+                }
+            }
+
             // --- source control: drive git on the project directory, straight from the IDE ---
             // Show the working-tree status as a navigable list (click a row to open that file).
             public method gitStatusView() returns void {

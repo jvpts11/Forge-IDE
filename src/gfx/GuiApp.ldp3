@@ -5,6 +5,7 @@ import glfw.InputEvent;
 import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
+import app.Debugger;
 import app.Command;
 import io.FileTree;
 import io.FileNode;
@@ -725,6 +726,26 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("ok bp off");
                     }
+                } else if (cmd.equals("project")) {
+                    wb.setProjectDir(arg);                           // point build/debug at a project root
+                    System.IO.Console.println("ok " + wb.projectLabel());
+                } else if (cmd.equals("debug")) {
+                    wb.startDebugging();                            // build --debug + launch the adapter
+                    System.IO.Console.println("ok debug active=" + GuiApp.boolStr(wb.debugger().isActive()));
+                } else if (cmd.equals("dbgstep")) {
+                    wb.debugger().stepOver();
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("dbgstop")) {
+                    wb.debugger().stop();
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("dbgstate")) {
+                    Debugger* dbg = wb.debugger();
+                    System.IO.Console.println("dbg active=" + GuiApp.boolStr(dbg.isActive())
+                        + " stopped=" + GuiApp.boolStr(dbg.isStopped())
+                        + " line=" + dbg.stoppedAtLine().toString()
+                        + " frames=" + dbg.callStackView().size().toString()
+                        + " vars=" + dbg.variablesView().size().toString()
+                        + " status=" + dbg.statusText());
                 } else if (cmd.equals("selword")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
@@ -1042,6 +1063,12 @@ public bundle forge {
                 }
                 return s.substring(0, sp);
             }
+            private static method boolStr(boolean b) returns String {
+                if (b) {
+                    return "1";
+                }
+                return "0";
+            }
             private static method rest(String s) returns String {
                 int sp = s.indexOf(" ");
                 if (sp < 0) {
@@ -1202,6 +1229,22 @@ public bundle forge {
                             wb.active().nextBookmark(false);
                         } else {
                             wb.active().nextBookmark(true);
+                        }
+                    } else if (e.isKey() && e.vk == 116) {                   // F5 start/continue, Shift+F5 stop
+                        if (shift) {
+                            wb.debugger().stop();
+                        } else if (wb.debugger().isActive()) {
+                            wb.debugger().continueRun();
+                        } else {
+                            wb.startDebugging();
+                        }
+                    } else if (e.isKey() && e.vk == 121) {                   // F10 -> step over
+                        wb.debugger().stepOver();
+                    } else if (e.isKey() && e.vk == 122) {                   // F11 step in, Shift+F11 step out
+                        if (shift) {
+                            wb.debugger().stepOut();
+                        } else {
+                            wb.debugger().stepInto();
                         }
                     } else if (e.isKey() && e.vk == 123) {                   // F12 def, Shift+F12 references
                         if (shift) {

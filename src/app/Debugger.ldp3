@@ -1,5 +1,8 @@
 import System.Collections.ArrayList;
 import System.Json.Json;
+import System.OS.Env;
+import System.IO.File;
+import System.IO.Paths;
 
 program Forge;
 
@@ -141,6 +144,21 @@ public bundle forge {
             }
 
             // ---- Session lifecycle ----
+
+            // Locate the lldb-dap adapter: bundled beside the running IDE (the .msi ships it), else a system
+            // LLVM install, else hope it is on PATH.
+            public static method findLldbDap() returns String {
+                String selfDir = Paths.dirname(Env.executablePath());
+                String bundled = Paths.join(selfDir, "lldb-dap.exe");
+                if (File.exists(bundled)) {
+                    return bundled;
+                }
+                String sys = "C:\\Program Files\\LLVM\\bin\\lldb-dap.exe";
+                if (File.exists(sys)) {
+                    return sys;
+                }
+                return "lldb-dap";
+            }
 
             // Start debugging a native .exe (built with -g) via the given lldb-dap command.
             public method start(String dapCommand, String exePath) returns boolean {

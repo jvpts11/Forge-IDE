@@ -4,6 +4,8 @@ import gfx.Overlay;
 import app.Controller;
 import app.Workbench;
 import app.Debugger;
+import app.DebugFrame;
+import app.DebugVar;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
@@ -161,7 +163,48 @@ public bundle forge {
                 if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH, mx, my);
                 }
+                if (wb.debugger().isActive()) {
+                    this.drawDebugPanel(batch, wb.debugger(), screenW, screenH);
+                }
                 this.drawStatusBar(batch, wb, screenW, screenH, sh);
+            }
+
+            // The debug side panel (shown only during a session): the status, the call stack and the current
+            // frame's local variables, updated as the adapter reports stopped/stackTrace/variables.
+            private method drawDebugPanel(Batch2D* batch, Debugger* dbg, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int pw = 320;
+                int px = screenW - pw;
+                int py = this.menuH() + this.tabH() + this.crumbH();
+                int ph = screenH - py - this.statusH();
+                batch.rect(px, py, pw, ph, 0.031, 0.063, 0.071, 0.97);
+                batch.rect(px, py, 1, ph, 0.016, 0.035, 0.039, 1.0);
+                mutable int y = py + 8;
+                this.font.drawText(batch, px + 10, y, "DEBUG -- " + dbg.statusText(), 0.918, 0.706, 0.392, 1.0);
+                y = y + ch + 6;
+                this.font.drawText(batch, px + 10, y, "CALL STACK", 0.502, 0.588, 0.584, 1.0);
+                y = y + ch + 2;
+                ArrayList<DebugFrame*>* stack = dbg.callStackView();
+                mutable int i = 0;
+                while (i < stack.size() && i < 12) {
+                    DebugFrame* fr = stack.get(i);
+                    this.font.drawText(batch, px + 16, y, fr.name + " :" + fr.line.toString(), 0.804, 0.851, 0.843, 1.0);
+                    y = y + ch;
+                    i = i + 1;
+                }
+                y = y + 10;
+                this.font.drawText(batch, px + 10, y, "VARIABLES", 0.502, 0.588, 0.584, 1.0);
+                y = y + ch + 2;
+                ArrayList<DebugVar*>* vars = dbg.variablesView();
+                mutable int j = 0;
+                while (j < vars.size() && y < py + ph - ch) {
+                    DebugVar* v = vars.get(j);
+                    this.font.drawText(batch, px + 16, y, v.name, 0.435, 0.678, 0.796, 1.0);
+                    this.font.drawText(batch, px + 16 + (v.name.length() + 1) * cw, y, "= " + v.value, 0.804, 0.851, 0.843, 1.0);
+                    y = y + ch;
+                    j = j + 1;
+                }
             }
 
             // The breadcrumb bar above the editor: the caret's scope trail (bundle > namespace > class >
