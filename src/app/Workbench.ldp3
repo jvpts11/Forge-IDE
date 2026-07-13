@@ -367,6 +367,49 @@ public bundle forge {
                                        navFiles, navLines);
                 return count;
             }
+            // Cross-file find-all-references: whole-word occurrences of the identifier under the caret across
+            // every project .ldp3 file, listed in the output panel as a navigable result. `files` is the
+            // project's file list (the shell passes the file tree's). Returns the total count.
+            public method findReferencesAcross(ArrayList<String>* files) returns int {
+                Controller* c = this.docs.active();
+                String w = c.wordAtCaret();
+                if (w.length() == 0) {
+                    return 0;
+                }
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int count = 0;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (path.endsWith(".ldp3")) {
+                        count = count + this.scanRefs(Files.readLines(path), path, w, body, navFiles, navLines);
+                    }
+                }
+                this.out.showNavigable(count.toString() + " references to '" + w + "' (workspace)", body,
+                                       navFiles, navLines);
+                return count;
+            }
+            private method scanRefs(ArrayList<String> lines, String path, String w, ArrayList<String>* body,
+                                    ArrayList<String>* navFiles, ArrayList<int>* navLines) returns int {
+                String base = Paths.basename(path);
+                mutable int total = 0;
+                mutable int row = 0;
+                while (row < lines.size()) {
+                    String line = lines.get(row);
+                    int here = Workbench.countWholeWord(line, w);
+                    if (here > 0) {
+                        body.add(base + ":" + (row + 1).toString() + "  " + line.trim());
+                        navFiles.add(path);
+                        navLines.add(row);
+                        total = total + here;
+                    }
+                    row = row + 1;
+                }
+                return total;
+            }
             private static method countWholeWord(String line, String w) returns int {
                 int m = w.length();
                 int n = line.length();

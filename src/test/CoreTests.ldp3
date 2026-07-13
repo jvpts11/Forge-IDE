@@ -16,6 +16,8 @@ import app.Controller;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
+import app.Symbols;
+import app.Symbol;
 import app.Workbench;
 import input.Key;
 import input.KeyCode;
@@ -180,6 +182,18 @@ public bundle forge {
                 a.eqStr(trm.document().line(2), "", "trim.l2-blank");
                 a.eqStr(trm.document().line(3), "c", "trim.l3");
                 a.eqBool(trm.trimTrailingWhitespace(), false, "trim.idempotent");
+
+                // --- cross-file go-to-definition: find a declaration line in raw file lines ---
+                ArrayList<String> srcLines = new ArrayList<String>() on heap;
+                srcLines.add("public namespace app {");
+                srcLines.add("    public class Widget {");
+                srcLines.add("        public method draw() returns void {");
+                srcLines.add("        }");
+                srcLines.add("    }");
+                srcLines.add("}");
+                a.eqInt(Symbols.definitionLineIn(srcLines, "Widget"), 1, "def.class-line");
+                a.eqInt(Symbols.definitionLineIn(srcLines, "draw"), 2, "def.method-line");
+                a.eqInt(Symbols.definitionLineIn(srcLines, "Nope"), 0 - 1, "def.not-found");
 
                 // --- clipboard: copy/paste, cut, multi-line paste ---
                 Editor ec = new Editor(new TextBuffer() on heap) on heap;

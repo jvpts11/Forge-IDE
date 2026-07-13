@@ -952,15 +952,15 @@ public bundle forge {
                     String info = hc.hoverInfo(hc.editor().cursorRow(), hc.editor().cursorCol());
                     System.IO.Console.println("hover: " + info);
                 } else if (cmd.equals("refs")) {
-                    int n = wb.findReferences();
+                    int n = wb.findReferencesAcross(tree.allFiles());
                     System.IO.Console.println("ok " + n.toString() + " references");
                 } else if (cmd.equals("sigat")) {
                     System.IO.Console.println("sig: " + wb.active().signatureAtCaret());
                 } else if (cmd.equals("gotodef")) {
-                    boolean found = wb.active().goToDefinition();
+                    boolean found = GuiApp.gotoDef(wb, tree);
                     mutable String r = "not-found";
                     if (found) {
-                        r = "line " + (wb.active().editor().cursorRow() + 1).toString();
+                        r = Paths.basename(wb.activePath()) + ":" + (wb.active().editor().cursorRow() + 1).toString();
                     }
                     System.IO.Console.println("ok " + r);
                 } else if (cmd.equals("fold")) {
@@ -1351,9 +1351,9 @@ public bundle forge {
                         }
                     } else if (e.isKey() && e.vk == 123) {                   // F12 def, Shift+F12 references
                         if (shift) {
-                            wb.findReferences();
+                            wb.findReferencesAcross(tree.allFiles());
                         } else {
-                            wb.active().goToDefinition();
+                            GuiApp.gotoDef(wb, tree);
                         }
                     } else if (e.isKey() && e.vk == 27 && wb.output().visible
                                && !wb.active().hasMultipleCarets()) {       // Esc closes the output panel
@@ -1602,6 +1602,36 @@ public bundle forge {
                 }
                 return;
             }
+            // Go-to-definition (F12): jump to where the identifier under the caret is declared. Tries the
+            // current file first (fast, and prefers a local declaration), then scans every project .ldp3 file so
+            // the definition can live in another file. Records nothing here -- the per-frame nav tracker captures
+            // the jump for Alt+Left. Returns true if it jumped.
+            private static method gotoDef(Workbench* wb, FileTree* tree) returns boolean {
+                if (wb.active().goToDefinition()) {
+                    return true;
+                }
+                String w = wb.active().wordAtCaret();
+                if (w.length() == 0) {
+                    return false;
+                }
+                String activePath = wb.activePath();
+                ArrayList<String>* files = tree.allFiles();
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (path.endsWith(".ldp3") && !path.equals(activePath)) {
+                        int line = Symbols.definitionLineIn(Files.readLines(path), w);
+                        if (line >= 0) {
+                            wb.openFile(path);
+                            wb.active().placeCaret(line, 0);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
             // Gather every declaration in every project .ldp3 file into the symbol navigator (Ctrl+T), each
             // labelled with its file, so you can jump to any class/method in the workspace.
             private static method openWorkspaceSymbols(Overlay* ov, Workbench* wb, FileTree* tree) returns void {
