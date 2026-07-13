@@ -36,6 +36,8 @@ public bundle forge {
                 this.register("edit.duplicateLine", "Duplicate Line");
                 this.register("edit.addNextOccurrence", "Add Next Occurrence to Selection");
                 this.register("edit.selectAllOccurrences", "Select All Occurrences");
+                this.register("edit.expandSelection", "Expand Selection");
+                this.register("edit.shrinkSelection", "Shrink Selection");
                 this.register("run.build", "Build Project");
                 this.register("run.program", "Run Project");
                 this.register("run.test", "Run Tests");

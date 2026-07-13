@@ -1441,6 +1441,14 @@ public bundle forge {
                     wb.active().selectAllOccurrences();
                     return true;
                 }
+                if (!ctrl && shift && alt && vk == 39) {
+                    wb.active().expandSelection();
+                    return true;
+                }
+                if (!ctrl && shift && alt && vk == 37) {
+                    wb.active().shrinkSelection();
+                    return true;
+                }
                 if (vk == 27 && wb.active().hasMultipleCarets()) {
                     wb.active().clearExtraCarets();
                     return true;

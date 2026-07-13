@@ -29,6 +29,11 @@ public bundle forge {
             private mutable ArrayList<int>* extraCols;
             private mutable ArrayList<int>* extraSelRows; // per-caret selection anchor; -1 row means "no selection"
             private mutable ArrayList<int>* extraSelCols;
+            private mutable ArrayList<int>* expandHist;    // expand-selection history: flattened [sr,sc,r,c] frames
+            private mutable int expSr;                     // the selection expand last produced, to detect a
+            private mutable int expSc;                     // manual change (which restarts the expand sequence)
+            private mutable int expR;
+            private mutable int expC;
             private mutable boolean suppressUndo;         // set while a multi-caret edit groups into one undo
 
             public constructor Editor(TextBuffer* doc) {
@@ -48,6 +53,11 @@ public bundle forge {
                 this.extraCols = new ArrayList<int>() on heap;
                 this.extraSelRows = new ArrayList<int>() on heap;
                 this.extraSelCols = new ArrayList<int>() on heap;
+                this.expandHist = new ArrayList<int>() on heap;
+                this.expSr = 0 - 1;
+                this.expSc = 0 - 1;
+                this.expR = 0 - 1;
+                this.expC = 0 - 1;
                 this.suppressUndo = false;
             }
 
@@ -1326,6 +1336,101 @@ public bundle forge {
                 this.selCol = 0;
                 this.hasSel = true;
                 this.rawDocEnd();
+            }
+
+            // Set the selection to span (sr,sc)..(er,ec) in document order, the caret at the end. An empty range
+            // (start == end) clears the selection, leaving the caret there.
+            private method setSelectionRange(int sr, int sc, int er, int ec) returns void {
+                this.selRow = sr;
+                this.selCol = sc;
+                this.row = er;
+                this.col = ec;
+                this.hasSel = !(sr == er && sc == ec);
+            }
+
+            // Shift+Alt+Right: grow the selection to the next syntactic unit -- the word under the caret, then
+            // the contents inside the nearest enclosing brackets, then those brackets, climbing outward, and
+            // finally the whole document. A history stack lets shrinkSelection walk it back exactly.
+            public method expandSelection() returns void {
+                boolean cont = this.hasSelection() && this.selRow == this.expSr && this.selCol == this.expSc
+                               && this.row == this.expR && this.col == this.expC;
+                if (!cont) {
+                    this.expandHist = new ArrayList<int>() on heap;
+                }
+                mutable int csr = this.row;
+                mutable int csc = this.col;
+                if (this.hasSelection()) {
+                    csr = this.selRow;
+                    csc = this.selCol;
+                }
+                this.expandHist.add(csr);
+                this.expandHist.add(csc);
+                this.expandHist.add(this.row);
+                this.expandHist.add(this.col);
+                this.computeExpand();
+                this.expSr = this.selRow;
+                this.expSc = this.selCol;
+                this.expR = this.row;
+                this.expC = this.col;
+            }
+
+            private method computeExpand() returns void {
+                if (!this.hasSelection()) {
+                    this.selectWordAtCaret();
+                    return;
+                }
+                mutable int sr = this.selRow;
+                mutable int sc = this.selCol;
+                mutable int er = this.row;
+                mutable int ec = this.col;
+                if (!this.anchorBeforeCaret()) {
+                    sr = this.row;
+                    sc = this.col;
+                    er = this.selRow;
+                    ec = this.selCol;
+                }
+                Match* op = this.brackets.enclosingOpen(sr, sc);
+                if (!op.valid()) {
+                    this.selectAll();
+                    return;
+                }
+                Match* cl = this.brackets.matchAt(op.row, op.col);
+                if (!cl.valid()) {
+                    this.selectAll();
+                    return;
+                }
+                int innerSr = op.row;
+                int innerSc = op.col + 1;
+                int innerEr = cl.row;
+                int innerEc = cl.col;
+                boolean innerEmpty = innerSr == innerEr && innerSc == innerEc;
+                boolean atInner = sr == innerSr && sc == innerSc && er == innerEr && ec == innerEc;
+                if (innerEmpty || atInner) {
+                    this.setSelectionRange(op.row, op.col, cl.row, cl.col + 1);
+                } else {
+                    this.setSelectionRange(innerSr, innerSc, innerEr, innerEc);
+                }
+            }
+
+            // Shift+Alt+Left: undo the last expand, shrinking back to the previous selection.
+            public method shrinkSelection() returns void {
+                if (this.expandHist.size() < 4) {
+                    return;
+                }
+                int n = this.expandHist.size();
+                int cc = this.expandHist.get(n - 1);
+                int cr = this.expandHist.get(n - 2);
+                int sc = this.expandHist.get(n - 3);
+                int sr = this.expandHist.get(n - 4);
+                this.expandHist.removeAt(n - 1);
+                this.expandHist.removeAt(n - 2);
+                this.expandHist.removeAt(n - 3);
+                this.expandHist.removeAt(n - 4);
+                this.setSelectionRange(sr, sc, cr, cc);
+                this.expSr = this.selRow;
+                this.expSc = this.selCol;
+                this.expR = this.row;
+                this.expC = this.col;
             }
 
             // Delete the character to the right of the caret (the Delete key); at a line end, pull the next

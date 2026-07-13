@@ -600,6 +600,14 @@ public bundle forge {
                     c.selectAllOccurrences();
                     return true;
                 }
+                if (id.equals("edit.expandSelection")) {
+                    c.expandSelection();
+                    return true;
+                }
+                if (id.equals("edit.shrinkSelection")) {
+                    c.shrinkSelection();
+                    return true;
+                }
                 if (id.equals("run.build")) {
                     this.diagnose();
                     return true;

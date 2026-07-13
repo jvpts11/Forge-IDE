@@ -474,6 +474,15 @@ public bundle forge {
                 this.moved();
                 return r;
             }
+            // Shift+Alt+Right / Left: grow / shrink the selection by syntactic unit.
+            public method expandSelection() returns void {
+                this.ed.expandSelection();
+                this.moved();
+            }
+            public method shrinkSelection() returns void {
+                this.ed.shrinkSelection();
+                this.moved();
+            }
             // Mouse wheel: scroll the viewport by `delta` lines without moving the caret.
             public method scrollLines(int delta) returns void {
                 if (delta < 0) {

@@ -156,6 +156,21 @@ public bundle forge {
                 ma.typeMulti('Z');
                 a.eqStr(ma.document().line(0), "Z x Z y Z", "mc.all-replaced");
 
+                // --- expand / shrink selection (Shift+Alt+Right/Left): word -> inside () -> whole () ---
+                Editor ex = new Editor(new TextBuffer() on heap) on heap;
+                ex.document().loadText("foo(bar, baz)");
+                ex.setCaret(0, 5);
+                ex.expandSelection();
+                a.eqStr(ex.selectionText(), "bar", "exp.word");
+                ex.expandSelection();
+                a.eqStr(ex.selectionText(), "bar, baz", "exp.inner");
+                ex.expandSelection();
+                a.eqStr(ex.selectionText(), "(bar, baz)", "exp.outer");
+                ex.shrinkSelection();
+                a.eqStr(ex.selectionText(), "bar, baz", "exp.shrink-inner");
+                ex.shrinkSelection();
+                a.eqStr(ex.selectionText(), "bar", "exp.shrink-word");
+
                 // --- clipboard: copy/paste, cut, multi-line paste ---
                 Editor ec = new Editor(new TextBuffer() on heap) on heap;
                 ec.document().loadText("abc");
@@ -509,8 +524,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 30, "cmd.count");
-                a.eqInt(cr.filter("").size(), 30, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 32, "cmd.count");
+                a.eqInt(cr.filter("").size(), 32, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
