@@ -742,6 +742,10 @@ public bundle forge {
                     String newName = GuiApp.rest(arg);
                     int n = wb.renameSymbol(oldName, newName);
                     System.IO.Console.println("ok renamed " + n.toString());
+                } else if (cmd.equals("problem")) {
+                    wb.nextProblem(!arg.equals("back"));            // problem [back]: jump to next/prev problem
+                    System.IO.Console.println("ok line=" + (wb.active().editor().cursorRow() + 1).toString()
+                        + " problems=" + wb.diagnostics().size().toString());
                 } else if (cmd.equals("project")) {
                     wb.setProjectDir(arg);                           // point build/debug at a project root
                     System.IO.Console.println("ok " + wb.projectLabel());
@@ -1264,6 +1268,8 @@ public bundle forge {
                         wb.formatDocument();
                     } else if (e.isKey() && shift && e.vk == 117) {          // Shift+F6 -> rename symbol
                         GuiApp.beginRenameSymbol(wb, ov);
+                    } else if (e.isKey() && e.vk == 119) {                   // F8 next problem, Shift+F8 previous
+                        wb.nextProblem(!shift);
                     } else if (e.isKey() && e.vk == 116) {                   // F5 start/continue, Shift+F5 stop
                         if (shift) {
                             wb.debugger().stop();

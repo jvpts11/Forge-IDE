@@ -291,6 +291,58 @@ public bundle forge {
                 this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
             }
 
+            // Jump to the next (forward) or previous problem in the active file from the last build, wrapping
+            // around, and show its message. F8 / Shift+F8.
+            public method nextProblem(boolean forward) returns void {
+                if (this.diags.size() == 0) {
+                    this.out.banner("Problems", "No problems -- build the project (Run > Build) to check.");
+                    return;
+                }
+                String base = Paths.basename(this.docs.active().document().path());
+                ArrayList<int>* lines = new ArrayList<int>() on heap;
+                ArrayList<String>* msgs = new ArrayList<String>() on heap;
+                for (mutable int i = 0; i < this.diags.size(); i++) {
+                    Diagnostic d = this.diags.get(i);
+                    if (Paths.basename(d.file).equals(base)) {
+                        lines.add(d.line);
+                        msgs.add(d.message);
+                    }
+                }
+                if (lines.size() == 0) {
+                    this.out.banner("Problems", "No problems in this file.");
+                    return;
+                }
+                int cur = this.docs.active().editor().cursorRow() + 1;   // 1-based
+                mutable int target = -1;
+                mutable int bestLine = 0;
+                for (mutable int i = 0; i < lines.size(); i++) {
+                    int l = lines.get(i);
+                    mutable boolean cand = false;
+                    if (forward) {
+                        cand = l > cur && (target < 0 || l < bestLine);
+                    } else {
+                        cand = l < cur && (target < 0 || l > bestLine);
+                    }
+                    if (cand) {
+                        target = i;
+                        bestLine = l;
+                    }
+                }
+                if (target < 0) {
+                    // wrap: the first problem going forward, or the last going backward
+                    for (mutable int i = 0; i < lines.size(); i++) {
+                        int l = lines.get(i);
+                        if (target < 0 || (forward && l < bestLine) || (!forward && l > bestLine)) {
+                            target = i;
+                            bestLine = l;
+                        }
+                    }
+                }
+                int ln = lines.get(target);
+                this.docs.active().placeCaret(ln - 1, 0);
+                this.out.banner("Problem", "Line " + ln.toString() + ": " + msgs.get(target));
+            }
+
             // Symbol rename (Shift+F6): the shell stashes the identifier under the caret here, then applies the
             // new name to every whole-word occurrence when the prompt is confirmed.
             public method setRenameTarget(String w) returns void {
