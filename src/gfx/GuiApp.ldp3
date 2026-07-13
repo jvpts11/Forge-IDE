@@ -980,6 +980,8 @@ public bundle forge {
                     m = m + " textOx=" + screen.textOx().toString();
                     m = m + " textOy=" + screen.textOy().toString();
                     m = m + " lineH=" + screen.lineH().toString();
+                    m = m + " visibleRows=" + wb.active().visibleRows().toString();
+                    m = m + " paneRows=" + screen.paneRowsFor(win.height()).toString();
                     System.IO.Console.println(m);
                 } else {
                     System.IO.Console.println("err: unknown " + cmd);
@@ -1782,6 +1784,14 @@ public bundle forge {
                 wb.drainDebugOutput();
                 int w = win.width();
                 int h = win.height();
+                // Fit the active document's viewport to the window so it fills the whole editor pane. A
+                // freshly opened tab starts at the default row count; without this it would render only those
+                // rows and leave the bottom of the pane blank. Only re-fit on a real change, so it never
+                // fights manual scrolling.
+                int fitRows = screen.paneRowsFor(h);
+                if (fitRows > 0 && wb.active().visibleRows() != fitRows) {
+                    wb.active().resizeViewport(fitRows, screen.paneColsFor(w));
+                }
                 Wgl.glViewport(0, 0, w, h);
                 Wgl.glClearColor(0.051, 0.102, 0.114, 1.0);   // #0d1a1d
                 Wgl.glClear(16384);   // GL_COLOR_BUFFER_BIT
