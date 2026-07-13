@@ -180,6 +180,10 @@ public bundle forge {
                 this.ed.toggleComment();
                 this.edited();
             }
+            public method joinLines() returns void {
+                this.ed.joinLines();
+                this.moved();
+            }
             public method duplicateLine() returns void {
                 this.ed.duplicateLine();
                 this.edited();

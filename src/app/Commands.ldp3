@@ -34,6 +34,7 @@ public bundle forge {
                 this.register("edit.replace", "Replace");
                 this.register("edit.selectAll", "Select All");
                 this.register("edit.duplicateLine", "Duplicate Line");
+                this.register("edit.joinLines", "Join Lines");
                 this.register("edit.addNextOccurrence", "Add Next Occurrence to Selection");
                 this.register("edit.selectAllOccurrences", "Select All Occurrences");
                 this.register("edit.expandSelection", "Expand Selection");

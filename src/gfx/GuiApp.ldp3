@@ -1345,6 +1345,8 @@ public bundle forge {
                         ov.open(2);
                     } else if (e.isKey() && ctrl && shift && e.vk == 71) {   // Ctrl+Shift+G -> source control
                         wb.gitStatusView();
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 74) {  // Ctrl+J -> join lines
+                        wb.active().joinLines();
                     } else if (e.isKey() && ctrl && e.vk == 87) {            // Ctrl+W -> close tab
                         wb.closeActiveTab();
                     } else if (e.isKey() && e.vk == 112) {                   // F1 -> standard library reference

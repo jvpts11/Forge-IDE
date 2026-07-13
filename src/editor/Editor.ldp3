@@ -1,5 +1,6 @@
 import System.Collections.ArrayList;
 import System.Text.Strings;
+import System.Text.StringBuilder;
 import syntax.Highlighter;
 import syntax.Span;
 import syntax.Tok;
@@ -352,6 +353,41 @@ public bundle forge {
                 }
                 return this.row;
             }
+            // Ctrl+J: join the selected lines (or the current line with the next) into one, collapsing each
+            // break plus the joined line's leading whitespace to a single space. The caret lands at the join.
+            public method joinLines() returns void {
+                mutable int a = this.selMinRow();
+                mutable int b = this.selMaxRow();
+                if (a == b) {
+                    if (this.row + 1 >= this.buf.lineCount()) {
+                        return;
+                    }
+                    a = this.row;
+                    b = this.row + 1;
+                }
+                this.saveUndo();
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append(this.buf.line(a));
+                mutable int r = a + 1;
+                while (r <= b) {
+                    String piece = this.buf.line(r).trim();
+                    if (piece.length() > 0) {
+                        sb.append(" ");
+                        sb.append(piece);
+                    }
+                    r = r + 1;
+                }
+                this.buf.setLine(a, sb.toString());
+                mutable int k = b;
+                while (k > a) {
+                    this.buf.removeLine(a + 1);
+                    k = k - 1;
+                }
+                this.clearSelection();
+                this.row = a;
+                this.col = this.buf.line(a).length();
+            }
+
             public method indentSelection() returns void {
                 this.saveUndo();
                 int a = this.selMinRow();
