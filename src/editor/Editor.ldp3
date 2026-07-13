@@ -388,6 +388,46 @@ public bundle forge {
                 this.col = this.buf.line(a).length();
             }
 
+            // Extract the selected single-line expression into a new `var <name> = <expr>;` declaration on the
+            // line above (at the same indent), replacing the selection with `<name>`. One undo step; the caret
+            // lands on the new usage. Returns false unless there's a non-empty single-line selection.
+            public method extractVariable(String name) returns boolean {
+                if (!this.hasSelection() || name.length() == 0) {
+                    return false;
+                }
+                if (this.selRow != this.row) {
+                    return false;
+                }
+                mutable int sc = this.selCol;
+                mutable int ec = this.col;
+                if (ec < sc) {
+                    int t = sc;
+                    sc = ec;
+                    ec = t;
+                }
+                if (sc >= ec) {
+                    return false;
+                }
+                String line = this.buf.line(this.row);
+                String expr = line.substring(sc, ec).trim();
+                if (expr.length() == 0) {
+                    return false;
+                }
+                this.saveUndo();
+                mutable int ind = 0;
+                while (ind < line.length() && (line.charAt(ind) == ' ' || line.charAt(ind) == '\t')) {
+                    ind = ind + 1;
+                }
+                String indent = line.substring(0, ind);
+                String newLine = line.substring(0, sc) + name + line.substring(ec, line.length());
+                this.buf.setLine(this.row, newLine);
+                this.buf.insertLine(this.row, indent + "var " + name + " = " + expr + ";");
+                this.clearSelection();
+                this.row = this.row + 1;
+                this.col = sc + name.length();
+                return true;
+            }
+
             // Sort the selected lines in ascending (byte) order, in place, as one undo step. A no-op unless the
             // selection spans at least two lines.
             public method sortSelectedLines() returns void {

@@ -188,6 +188,11 @@ public bundle forge {
                 this.ed.sortSelectedLines();
                 this.moved();
             }
+            public method extractVariable(String name) returns boolean {
+                boolean r = this.ed.extractVariable(name);
+                this.moved();
+                return r;
+            }
             public method duplicateLine() returns void {
                 this.ed.duplicateLine();
                 this.edited();

@@ -480,6 +480,12 @@ public bundle forge {
                     GuiApp.beginRenameSymbol(wb, ov);
                     return;
                 }
+                if (id.equals("refactor.extractVariable")) {
+                    if (wb.active().editor().hasSelection()) {
+                        ov.openPrompt("extractVar", "extract to variable named: ");
+                    }
+                    return;
+                }
                 if (id.equals("git.commit")) {
                     ov.openPrompt("commit", "commit message: ");
                     return;
@@ -781,6 +787,9 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("unknown command");
                     }
+                } else if (cmd.equals("extractvar")) {
+                    boolean ok = wb.active().extractVariable(arg);   // extractvar <name>: on the current selection
+                    System.IO.Console.println("ok extract " + GuiApp.boolStr(ok));
                 } else if (cmd.equals("renamesym")) {
                     String oldName = GuiApp.firstWord(arg);         // renamesym <old> <new>: workspace rename
                     String newName = GuiApp.rest(arg);
@@ -1785,6 +1794,8 @@ public bundle forge {
                     if (ov.query.equals("y") || ov.query.equals("yes")) {
                         wb.deleteActiveFile();
                     }
+                } else if (ov.promptKind.equals("extractVar")) {
+                    wb.active().extractVariable(ov.query);
                 } else if (ov.promptKind.equals("renameSymbol")) {
                     int n = wb.renameSymbolAcross(wb.renameTargetName(), ov.query);
                     wb.output().banner("Rename", "Renamed " + n.toString() + " occurrence(s) of '"

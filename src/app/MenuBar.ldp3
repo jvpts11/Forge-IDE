@@ -84,6 +84,7 @@ public bundle forge {
                 edit.add("Find", "edit.find");
                 edit.sep();
                 edit.add("Rename Symbol  Shift+F6", "edit.rename");
+                edit.add("Extract Variable", "refactor.extractVariable");
                 edit.add("Format Document  Shift+Alt+F", "edit.format");
                 edit.sep();
                 edit.add("Snippet: Class", "snippet.class");

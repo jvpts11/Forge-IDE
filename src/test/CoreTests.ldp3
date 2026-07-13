@@ -196,6 +196,16 @@ public bundle forge {
                 a.eqStr(srt.document().line(1), "banana", "sort.l1");
                 a.eqStr(srt.document().line(2), "cherry", "sort.l2");
 
+                // --- extract variable: pull a selected expression into a var declaration above ---
+                Editor xv = new Editor(new TextBuffer() on heap) on heap;
+                xv.document().loadText("    return this.w * 2;");
+                xv.beginSelect(0, 11);
+                xv.extendSelectTo(0, 21);
+                a.eqStr(xv.selectionText(), "this.w * 2", "xvar.sel");
+                a.eqBool(xv.extractVariable("area"), true, "xvar.ok");
+                a.eqStr(xv.document().line(0), "    var area = this.w * 2;", "xvar.decl");
+                a.eqStr(xv.document().line(1), "    return area;", "xvar.usage");
+
                 // --- expand / shrink selection (Shift+Alt+Right/Left): word -> inside () -> whole () ---
                 Editor ex = new Editor(new TextBuffer() on heap) on heap;
                 ex.document().loadText("foo(bar, baz)");
@@ -615,12 +625,12 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 40, "cmd.count");
-                a.eqInt(cr.filter("").size(), 40, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 41, "cmd.count");
+                a.eqInt(cr.filter("").size(), 41, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
-                a.eqInt(cr.filter("file").size(), 4, "cmd.filter-file");      // New/Open/Save/Save As File
+                a.eqInt(cr.filter("file").size(), 5, "cmd.filter-file");      // 4 File cmds + fuzzy "Re[f]actor: Extract Var[i]ab[le]"
                 a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
                 a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
                 a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
