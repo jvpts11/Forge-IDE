@@ -106,10 +106,13 @@ public bundle forge {
             }
 
             // Type a character with auto-pairing: an opener also inserts its closer (caret stays between);
-            // typing a closer that already sits under the caret just steps over it. With a selection it
-            // falls back to a plain replace.
+            // typing a closer that already sits under the caret just steps over it. With a selection, typing a
+            // bracket/quote SURROUNDS the selection (keeping it selected); any other char replaces it.
             public method typeWithPairs(char c) returns void {
                 if (this.hasSelection()) {
+                    if (this.trySurround(c)) {
+                        return;
+                    }
                     this.type(c);
                     return;
                 }
@@ -122,6 +125,59 @@ public bundle forge {
                 if (closer != cast<char>(0)) {
                     this.buf.insertChar(this.row, this.col, closer);   // after caret, no caret move
                 }
+            }
+
+            // Wrap the current selection in `c` and its partner, keeping the content selected. Returns false
+            // (so the caller replaces instead) when `c` is not a surround char, or during a multi-caret edit.
+            private method trySurround(char c) returns boolean {
+                if (this.suppressUndo) {
+                    return false;
+                }
+                char closer = this.surroundCloser(c);
+                if (closer == cast<char>(0)) {
+                    return false;
+                }
+                mutable int sr = this.selRow;
+                mutable int sc = this.selCol;
+                mutable int er = this.row;
+                mutable int ec = this.col;
+                if (!this.anchorBeforeCaret()) {
+                    sr = this.row;
+                    sc = this.col;
+                    er = this.selRow;
+                    ec = this.selCol;
+                }
+                this.saveUndo();
+                this.buf.insertChar(er, ec, closer);   // closer first so the start offsets stay valid
+                this.buf.insertChar(sr, sc, c);
+                this.selRow = sr;
+                this.selCol = sc + 1;
+                this.row = er;
+                if (sr == er) {
+                    this.col = ec + 1;
+                } else {
+                    this.col = ec;
+                }
+                this.hasSel = true;
+                return true;
+            }
+            private method surroundCloser(char c) returns char {
+                if (c == '(') {
+                    return ')';
+                }
+                if (c == '[') {
+                    return ']';
+                }
+                if (c == '{') {
+                    return '}';
+                }
+                if (c == cast<char>(34)) {
+                    return cast<char>(34);
+                }
+                if (c == cast<char>(39)) {
+                    return cast<char>(39);
+                }
+                return cast<char>(0);
             }
 
             // The matching bracket for a bracket at or just before the caret, or an invalid Match.

@@ -206,6 +206,16 @@ public bundle forge {
                 a.eqStr(xv.document().line(0), "    var area = this.w * 2;", "xvar.decl");
                 a.eqStr(xv.document().line(1), "    return area;", "xvar.usage");
 
+                // --- auto-surround: typing a bracket with a selection wraps it (keeps it selected) ---
+                Editor sur = new Editor(new TextBuffer() on heap) on heap;
+                sur.document().loadText("hello world");
+                sur.beginSelect(0, 0);
+                sur.extendSelectTo(0, 5);
+                a.eqStr(sur.selectionText(), "hello", "surround.sel");
+                sur.typeWithPairs('(');
+                a.eqStr(sur.document().line(0), "(hello) world", "surround.wrap");
+                a.eqStr(sur.selectionText(), "hello", "surround.keeps-sel");
+
                 // --- expand / shrink selection (Shift+Alt+Right/Left): word -> inside () -> whole () ---
                 Editor ex = new Editor(new TextBuffer() on heap) on heap;
                 ex.document().loadText("foo(bar, baz)");
