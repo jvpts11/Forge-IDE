@@ -902,6 +902,12 @@ public bundle forge {
                 } else if (cmd.equals("newfile")) {
                     wb.newFileOnDisk(arg);
                     System.IO.Console.println("ok " + wb.documents().active().document().path());
+                } else if (cmd.equals("bookmark")) {
+                    wb.active().toggleBookmark();
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("nextbm")) {
+                    wb.active().nextBookmark(true);
+                    System.IO.Console.println("ok ln=" + (wb.active().editor().cursorRow() + 1).toString());
                 } else if (cmd.equals("state")) {
                     GuiApp.serveState(wb);
                 } else if (cmd.equals("metrics")) {
@@ -1178,6 +1184,14 @@ public bundle forge {
                         wb.closeActiveTab();
                     } else if (e.isKey() && e.vk == 112) {                   // F1 -> standard library reference
                         GuiApp.openReference(wb, "stdlib.ldp3");
+                    } else if (e.isKey() && e.vk == 113) {                   // F2 bookmarks
+                        if (ctrl) {
+                            wb.active().toggleBookmark();
+                        } else if (shift) {
+                            wb.active().nextBookmark(false);
+                        } else {
+                            wb.active().nextBookmark(true);
+                        }
                     } else if (e.isKey() && e.vk == 123) {                   // F12 def, Shift+F12 references
                         if (shift) {
                             wb.findReferences();

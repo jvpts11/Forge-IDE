@@ -718,6 +718,10 @@ public bundle forge {
                         batch.rect(ox, y + ch - 3, 6, 3, 0.902, 0.318, 0.263, 1.0);
                         batch.rect(ox, y + ch - 3, 3, 6, 0.902, 0.318, 0.263, 1.0);
                     }
+                    // bookmark marker: a small amber square at the gutter's inner edge
+                    if (c.hasBookmark(docLine)) {
+                        batch.rect(ox + gpx - 5, y + ch / 2 - 3, 5, 6, 0.918, 0.706, 0.392, 1.0);
+                    }
                     String num = (docLine + 1).toString();
                     int nx = ox + gpx - 8 - num.length() * cw;
                     // the caret's line number is brighter (amber), the rest dim

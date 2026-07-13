@@ -24,6 +24,7 @@ public bundle forge {
             private mutable Highlighter* hl;
             private mutable FoldState* folds;
             private mutable int scrollMargin;
+            private mutable ArrayList<int>* bookmarks;   // 0-based lines the user bookmarked (F2 navigates)
 
             public constructor Controller(int rows, int cols) {
                 this.doc = new Document(new TextBuffer() on heap) on heap;
@@ -32,8 +33,70 @@ public bundle forge {
                 this.hl = new Highlighter() on heap;
                 this.folds = new FoldState() on heap;
                 this.scrollMargin = 2;
+                this.bookmarks = new ArrayList<int>() on heap;
                 this.folds.recompute(this.ed.document());
                 this.moved();
+            }
+
+            // --- bookmarks: mark lines and jump between them (Ctrl+F2 toggles, F2/Shift+F2 navigate) ---
+            public method toggleBookmark() returns void {
+                int line = this.ed.cursorRow();
+                mutable int i = 0;
+                while (i < this.bookmarks.size()) {
+                    if (this.bookmarks.get(i) == line) {
+                        this.bookmarks.removeAt(i);
+                        return;
+                    }
+                    i = i + 1;
+                }
+                this.bookmarks.add(line);
+            }
+            public method hasBookmark(int line) returns boolean {
+                mutable int i = 0;
+                while (i < this.bookmarks.size()) {
+                    if (this.bookmarks.get(i) == line) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+            // Jump to the next (forward=true) or previous bookmarked line, wrapping around.
+            public method nextBookmark(boolean forward) returns void {
+                if (this.bookmarks.size() == 0) {
+                    return;
+                }
+                int here = this.ed.cursorRow();
+                mutable int best = 0 - 1;
+                mutable int i = 0;
+                while (i < this.bookmarks.size()) {
+                    int b = this.bookmarks.get(i);
+                    if (forward && b > here) {
+                        if (best < 0 || b < best) {
+                            best = b;
+                        }
+                    } else if (!forward && b < here) {
+                        if (best < 0 || b > best) {
+                            best = b;
+                        }
+                    }
+                    i = i + 1;
+                }
+                if (best < 0) {
+                    // wrap: pick the extreme in the scan direction
+                    best = this.bookmarks.get(0);
+                    mutable int j = 1;
+                    while (j < this.bookmarks.size()) {
+                        int b = this.bookmarks.get(j);
+                        if (forward && b < best) {
+                            best = b;
+                        } else if (!forward && b > best) {
+                            best = b;
+                        }
+                        j = j + 1;
+                    }
+                }
+                this.placeCaret(best, 0);
             }
 
             // Refresh the viewport's line count and follow the caret. Called after every command.
