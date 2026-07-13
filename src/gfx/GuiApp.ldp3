@@ -1670,6 +1670,9 @@ public bundle forge {
             private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb,
                                             FileTree* tree, Overlay* ov, Completion* comp, MenuBar* menu)
                     returns void {
+                // Drain any debug-adapter messages that arrived since the last frame (non-blocking): the
+                // stopped line, call stack, variables and program output update in step with the UI.
+                wb.debugger().pump();
                 int w = win.width();
                 int h = win.height();
                 Wgl.glViewport(0, 0, w, h);
