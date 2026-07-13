@@ -283,6 +283,11 @@ public bundle forge {
                     menu.close();
                     return;
                 }
+                int dbgFrame = screen.debugFrameAt(mx, my, win.width(), wb.debugger());
+                if (dbgFrame >= 0) {
+                    wb.jumpToStackFrame(dbgFrame);   // click a call-stack frame -> open its source line
+                    return;
+                }
                 if (my < screen.menuH()) {
                     int tb = screen.toolButtonAt(mx, my, win.width());
                     if (tb == 1) {

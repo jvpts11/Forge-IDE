@@ -291,6 +291,21 @@ public bundle forge {
                 this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
             }
 
+            // Open the source of call-stack frame `idx` (from the debug panel) and put the caret on its line.
+            public method jumpToStackFrame(int idx) returns void {
+                ArrayList<DebugFrame*>* stack = this.dbg.callStackView();
+                if (idx < 0 || idx >= stack.size()) {
+                    return;
+                }
+                DebugFrame* fr = stack.get(idx);
+                if (fr.path.length() > 0 && File.exists(fr.path)) {
+                    Controller* c = this.openFile(fr.path);
+                    if (fr.line > 0) {
+                        c.placeCaret(fr.line - 1, 0);
+                    }
+                }
+            }
+
             // Jump to the next (forward) or previous problem in the active file from the last build, wrapping
             // around, and show its message. F8 / Shift+F8.
             public method nextProblem(boolean forward) returns void {

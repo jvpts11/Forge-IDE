@@ -169,13 +169,42 @@ public bundle forge {
                 this.drawStatusBar(batch, wb, screenW, screenH, sh);
             }
 
+            // Layout of the debug side panel, shared by drawing and click hit-testing.
+            public method debugPanelWidth() returns int {
+                return 320;
+            }
+            public method debugPanelX(int screenW) returns int {
+                return screenW - this.debugPanelWidth();
+            }
+            // Screen y of the first call-stack row (below the "DEBUG --" header and the "CALL STACK" label).
+            public method debugStackTop() returns int {
+                return this.menuH() + this.tabH() + this.crumbH() + 16 + 2 * this.font.lineHeight();
+            }
+            // The call-stack frame index at a click, or -1 if the click isn't on a frame -- so clicking a
+            // frame can jump the editor to its source line.
+            public method debugFrameAt(int mx, int my, int screenW, Debugger* dbg) returns int {
+                if (!dbg.isActive() || mx < this.debugPanelX(screenW)) {
+                    return -1;
+                }
+                int ch = this.font.lineHeight();
+                int top = this.debugStackTop();
+                mutable int n = dbg.callStackView().size();
+                if (n > 12) {
+                    n = 12;
+                }
+                if (my < top || my >= top + n * ch) {
+                    return -1;
+                }
+                return (my - top) / ch;
+            }
+
             // The debug side panel (shown only during a session): the status, the call stack and the current
             // frame's local variables, updated as the adapter reports stopped/stackTrace/variables.
             private method drawDebugPanel(Batch2D* batch, Debugger* dbg, int screenW, int screenH) returns void {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
-                int pw = 320;
-                int px = screenW - pw;
+                int pw = this.debugPanelWidth();
+                int px = this.debugPanelX(screenW);
                 int py = this.menuH() + this.tabH() + this.crumbH();
                 int ph = screenH - py - this.statusH();
                 batch.rect(px, py, pw, ph, 0.031, 0.063, 0.071, 0.97);
