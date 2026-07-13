@@ -14,12 +14,14 @@ public bundle forge {
         public class DocumentManager {
             private mutable ArrayList<Controller>* tabs;
             private mutable int active;
+            private mutable int prevActive;   // most-recently-used previous tab, for Ctrl+Tab
             private mutable int rows;
             private mutable int cols;
 
             public constructor DocumentManager(int rows, int cols) {
                 this.tabs = new ArrayList<Controller>() on heap;
                 this.active = 0 - 1;
+                this.prevActive = 0 - 1;
                 this.rows = rows;
                 this.cols = cols;
             }
@@ -41,12 +43,26 @@ public bundle forge {
             }
             public method setActive(int i) returns void {
                 if (i >= 0 && i < this.tabs.size()) {
+                    if (i != this.active) {
+                        this.prevActive = this.active;
+                    }
                     this.active = i;
+                }
+            }
+            // Ctrl+Tab: jump back to the most-recently-used other tab (and remember the current as the next
+            // "previous", so a second Ctrl+Tab returns) -- Alt+Tab-style toggling between two tabs.
+            public method switchToPrevious() returns void {
+                if (this.prevActive >= 0 && this.prevActive < this.tabs.size()
+                    && this.prevActive != this.active) {
+                    int t = this.active;
+                    this.active = this.prevActive;
+                    this.prevActive = t;
                 }
             }
 
             // Open a fresh empty document and make it active.
             public method openNew() returns Controller* {
+                this.prevActive = this.active;
                 this.tabs.add(new Controller(this.rows, this.cols) on heap);
                 this.active = this.tabs.size() - 1;
                 return this.tabs.get(this.active);
@@ -56,10 +72,14 @@ public bundle forge {
             public method openFile(String path) returns Controller* {
                 for (mutable int i = 0; i < this.tabs.size(); i++) {
                     if (this.tabs.get(i).document().path().equals(path)) {
+                        if (i != this.active) {
+                            this.prevActive = this.active;
+                        }
                         this.active = i;
                         return this.tabs.get(i);
                     }
                 }
+                this.prevActive = this.active;
                 this.tabs.add(new Controller(this.rows, this.cols) on heap);
                 this.active = this.tabs.size() - 1;
                 Controller* c = this.tabs.get(this.active);

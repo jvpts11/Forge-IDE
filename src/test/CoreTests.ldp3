@@ -602,6 +602,18 @@ public bundle forge {
                 a.eqInt(dm.count(), 1, "dm.closed");
                 a.eqStr(dm.active().editor().document().line(0), "", "dm.after-close");
 
+                // --- Ctrl+Tab: toggle between the two most-recently-used tabs ---
+                DocumentManager mru = new DocumentManager(20, 80) on heap;
+                mru.openNew();
+                mru.openNew();
+                a.eqInt(mru.activeIndex(), 1, "mru.active1");
+                mru.setActive(0);
+                a.eqInt(mru.activeIndex(), 0, "mru.active0");
+                mru.switchToPrevious();
+                a.eqInt(mru.activeIndex(), 1, "mru.back-to-1");
+                mru.switchToPrevious();
+                a.eqInt(mru.activeIndex(), 0, "mru.toggle-0");
+
                 // --- file tree over a real temp directory (dirs first, lazy expand) ---
                 File.mkdir("ft_tree.tmp");
                 File.mkdir("ft_tree.tmp/sub");
