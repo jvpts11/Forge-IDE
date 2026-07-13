@@ -35,6 +35,7 @@ public bundle forge {
             private mutable String projectDir;      // where build/run commands execute (the project root)
             private mutable String projectName;     // from ldp3.toml, shown in the status bar
             private mutable GitStatus* git;         // change marks for the active file's gutter
+            private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -45,6 +46,7 @@ public bundle forge {
                 this.projectDir = ".";
                 this.projectName = "";
                 this.git = new GitStatus() on heap;
+                this.treeDirty = false;
                 this.docs.openNew();               // start on one empty document
             }
 
@@ -315,6 +317,42 @@ public bundle forge {
                     this.runShell("Diff", "git --no-pager diff -- \"" + path + "\"");
                 }
             }
+            // --- file operations (the shell rebuilds the tree when treeDirty is set) ---
+            // Create an empty file at `rel` (relative to the project) and open it.
+            public method newFileOnDisk(String rel) returns void {
+                if (rel.length() == 0) {
+                    return;
+                }
+                String full = Paths.join(this.projectDir, rel);
+                if (!File.exists(full)) {
+                    File.writeAll(full, "");
+                }
+                this.openFile(full);
+                this.treeDirty = true;
+            }
+            // Rename the active file to `newName` in its own directory, and reopen it under the new name.
+            public method renameActiveFile(String newName) returns void {
+                if (newName.length() == 0) {
+                    return;
+                }
+                String old = this.docs.active().document().path();
+                if (old.length() == 0) {
+                    return;
+                }
+                String dir = Paths.dirname(old);
+                String dest = Paths.join(dir, newName);
+                File.rename(old, dest);
+                this.openFile(dest);
+                this.treeDirty = true;
+            }
+            public method treeNeedsRefresh() returns boolean {
+                if (this.treeDirty) {
+                    this.treeDirty = false;
+                    return true;
+                }
+                return false;
+            }
+
             // Escape a commit message for a double-quoted shell argument (drop the quotes that would end it).
             private static method shellEscape(String s) returns String {
                 StringBuilder sb = new StringBuilder() on heap;

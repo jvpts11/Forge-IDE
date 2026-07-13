@@ -186,6 +186,10 @@ public bundle forge {
                         WorkspaceStore.addRecent(req.path);
                         req.path = "";
                     }
+                    // a file operation (new/rename) asked to rebuild the tree at the current root
+                    if (wb.treeNeedsRefresh()) {
+                        tree = new FileTree(tree.root().path) on heap;
+                    }
                     // periodically persist the open tabs so the session survives a crash / next launch
                     if (frames % 300 == 0) {
                         WorkspaceStore.saveSession(wb.projectRoot(), wb.documents().openPaths());
@@ -450,6 +454,14 @@ public bundle forge {
                 }
                 if (id.equals("git.commit")) {
                     ov.openPrompt("commit", "commit message: ");
+                    return;
+                }
+                if (id.equals("file.newDisk")) {
+                    ov.openPrompt("newfile", "new file (path): ");
+                    return;
+                }
+                if (id.equals("file.rename")) {
+                    ov.openPrompt("rename", "rename to: ");
                     return;
                 }
                 if (id.equals("git.status")) {
@@ -874,6 +886,9 @@ public bundle forge {
                 } else if (cmd.equals("gitstatus")) {
                     wb.gitStatusView();
                     System.IO.Console.println("ok " + wb.output().lineCount().toString() + " changed");
+                } else if (cmd.equals("newfile")) {
+                    wb.newFileOnDisk(arg);
+                    System.IO.Console.println("ok " + wb.documents().active().document().path());
                 } else if (cmd.equals("state")) {
                     GuiApp.serveState(wb);
                 } else if (cmd.equals("metrics")) {
@@ -1412,6 +1427,10 @@ public bundle forge {
                     if (ov.query.length() > 0) {
                         wb.gitCommit(ov.query);
                     }
+                } else if (ov.promptKind.equals("newfile")) {
+                    wb.newFileOnDisk(ov.query);
+                } else if (ov.promptKind.equals("rename")) {
+                    wb.renameActiveFile(ov.query);
                 }
                 return;
             }
