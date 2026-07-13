@@ -491,6 +491,13 @@ public bundle forge {
                     ov.openPrompt("rename", "rename to: ");
                     return;
                 }
+                if (id.equals("file.delete")) {
+                    String base = Paths.basename(wb.activePath());
+                    if (base.length() > 0) {
+                        ov.openPrompt("delete", "delete '" + base + "'? type y to confirm: ");
+                    }
+                    return;
+                }
                 if (id.equals("git.status")) {
                     wb.gitStatusView();
                     return;
@@ -1642,6 +1649,10 @@ public bundle forge {
                     wb.newFileOnDisk(ov.query);
                 } else if (ov.promptKind.equals("rename")) {
                     wb.renameActiveFile(ov.query);
+                } else if (ov.promptKind.equals("delete")) {
+                    if (ov.query.equals("y") || ov.query.equals("yes")) {
+                        wb.deleteActiveFile();
+                    }
                 } else if (ov.promptKind.equals("renameSymbol")) {
                     int n = wb.renameSymbol(wb.renameTargetName(), ov.query);
                     wb.output().banner("Rename", "Renamed " + n.toString() + " occurrence(s) of '"

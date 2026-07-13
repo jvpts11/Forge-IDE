@@ -60,6 +60,7 @@ public bundle forge {
                 file.add("Save", "file.save");
                 file.add("Save As...", "file.saveAs");
                 file.add("Rename File...", "file.rename");
+                file.add("Delete File...", "file.delete");
                 file.sep();
                 file.add("Close Tab", "file.close");
                 file.add("Exit", "app.quit");

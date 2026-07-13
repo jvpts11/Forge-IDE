@@ -524,6 +524,17 @@ public bundle forge {
                 this.openFile(dest);
                 this.treeDirty = true;
             }
+            // Delete the active file from disk (after a typed confirmation in the shell), close its tab, and
+            // mark the tree for a rebuild.
+            public method deleteActiveFile() returns void {
+                String path = this.docs.active().document().path();
+                if (path.length() == 0) {
+                    return;
+                }
+                File.remove(path);
+                this.closeActiveTab();
+                this.treeDirty = true;
+            }
             public method treeNeedsRefresh() returns boolean {
                 if (this.treeDirty) {
                     this.treeDirty = false;
