@@ -76,6 +76,9 @@ public bundle forge {
                 edit.add("Select All Occurrences  Ctrl+Shift+L", "edit.selectAllOccurrences");
                 edit.add("Expand Selection  Shift+Alt+Right", "edit.expandSelection");
                 edit.add("Shrink Selection  Shift+Alt+Left", "edit.shrinkSelection");
+                edit.sep();
+                edit.add("Go Back  Alt+Left", "nav.back");
+                edit.add("Go Forward  Alt+Right", "nav.forward");
                 edit.add("Find", "edit.find");
                 edit.sep();
                 edit.add("Rename Symbol  Shift+F6", "edit.rename");

@@ -1110,6 +1110,7 @@ public bundle forge {
             }
 
             private static method serveState(Workbench* wb) returns void {
+                wb.trackNav();   // in serve mode there is no per-frame loop; sample the nav tracker here
                 Controller* c = wb.active();
                 mutable String path = c.document().path();
                 if (path.length() == 0) {
@@ -1454,6 +1455,14 @@ public bundle forge {
                 }
                 if (!ctrl && shift && alt && vk == 37) {
                     wb.active().shrinkSelection();
+                    return true;
+                }
+                if (!ctrl && !shift && alt && vk == 37) {
+                    wb.navGoBack();
+                    return true;
+                }
+                if (!ctrl && !shift && alt && vk == 39) {
+                    wb.navGoForward();
                     return true;
                 }
                 if (vk == 27 && wb.active().hasMultipleCarets()) {
@@ -1863,6 +1872,7 @@ public bundle forge {
                 wb.debugger().pump();
                 wb.drainDebugOutput();
                 wb.terminal().pump();       // stream the integrated terminal's output
+                wb.trackNav();              // record far caret jumps for Alt+Left / Alt+Right
                 screen.applyThemeFor(wb);   // re-skin if the theme preference changed
                 int w = win.width();
                 int h = win.height();

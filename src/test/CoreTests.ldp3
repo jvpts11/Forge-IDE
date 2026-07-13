@@ -534,8 +534,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 32, "cmd.count");
-                a.eqInt(cr.filter("").size(), 32, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 34, "cmd.count");
+                a.eqInt(cr.filter("").size(), 34, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");

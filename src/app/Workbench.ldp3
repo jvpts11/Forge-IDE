@@ -42,6 +42,12 @@ public bundle forge {
             private mutable Terminal* term;          // integrated terminal (a cmd.exe behind a Subprocess)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
+            private mutable ArrayList<NavLoc>* navBack;  // Alt+Left history of caret locations before a jump
+            private mutable ArrayList<NavLoc>* navFwd;   // Alt+Right stack (locations popped off navBack)
+            private mutable String lastNavFile;      // the last settled caret location, to detect a "far" jump
+            private mutable int lastNavRow;
+            private mutable int lastNavCol;
+            private mutable boolean navInit;
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -59,7 +65,79 @@ public bundle forge {
                 this.term = new Terminal() on heap;
                 this.treeDirty = false;
                 this.showMinimap = false;
+                this.navBack = new ArrayList<NavLoc>() on heap;
+                this.navFwd = new ArrayList<NavLoc>() on heap;
+                this.lastNavFile = "";
+                this.lastNavRow = 0;
+                this.lastNavCol = 0;
+                this.navInit = false;
                 this.docs.openNew();               // start on one empty document
+            }
+
+            // Called once per frame (and before serve introspection): if the caret made a "far" jump -- a file
+            // change or a large line delta, i.e. a go-to-definition / go-to-symbol / problem / search jump rather
+            // than ordinary editing -- record where it came from so Alt+Left / Alt+Right can walk the trail.
+            public method trackNav() returns void {
+                String p = this.activePath();
+                int r = this.docs.active().editor().cursorRow();
+                int c = this.docs.active().editor().cursorCol();
+                if (!this.navInit) {
+                    this.navInit = true;
+                    this.lastNavFile = p;
+                    this.lastNavRow = r;
+                    this.lastNavCol = c;
+                    return;
+                }
+                boolean far = !p.equals(this.lastNavFile) || Workbench.absDiff(r, this.lastNavRow) >= 8;
+                if (far) {
+                    this.navBack.add(new NavLoc(this.lastNavFile, this.lastNavRow, this.lastNavCol) on heap);
+                    this.navFwd = new ArrayList<NavLoc>() on heap;
+                    while (this.navBack.size() > 200) {
+                        this.navBack.removeAt(0);
+                    }
+                }
+                this.lastNavFile = p;
+                this.lastNavRow = r;
+                this.lastNavCol = c;
+            }
+            // Alt+Left: return to the previous recorded location, pushing the current one onto the forward stack.
+            public method navGoBack() returns void {
+                if (this.navBack.size() == 0) {
+                    return;
+                }
+                this.navFwd.add(new NavLoc(this.activePath(), this.docs.active().editor().cursorRow(),
+                                           this.docs.active().editor().cursorCol()) on heap);
+                int n = this.navBack.size();
+                NavLoc* dst = this.navBack.get(n - 1);
+                this.navBack.removeAt(n - 1);
+                this.gotoNav(dst);
+            }
+            // Alt+Right: replay a location the back stack popped.
+            public method navGoForward() returns void {
+                if (this.navFwd.size() == 0) {
+                    return;
+                }
+                this.navBack.add(new NavLoc(this.activePath(), this.docs.active().editor().cursorRow(),
+                                            this.docs.active().editor().cursorCol()) on heap);
+                int n = this.navFwd.size();
+                NavLoc* dst = this.navFwd.get(n - 1);
+                this.navFwd.removeAt(n - 1);
+                this.gotoNav(dst);
+            }
+            private method gotoNav(NavLoc* loc) returns void {
+                if (loc.path.length() > 0 && !loc.path.equals(this.activePath())) {
+                    this.openFile(loc.path);
+                }
+                this.docs.active().placeCaret(loc.row, loc.col);
+                this.lastNavFile = loc.path;      // so the next trackNav does not re-record this move
+                this.lastNavRow = loc.row;
+                this.lastNavCol = loc.col;
+            }
+            private static method absDiff(int a, int b) returns int {
+                if (a >= b) {
+                    return a - b;
+                }
+                return b - a;
             }
 
             // The debug session. The gutter shows its breakpoints and stopped line; the shell pumps it each
@@ -617,6 +695,14 @@ public bundle forge {
                 }
                 if (id.equals("edit.shrinkSelection")) {
                     c.shrinkSelection();
+                    return true;
+                }
+                if (id.equals("nav.back")) {
+                    this.navGoBack();
+                    return true;
+                }
+                if (id.equals("nav.forward")) {
+                    this.navGoForward();
                     return true;
                 }
                 if (id.equals("run.build")) {

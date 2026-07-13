@@ -1,0 +1,20 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One caret location on the back/forward navigation stack: the file and the (row, col) within it.
+        // The shell records one when the caret makes a "far" jump (go-to-definition, go-to-symbol, a problem
+        // or search result, a large scroll-and-click) so Alt+Left / Alt+Right can walk the trail.
+        public class NavLoc {
+            public mutable String path;
+            public mutable int row;
+            public mutable int col;
+            public constructor NavLoc(String path, int row, int col) {
+                this.path = path;
+                this.row = row;
+                this.col = col;
+            }
+        }
+    }
+}
