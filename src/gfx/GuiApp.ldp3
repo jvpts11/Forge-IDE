@@ -1011,6 +1011,17 @@ public bundle forge {
                 } else if (cmd.equals("gitstatus")) {
                     wb.gitStatusView();
                     System.IO.Console.println("ok " + wb.output().lineCount().toString() + " changed");
+                } else if (cmd.equals("diff")) {
+                    wb.openDiff();
+                    System.IO.Console.println("ok diff " + wb.diffView().lines.size().toString() + " lines");
+                } else if (cmd.equals("diffdump")) {
+                    ArrayList<String>* dl = wb.diffView().lines;
+                    mutable int di = 0;
+                    while (di < dl.size() && di < 40) {
+                        System.IO.Console.println("D" + wb.diffView().kinds.get(di).toString() + "| " + dl.get(di));
+                        di = di + 1;
+                    }
+                    System.IO.Console.println("ok");
                 } else if (cmd.equals("newfile")) {
                     wb.newFileOnDisk(arg);
                     System.IO.Console.println("ok " + wb.documents().active().document().path());
@@ -1300,6 +1311,16 @@ public bundle forge {
                         menu.close();
                     } else if (comp.active && e.isKey() && GuiApp.completionKey(comp, wb, e.vk)) {
                         // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
+                    } else if (wb.diffView().isActive() && e.isKey() && e.vk == 27) {   // Esc closes the diff
+                        wb.diffView().clear();
+                    } else if (wb.diffView().isActive() && e.isKey() && e.vk == 40) {   // Down scrolls the diff
+                        wb.diffView().scrollBy(1);
+                    } else if (wb.diffView().isActive() && e.isKey() && e.vk == 38) {   // Up scrolls the diff
+                        wb.diffView().scrollBy(0 - 1);
+                    } else if (wb.diffView().isActive() && e.isKey() && e.vk == 34) {   // PageDown
+                        wb.diffView().scrollBy(20);
+                    } else if (wb.diffView().isActive() && e.isKey() && e.vk == 33) {   // PageUp
+                        wb.diffView().scrollBy(0 - 20);
                     } else if (wb.peekView().isActive() && e.isKey() && e.vk == 27) {   // Esc closes the peek
                         wb.peekView().clear();
                     } else if (wb.peekView().isActive() && e.isKey() && e.vk == 13) {   // Enter opens the peek

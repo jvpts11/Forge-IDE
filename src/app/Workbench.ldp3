@@ -52,6 +52,7 @@ public bundle forge {
             private mutable int lastNavCol;
             private mutable boolean navInit;
             private mutable Peek* peek;              // inline peek-definition popup (Alt+F12)
+            private mutable DiffView* diff;          // read-only git-diff view of the active file
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -76,7 +77,27 @@ public bundle forge {
                 this.lastNavCol = 0;
                 this.navInit = false;
                 this.peek = new Peek() on heap;
+                this.diff = new DiffView() on heap;
                 this.docs.openNew();               // start on one empty document
+            }
+
+            public method diffView() returns DiffView* {
+                return this.diff;
+            }
+            // Open the read-only, colour-coded git diff of the active file (or the whole tree if it has no path)
+            // over the editor. Reuses `git diff` directly; DiffView classifies each line.
+            public method openDiff() returns void {
+                String path = this.docs.active().document().path();
+                mutable String cmd = "git -C \"" + this.projectDir + "\" --no-pager diff";
+                if (path.length() > 0) {
+                    cmd = cmd + " -- \"" + path + "\"";
+                }
+                ProcessResult r = Process.run(cmd);
+                mutable String title = "Diff";
+                if (path.length() > 0) {
+                    title = "Diff: " + Paths.basename(path);
+                }
+                this.diff.load(title, Strings.split(r.output, "\n"));
             }
 
             public method peekView() returns Peek* {
@@ -775,14 +796,9 @@ public bundle forge {
             public method gitPush() returns void {
                 this.runShell("Push", "git push");
             }
-            // Show the diff of the active file (or the whole tree if it has no path).
+            // Show the colour-coded diff of the active file over the editor (Git > Diff Current File).
             public method gitDiff() returns void {
-                String path = this.docs.active().document().path();
-                if (path.length() == 0) {
-                    this.runShell("Diff", "git --no-pager diff");
-                } else {
-                    this.runShell("Diff", "git --no-pager diff -- \"" + path + "\"");
-                }
+                this.openDiff();
             }
             // --- file operations (the shell rebuilds the tree when treeDirty is set) ---
             // Create an empty file at `rel` (relative to the project) and open it.

@@ -23,6 +23,7 @@ import syntax.Tok;
 import syntax.Span;
 import syntax.Highlighter;
 import app.Peek;
+import app.DiffView;
 import editor.Match;
 import System.Collections.ArrayList;
 import System.IO.Paths;
@@ -192,6 +193,9 @@ public bundle forge {
                 this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
                 this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
                 this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw, screenH - etop - sh - panelH);
+                if (wb.diffView().isActive()) {
+                    this.drawDiff(batch, wb, tw, etop, screenW - tw, screenH - etop - sh);
+                }
                 if (wb.peekView().isActive()) {
                     this.drawPeek(batch, wb, tw, etop, screenW - tw, screenH - etop - sh - panelH);
                 }
@@ -1139,6 +1143,54 @@ public bundle forge {
                     i = i + 1;
                 }
                 return i;
+            }
+
+            // Read-only git-diff view over the editor (Git > Diff Current File): the raw diff, colour-coded --
+            // green added, red removed, amber hunk headers, dim file headers -- with add/remove rows tinted.
+            // Scrolls with the arrows/wheel; Esc closes.
+            private method drawDiff(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph) returns void {
+                DiffView* dv = wb.diffView();
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(ox, oy, pw, ph, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, 1.0);
+                batch.rect(ox, oy, pw, ch + 8, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(ox, oy + ch + 8, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);
+                this.font.drawText(batch, ox + 8, oy + 4, dv.title + "   (Esc to close)",
+                    this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                int top = oy + ch + 12;
+                int rows = (ph - ch - 12) / ch;
+                mutable int r = 0;
+                while (r < rows && dv.scroll + r < dv.lines.size()) {
+                    int idx = dv.scroll + r;
+                    int y = top + r * ch;
+                    int kind = dv.kinds.get(idx);
+                    String line = dv.lines.get(idx);
+                    mutable float cr = this.theme.text.r;
+                    mutable float cg = this.theme.text.g;
+                    mutable float cb = this.theme.text.b;
+                    if (kind == 1) {
+                        batch.rect(ox, y, pw, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.10);
+                        cr = this.theme.added.r;
+                        cg = this.theme.added.g;
+                        cb = this.theme.added.b;
+                    } else if (kind == 2) {
+                        batch.rect(ox, y, pw, ch, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, 0.10);
+                        cr = this.theme.removed.r;
+                        cg = this.theme.removed.g;
+                        cb = this.theme.removed.b;
+                    } else if (kind == 3) {
+                        cr = this.theme.accent.r;
+                        cg = this.theme.accent.g;
+                        cb = this.theme.accent.b;
+                    } else if (kind == 4) {
+                        cr = this.theme.textDim.r;
+                        cg = this.theme.textDim.g;
+                        cb = this.theme.textDim.b;
+                    }
+                    this.font.drawText(batch, ox + 8, y, line, cr, cg, cb, 1.0);
+                    r = r + 1;
+                }
+                return;
             }
 
             // Inline peek-definition popup (Alt+F12): a bordered card of the definition's source shown just

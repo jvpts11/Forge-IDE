@@ -1,0 +1,91 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // A read-only view of `git diff` output for the active file, colour-coded by line kind and rendered
+        // over the editor. `active` gates it; the shell scrolls it and Esc closes it.
+        // kind: 0 context, 1 added (+), 2 removed (-), 3 hunk header (@@), 4 file header (diff/index/---/+++).
+        public class DiffView {
+            public mutable boolean active;
+            public mutable String title;
+            public mutable int scroll;                 // first visible line
+            public mutable ArrayList<String>* lines;
+            public mutable ArrayList<int>* kinds;
+
+            public constructor DiffView() {
+                this.active = false;
+                this.title = "";
+                this.scroll = 0;
+                this.lines = new ArrayList<String>() on heap;
+                this.kinds = new ArrayList<int>() on heap;
+            }
+
+            public method clear() returns void {
+                this.active = false;
+            }
+            public method isActive() returns boolean {
+                return this.active;
+            }
+            public method scrollBy(int delta) returns void {
+                mutable int s = this.scroll + delta;
+                if (s >= this.lines.size()) {
+                    s = this.lines.size() - 1;
+                }
+                if (s < 0) {
+                    s = 0;
+                }
+                this.scroll = s;
+            }
+
+            // Load raw `git diff` output lines, classifying each, and show the view.
+            public method load(String title, ArrayList<String> raw) returns void {
+                this.title = title;
+                this.scroll = 0;
+                this.lines = new ArrayList<String>() on heap;
+                this.kinds = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String line = raw.get(i);
+                    i = i + 1;
+                    this.lines.add(line);
+                    this.kinds.add(DiffView.classify(line));
+                }
+                mutable boolean empty = this.lines.size() == 0;
+                if (this.lines.size() == 1 && this.lines.get(0).length() == 0) {
+                    empty = true;
+                }
+                if (empty) {
+                    this.lines = new ArrayList<String>() on heap;
+                    this.kinds = new ArrayList<int>() on heap;
+                    this.lines.add("(no changes against HEAD)");
+                    this.kinds.add(0);
+                }
+                this.active = true;
+            }
+
+            private static method classify(String line) returns int {
+                if (line.length() == 0) {
+                    return 0;
+                }
+                if (line.startsWith("@@")) {
+                    return 3;
+                }
+                if (line.startsWith("+++") || line.startsWith("---")
+                    || line.startsWith("diff ") || line.startsWith("index ")) {
+                    return 4;
+                }
+                char c = line.charAt(0);
+                if (c == '+') {
+                    return 1;
+                }
+                if (c == '-') {
+                    return 2;
+                }
+                return 0;
+            }
+        }
+    }
+}
