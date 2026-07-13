@@ -36,6 +36,7 @@ public bundle forge {
             private mutable String projectName;     // from ldp3.toml, shown in the status bar
             private mutable GitStatus* git;         // change marks for the active file's gutter
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
+            private mutable boolean showMinimap;    // view preference: the code minimap on the right
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -47,6 +48,7 @@ public bundle forge {
                 this.projectName = "";
                 this.git = new GitStatus() on heap;
                 this.treeDirty = false;
+                this.showMinimap = false;
                 this.docs.openNew();               // start on one empty document
             }
 
@@ -352,6 +354,12 @@ public bundle forge {
                 }
                 return false;
             }
+            public method toggleMinimap() returns void {
+                this.showMinimap = !this.showMinimap;
+            }
+            public method minimapVisible() returns boolean {
+                return this.showMinimap;
+            }
 
             // Escape a commit message for a double-quoted shell argument (drop the quotes that would end it).
             private static method shellEscape(String s) returns String {
@@ -421,6 +429,10 @@ public bundle forge {
                 }
                 if (id.equals("view.output")) {
                     this.out.toggle();
+                    return true;
+                }
+                if (id.equals("view.minimap")) {
+                    this.toggleMinimap();
                     return true;
                 }
                 if (id.equals("git.status")) {

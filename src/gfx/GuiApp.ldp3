@@ -358,6 +358,19 @@ public bundle forge {
                         return;
                     }
                 }
+                // a click on the minimap scrolls the editor to the corresponding line
+                if (wb.minimapVisible()) {
+                    int mmW = screen.minimapW();
+                    int mmX = win.width() - mmW - 14;
+                    if (mx >= mmX && mx < mmX + mmW && my >= screen.editorTop()) {
+                        int total = wb.active().lineCount();
+                        int span = win.height() - screen.editorTop() - screen.statusH();
+                        if (span > 0 && total > 0) {
+                            wb.active().placeCaret((my - screen.editorTop()) * total / span, 0);
+                        }
+                        return;
+                    }
+                }
                 int screenRow = (my - screen.textOy()) / screen.lineH();
                 if (screenRow < 0) {
                     return;

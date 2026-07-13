@@ -42,6 +42,7 @@ public bundle forge {
                 this.register("git.push", "Git: Push");
                 this.register("git.diff", "Git: Diff (current)");
                 this.register("view.output", "Toggle Output Panel");
+                this.register("view.minimap", "Toggle Minimap");
                 this.register("view.split", "Split Editor");
             }
 

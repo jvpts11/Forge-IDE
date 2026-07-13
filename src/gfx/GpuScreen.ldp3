@@ -831,6 +831,10 @@ public bundle forge {
                     }
                 }
 
+                // the code minimap (right of the text, left of the overview ruler), when enabled
+                if (wb.minimapVisible()) {
+                    this.drawMinimap(batch, c, ox + pw - this.minimapW() - 14, oy, ph, firstLine, visible);
+                }
                 // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
                 this.drawOverviewRuler(batch, wb, ox + pw, oy, ph);
 
@@ -862,6 +866,57 @@ public bundle forge {
             // A JetBrains/VS Code-style overview ruler down the right edge of the editor: a faint scroll thumb
             // sized to the visible fraction, plus a colored tick per diagnostic at its proportional position,
             // so you see at a glance where the errors are even when they're scrolled off screen.
+            // The code minimap: a zoomed-out view of the whole file on the right, each line a faint bar whose
+            // width tracks the code length, with a highlighted box over the visible range. Click-scrollable.
+            public method minimapW() returns int {
+                return 92;
+            }
+            private method drawMinimap(Batch2D* batch, Controller* c, int mmX, int oy, int ph, int firstLine,
+                                       int visible) returns void {
+                int mmW = this.minimapW();
+                batch.rect(mmX, oy, mmW, ph, 0.031, 0.063, 0.071, 1.0);
+                batch.rect(mmX, oy, 1, ph, 0.016, 0.035, 0.039, 1.0);
+                int total = c.editor().document().lineCount();
+                if (total <= 0) {
+                    return;
+                }
+                int maxCols = 84;
+                mutable int line = 0;
+                while (line < total) {
+                    int y = oy + (line * ph) / total;
+                    String text = c.editor().document().line(line);
+                    int lead = this.leadingSpaces(text);
+                    int len = text.length() - lead;
+                    if (len > 0) {
+                        mutable int w = (len * mmW) / maxCols;
+                        if (w > mmW) {
+                            w = mmW;
+                        }
+                        mutable int lx = (lead * mmW) / maxCols;
+                        if (lx > mmW - 2) {
+                            lx = mmW - 2;
+                        }
+                        batch.rect(mmX + lx, y, w, 1, 0.502, 0.565, 0.557, 0.55);
+                    }
+                    line = line + 1;
+                }
+                int vy0 = oy + (firstLine * ph) / total;
+                mutable int vyH = (visible * ph) / total;
+                if (vyH < 6) {
+                    vyH = 6;
+                }
+                batch.rect(mmX, vy0, mmW, vyH, 1.0, 1.0, 1.0, 0.07);
+                batch.rect(mmX, vy0, mmW, 1, 0.918, 0.706, 0.392, 0.5);
+                batch.rect(mmX, vy0 + vyH - 1, mmW, 1, 0.918, 0.706, 0.392, 0.5);
+            }
+            private method leadingSpaces(String s) returns int {
+                mutable int i = 0;
+                while (i < s.length() && s.charAt(i) == ' ') {
+                    i = i + 1;
+                }
+                return i;
+            }
+
             private method drawOverviewRuler(Batch2D* batch, Workbench* wb, int rightX, int oy, int ph)
                     returns void {
                 int rw = 12;
