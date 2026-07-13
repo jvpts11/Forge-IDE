@@ -1,4 +1,7 @@
 import editor.Editor;
+import syntax.Highlighter;
+import syntax.Span;
+import syntax.Tok;
 import app.Controller;
 import app.DocumentManager;
 import app.CommandRegistry;
@@ -468,6 +471,111 @@ public bundle forge {
                     row = row + 1;
                 }
                 return total;
+            }
+            // Every project .ldp3 file, by a fresh recursive walk of the project root (independent of the
+            // visual tree's expand state) -- powers workspace refactors like cross-file rename.
+            public method projectFiles() returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                this.walkProject(this.projectDir, out, 0);
+                return out;
+            }
+            private method walkProject(String dir, ArrayList<String>* out, int depth) returns void {
+                if (depth > 10 || out.size() > 4000) {
+                    return;
+                }
+                ArrayList<String> entries = Files.listDir(dir);
+                mutable int i = 0;
+                while (i < entries.size()) {
+                    String name = entries.get(i);
+                    i = i + 1;
+                    if (!Workbench.ignoredEntry(name)) {
+                        String full = Paths.join(dir, name);
+                        if (File.isDir(full)) {
+                            this.walkProject(full, out, depth + 1);
+                        } else if (full.endsWith(".ldp3")) {
+                            out.add(full);
+                        }
+                    }
+                }
+                return;
+            }
+            private static method ignoredEntry(String name) returns boolean {
+                return name.equals(".git") || name.equals("build-output") || name.equals(".vscode")
+                    || name.equals(".forge") || name.equals("node_modules") || name.equals(".vs")
+                    || name.endsWith(".tmp") || name.endsWith(".ppm");
+            }
+
+            // Workspace-wide rename (Shift+F6): rename every whole-word occurrence of `oldName` to `newName`
+            // across the project, skipping matches inside strings/chars/comments (via the highlighter) and
+            // substring hits inside longer identifiers. The active file is renamed in its live buffer (one
+            // undo step); other files are rewritten on disk. Returns the total occurrences changed.
+            public method renameSymbolAcross(String oldName, String newName) returns int {
+                if (oldName.length() == 0 || newName.length() == 0) {
+                    return 0;
+                }
+                String activePath = this.docs.active().document().path();
+                Highlighter* hl = new Highlighter() on heap;
+                mutable int total = this.docs.active().renameSymbol(oldName, newName);
+                ArrayList<String>* files = this.projectFiles();
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.equals(activePath)) {
+                        total = total + Workbench.renameInFile(path, oldName, newName, hl);
+                    }
+                }
+                this.treeDirty = true;
+                return total;
+            }
+            private static method renameInFile(String path, String oldName, String newName, Highlighter* hl)
+                    returns int {
+                ArrayList<String> lines = Files.readLines(path);
+                mutable int changed = 0;
+                ArrayList<String> out = new ArrayList<String>() on heap;
+                int m = oldName.length();
+                mutable int r = 0;
+                while (r < lines.size()) {
+                    String line = lines.get(r);
+                    r = r + 1;
+                    ArrayList<Span> spans = hl.tokenize(line);
+                    StringBuilder rb = new StringBuilder() on heap;
+                    int n = line.length();
+                    mutable int i = 0;
+                    while (i < n) {
+                        mutable boolean matched = false;
+                        if (i + m <= n && line.substring(i, i + m).equals(oldName)) {
+                            boolean leftOk = i == 0 || !Workbench.isIdentChar(line.charAt(i - 1));
+                            boolean rightOk = i + m == n || !Workbench.isIdentChar(line.charAt(i + m));
+                            if (leftOk && rightOk && !Workbench.inStringOrComment(spans, i)) {
+                                rb.append(newName);
+                                i = i + m;
+                                changed = changed + 1;
+                                matched = true;
+                            }
+                        }
+                        if (!matched) {
+                            rb.appendChar(line.charAt(i));
+                            i = i + 1;
+                        }
+                    }
+                    out.add(rb.toString());
+                }
+                if (changed > 0) {
+                    Files.writeLines(path, out);
+                }
+                return changed;
+            }
+            private static method inStringOrComment(ArrayList<Span> spans, int col) returns boolean {
+                mutable int i = 0;
+                while (i < spans.size()) {
+                    Span sp = spans.get(i);
+                    if (col >= sp.start && col < sp.end) {
+                        return sp.kind == Tok.STRING || sp.kind == Tok.CHAR || sp.kind == Tok.COMMENT;
+                    }
+                    i = i + 1;
+                }
+                return false;
             }
             private static method countWholeWord(String line, String w) returns int {
                 int m = w.length();

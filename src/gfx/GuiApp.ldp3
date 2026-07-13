@@ -782,9 +782,9 @@ public bundle forge {
                         System.IO.Console.println("unknown command");
                     }
                 } else if (cmd.equals("renamesym")) {
-                    String oldName = GuiApp.firstWord(arg);         // renamesym <old> <new>: whole-word rename
+                    String oldName = GuiApp.firstWord(arg);         // renamesym <old> <new>: workspace rename
                     String newName = GuiApp.rest(arg);
-                    int n = wb.renameSymbol(oldName, newName);
+                    int n = wb.renameSymbolAcross(oldName, newName);
                     System.IO.Console.println("ok renamed " + n.toString());
                 } else if (cmd.equals("problem")) {
                     wb.nextProblem(!arg.equals("back"));            // problem [back]: jump to next/prev problem
@@ -1763,9 +1763,9 @@ public bundle forge {
                         wb.deleteActiveFile();
                     }
                 } else if (ov.promptKind.equals("renameSymbol")) {
-                    int n = wb.renameSymbol(wb.renameTargetName(), ov.query);
+                    int n = wb.renameSymbolAcross(wb.renameTargetName(), ov.query);
                     wb.output().banner("Rename", "Renamed " + n.toString() + " occurrence(s) of '"
-                        + wb.renameTargetName() + "'.");
+                        + wb.renameTargetName() + "' across the workspace.");
                 }
                 return;
             }
