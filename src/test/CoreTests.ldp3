@@ -74,6 +74,14 @@ public bundle forge {
                 ArrayList<Span> sp2 = hl.tokenize("s = \"hi\";");
                 a.eqInt(cast<int>(sp2.get(4).kind), cast<int>(Tok.STRING), "hl.string");
 
+                // --- bracket-pair depth (seeds rainbow-bracket colouring) ---
+                a.eqInt(hl.bracketDelta("if (x) {"), 1, "brk.open");
+                a.eqInt(hl.bracketDelta("}"), 0 - 1, "brk.close");
+                a.eqInt(hl.bracketDelta("a[i] = f(g(x));"), 0, "brk.balanced");
+                a.eqInt(hl.bracketDelta("s = \"{[(\";"), 0, "brk.in-string");
+                a.eqInt(hl.bracketDelta("x = 1; // {{{"), 0, "brk.in-comment");
+                a.eqInt(hl.bracketDelta("c = '}';"), 0, "brk.in-char");
+
                 // --- undo / redo ---
                 Editor ed2 = new Editor(new TextBuffer() on heap) on heap;
                 ed2.type('h'); ed2.type('i');

@@ -578,6 +578,33 @@ public bundle forge {
             public method renderSpans(int screenRow) returns ArrayList<Span> {
                 return this.hl.tokenize(this.ed.document().line(this.lineNumberAt(screenRow)));
             }
+            // Bracket nesting depth at the very start of `docLine` -- the seed for bracket-pair colouring at the
+            // top of the viewport. Clamped at zero so unbalanced code above never yields a negative depth.
+            public method bracketDepthAt(int docLine) returns int {
+                mutable int depth = 0;
+                mutable int r = 0;
+                int total = this.ed.document().lineCount();
+                while (r < docLine && r < total) {
+                    depth = depth + this.hl.bracketDelta(this.ed.document().line(r));
+                    if (depth < 0) {
+                        depth = 0;
+                    }
+                    r = r + 1;
+                }
+                return depth;
+            }
+            // Net bracket-depth change across the half-open document range [fromDoc, toDoc) -- used to carry the
+            // running depth across a fold gap while colouring, where hidden lines still affect nesting.
+            public method bracketDeltaBetween(int fromDoc, int toDoc) returns int {
+                mutable int delta = 0;
+                mutable int r = fromDoc;
+                int total = this.ed.document().lineCount();
+                while (r < toDoc && r < total) {
+                    delta = delta + this.hl.bracketDelta(this.ed.document().line(r));
+                    r = r + 1;
+                }
+                return delta;
+            }
             // The screen row a document line is drawn at, counting only visible lines from the viewport top.
             // Negative if the line is above the viewport; -1 if the line is hidden by a fold.
             public method screenRowForDocLine(int docLine) returns int {

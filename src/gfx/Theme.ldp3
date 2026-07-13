@@ -66,6 +66,11 @@ public bundle forge {
             public mutable Color* tComment;
             public mutable Color* tPunct;
 
+            // Bracket-pair colours, cycled by nesting depth (VS Code / JetBrains rainbow brackets).
+            public mutable Color* bracket1;
+            public mutable Color* bracket2;
+            public mutable Color* bracket3;
+
             public constructor Theme() {
                 this.dark = true;
                 this.name = "Dark";
@@ -119,6 +124,9 @@ public bundle forge {
                 t.tString = new Color(0.561, 0.780, 0.624, 1.0) on heap;
                 t.tComment = new Color(0.463, 0.502, 0.478, 1.0) on heap;
                 t.tPunct = new Color(0.576, 0.600, 0.635, 1.0) on heap;
+                t.bracket1 = new Color(0.984, 0.827, 0.400, 1.0) on heap;   // gold
+                t.bracket2 = new Color(0.855, 0.573, 0.878, 1.0) on heap;   // orchid
+                t.bracket3 = new Color(0.361, 0.686, 0.980, 1.0) on heap;   // sky blue
             }
 
             // Light theme. Warm-neutral off-white surfaces, darker ink text, the same accent + token hues
@@ -157,6 +165,9 @@ public bundle forge {
                 t.tString = new Color(0.153, 0.514, 0.314, 1.0) on heap;
                 t.tComment = new Color(0.545, 0.573, 0.545, 1.0) on heap;
                 t.tPunct = new Color(0.353, 0.376, 0.408, 1.0) on heap;
+                t.bracket1 = new Color(0.706, 0.502, 0.090, 1.0) on heap;   // gold
+                t.bracket2 = new Color(0.600, 0.290, 0.620, 1.0) on heap;   // orchid
+                t.bracket3 = new Color(0.129, 0.435, 0.741, 1.0) on heap;   // blue
             }
         }
     }

@@ -858,6 +858,11 @@ public bundle forge {
                 GitStatus* git = wb.gitStatus();
                 Debugger* dbg = wb.debugger();
                 String dbgPath = wb.activePath();
+                // bracket-pair colouring: seed the running nesting depth at the first visible document line,
+                // then carry it down the visible lines (bridging fold gaps) so each bracket is tinted by depth.
+                int firstDoc = c.lineNumberAt(0);
+                mutable int bdepth = c.bracketDepthAt(firstDoc);
+                mutable int expectDoc = firstDoc;
                 mutable int r = 0;
                 while (r < visible) {
                     int y = oy + this.topPad + r * ch;
@@ -901,12 +906,36 @@ public bundle forge {
                     }
                     String line = c.renderLine(r);
                     this.drawIndentGuides(batch, c.guideIndent(docLine), textX, y, cw, ch);
+                    // carry the bracket depth across any lines a fold skipped since the last drawn line
+                    if (docLine > expectDoc) {
+                        bdepth = bdepth + c.bracketDeltaBetween(expectDoc, docLine);
+                        if (bdepth < 0) {
+                            bdepth = 0;
+                        }
+                    }
                     ArrayList<Span> spans = c.renderSpans(r);
                     mutable int si = 0;
                     while (si < spans.size()) {
-                        this.drawSpan(batch, textX, y, cw, line, spans.get(si));
+                        Span* sp = spans.get(si);
+                        if (this.isBracketSpan(line, sp)) {
+                            char bc = line.charAt(sp.start);
+                            mutable int idx = bdepth;
+                            if (bc == ')' || bc == ']' || bc == '}') {
+                                bdepth = bdepth - 1;
+                                if (bdepth < 0) {
+                                    bdepth = 0;
+                                }
+                                idx = bdepth;
+                            } else {
+                                bdepth = bdepth + 1;
+                            }
+                            this.drawBracket(batch, textX, y, cw, line, sp, idx);
+                        } else {
+                            this.drawSpan(batch, textX, y, cw, line, sp);
+                        }
                         si = si + 1;
                     }
+                    expectDoc = docLine + 1;
                     // a "..." badge after a collapsed header shows the block is folded
                     if (c.isFolded(docLine)) {
                         int bx2 = textX + (line.length() + 1) * cw;
@@ -1634,6 +1663,32 @@ public bundle forge {
                     batch.rect(textX + col * cw, y, 1, ch, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, 0.5);
                     col = col + 4;
                 }
+            }
+
+            // Is this span a single bracket character the highlighter classified as punctuation? (Brackets in
+            // strings/chars/comments are not PUNCT, so they are never colourised.)
+            private method isBracketSpan(String line, Span* sp) returns boolean {
+                if (sp.kind != Tok.PUNCT || sp.end != sp.start + 1) {
+                    return false;
+                }
+                char c = line.charAt(sp.start);
+                return c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}';
+            }
+            // Draw a bracket tinted by its nesting depth (rainbow brackets), cycling three theme colours.
+            private method drawBracket(Batch2D* batch, int textX, int y, int cw, String line, Span* sp, int depth)
+                    returns void {
+                int x = textX + sp.start * cw;
+                mutable int idx = depth % 3;
+                if (idx < 0) {
+                    idx = 0;
+                }
+                mutable Color* col = this.theme.bracket1;
+                if (idx == 1) {
+                    col = this.theme.bracket2;
+                } else if (idx == 2) {
+                    col = this.theme.bracket3;
+                }
+                this.font.drawSub(batch, x, y, line, sp.start, sp.end, col.r, col.g, col.b, col.a);
             }
 
             private method drawSpan(Batch2D* batch, int textX, int y, int cw, String line, Span* sp)
