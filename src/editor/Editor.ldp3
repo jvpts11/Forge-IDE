@@ -1433,6 +1433,43 @@ public bundle forge {
                 this.expC = this.col;
             }
 
+            // Strip trailing spaces/tabs from every line (the professional editor hygiene applied on save).
+            // Takes one undo snapshot only if something changed, then clamps the caret if it sat in the trimmed
+            // tail. Returns whether any line changed.
+            public method trimTrailingWhitespace() returns boolean {
+                mutable boolean any = false;
+                mutable int r = 0;
+                while (r < this.buf.lineCount()) {
+                    String s = this.buf.line(r);
+                    if (Editor.rtrimLen(s) < s.length()) {
+                        any = true;
+                    }
+                    r = r + 1;
+                }
+                if (!any) {
+                    return false;
+                }
+                this.saveUndo();
+                r = 0;
+                while (r < this.buf.lineCount()) {
+                    String s = this.buf.line(r);
+                    int t = Editor.rtrimLen(s);
+                    if (t < s.length()) {
+                        this.buf.setLine(r, s.substring(0, t));
+                    }
+                    r = r + 1;
+                }
+                this.clampCol();
+                return true;
+            }
+            private static method rtrimLen(String s) returns int {
+                mutable int n = s.length();
+                while (n > 0 && (s.charAt(n - 1) == ' ' || s.charAt(n - 1) == '\t')) {
+                    n = n - 1;
+                }
+                return n;
+            }
+
             // Delete the character to the right of the caret (the Delete key); at a line end, pull the next
             // line up. With a selection, delete that instead.
             public method deleteForward() returns void {

@@ -171,6 +171,16 @@ public bundle forge {
                 ex.shrinkSelection();
                 a.eqStr(ex.selectionText(), "bar", "exp.shrink-word");
 
+                // --- trim trailing whitespace on save ---
+                Editor trm = new Editor(new TextBuffer() on heap) on heap;
+                trm.document().loadText("a = 1;   \nb = 2;\t\n   \nc");
+                a.eqBool(trm.trimTrailingWhitespace(), true, "trim.changed");
+                a.eqStr(trm.document().line(0), "a = 1;", "trim.l0");
+                a.eqStr(trm.document().line(1), "b = 2;", "trim.l1");
+                a.eqStr(trm.document().line(2), "", "trim.l2-blank");
+                a.eqStr(trm.document().line(3), "c", "trim.l3");
+                a.eqBool(trm.trimTrailingWhitespace(), false, "trim.idempotent");
+
                 // --- clipboard: copy/paste, cut, multi-line paste ---
                 Editor ec = new Editor(new TextBuffer() on heap) on heap;
                 ec.document().loadText("abc");

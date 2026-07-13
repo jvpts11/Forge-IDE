@@ -546,10 +546,12 @@ public bundle forge {
             // Save to disk (a no-op for an untitled buffer -- a Save As prompt is the shell's job).
             public method save() returns void {
                 if (this.doc.path().length() > 0) {
+                    this.ed.trimTrailingWhitespace();   // strip trailing whitespace on save (LDP3 never needs it)
                     this.doc.save();
                 }
             }
             public method saveAs(String path) returns void {
+                this.ed.trimTrailingWhitespace();
                 this.doc.saveAs(path);
             }
 
