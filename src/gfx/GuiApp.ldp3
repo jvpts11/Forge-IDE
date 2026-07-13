@@ -81,6 +81,7 @@ public bundle forge {
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 comp.loadImports(GuiApp.referencePath("imports.txt"));
+                GuiApp.refreshProjectSymbols(comp, tree);
                 MenuBar* menu = new MenuBar() on heap;
                 OpenRequest* req = new OpenRequest() on heap;
                 mutable boolean prevDown = false;
@@ -675,6 +676,7 @@ public bundle forge {
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 comp.loadImports(GuiApp.referencePath("imports.txt"));
+                GuiApp.refreshProjectSymbols(comp, tree);
                 MenuBar* menu = new MenuBar() on heap;
                 OpenRequest* req = new OpenRequest() on heap;
                 System.IO.Console.println("forge-serve ready");
@@ -1248,6 +1250,7 @@ public bundle forge {
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 comp.loadImports(GuiApp.referencePath("imports.txt"));
+                GuiApp.refreshProjectSymbols(comp, tree);
                 MenuBar* menu = new MenuBar() on heap;
 
                 // open the command palette and type a query via real WM_CHAR messages, routed through the
@@ -1390,9 +1393,11 @@ public bundle forge {
                         } else {
                             comp.dismiss();
                         }
-                        // after a save (Ctrl+S), the git change bars reflect the new on-disk state
+                        // after a save (Ctrl+S), the git change bars reflect the new on-disk state and the
+                        // project symbol index picks up any renamed/added declarations
                         if (ctrl && !alt && e.vk == 83) {
                             wb.refreshGit();
+                            GuiApp.refreshProjectSymbols(comp, tree);
                         }
                     }
                 }
@@ -1646,6 +1651,57 @@ public bundle forge {
                 return false;
             }
 
+            // Rebuild the project-wide symbol index feeding autocomplete: every class/method/enum name across
+            // the project, deduped. Called on project open and after each save (not per keystroke), so typing
+            // offers cross-file names without re-scanning the workspace on every character.
+            private static method refreshProjectSymbols(Completion* comp, FileTree* tree) returns void {
+                ArrayList<String>* files = tree.allFiles();
+                ArrayList<String>* names = new ArrayList<String>() on heap;
+                mutable int fi = 0;
+                while (fi < files.size() && names.size() < 4000) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (path.endsWith(".ldp3")) {
+                        ArrayList<Symbol>* syms = new ArrayList<Symbol>() on heap;
+                        Symbols.scan(Files.readLines(path), syms);
+                        mutable int si = 0;
+                        while (si < syms.size()) {
+                            String nm = GuiApp.symbolName(syms.get(si).caption);
+                            if (nm.length() > 1 && !GuiApp.listHas(names, nm)) {
+                                names.add(nm);
+                            }
+                            si = si + 1;
+                        }
+                    }
+                }
+                comp.setProjectSymbols(names);
+                return;
+            }
+            private static method symbolName(String caption) returns String {
+                mutable int sp = 0 - 1;
+                mutable int i = 0;
+                while (i < caption.length()) {
+                    if (caption.charAt(i) == ' ') {
+                        sp = i;
+                    }
+                    i = i + 1;
+                }
+                if (sp < 0) {
+                    return caption;
+                }
+                return caption.substring(sp + 1, caption.length());
+            }
+            private static method listHas(ArrayList<String>* xs, String w) returns boolean {
+                mutable int i = 0;
+                while (i < xs.size()) {
+                    if (xs.get(i).equals(w)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+
             // Gather every declaration in every project .ldp3 file into the symbol navigator (Ctrl+T), each
             // labelled with its file, so you can jump to any class/method in the workspace.
             private static method openWorkspaceSymbols(Overlay* ov, Workbench* wb, FileTree* tree) returns void {
@@ -1832,6 +1888,7 @@ public bundle forge {
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 comp.loadImports(GuiApp.referencePath("imports.txt"));
+                GuiApp.refreshProjectSymbols(comp, tree);
                 MenuBar* menu = new MenuBar() on heap;
                 win.pump();
                 GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);

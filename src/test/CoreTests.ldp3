@@ -18,6 +18,7 @@ import app.Command;
 import app.CommandRegistry;
 import app.Symbols;
 import app.Symbol;
+import app.Completion;
 import app.Workbench;
 import input.Key;
 import input.KeyCode;
@@ -194,6 +195,27 @@ public bundle forge {
                 a.eqInt(Symbols.definitionLineIn(srcLines, "Widget"), 1, "def.class-line");
                 a.eqInt(Symbols.definitionLineIn(srcLines, "draw"), 2, "def.method-line");
                 a.eqInt(Symbols.definitionLineIn(srcLines, "Nope"), 0 - 1, "def.not-found");
+
+                // --- project-wide autocomplete: cross-file symbol names offered while typing ---
+                Completion comp = new Completion() on heap;
+                ArrayList<String>* psym = new ArrayList<String>() on heap;
+                psym.add("Breadcrumbs");
+                psym.add("GpuScreen");
+                comp.setProjectSymbols(psym);
+                Controller cc = new Controller(24, 80) on heap;
+                cc.editor().document().loadText("Bread");
+                cc.placeCaret(0, 5);
+                comp.update(cc);
+                a.eqBool(comp.active, true, "psym.active");
+                mutable boolean hasBread = false;
+                mutable int pk2 = 0;
+                while (pk2 < comp.items.size()) {
+                    if (comp.items.get(pk2).equals("Breadcrumbs")) {
+                        hasBread = true;
+                    }
+                    pk2 = pk2 + 1;
+                }
+                a.eqBool(hasBread, true, "psym.suggests-cross-file");
 
                 // --- clipboard: copy/paste, cut, multi-line paste ---
                 Editor ec = new Editor(new TextBuffer() on heap) on heap;

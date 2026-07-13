@@ -18,6 +18,7 @@ public bundle forge {
             public mutable int sel;
             private mutable ArrayList<String>* keywords;
             private mutable ArrayList<String>* imports;   // importable qualified names (stdlib + project)
+            private mutable ArrayList<String>* projectSymbols;  // declaration names across the whole project
 
             public constructor Completion() {
                 this.active = false;
@@ -26,6 +27,14 @@ public bundle forge {
                 this.sel = 0;
                 this.keywords = Completion.keywordList();
                 this.imports = new ArrayList<String>() on heap;
+                this.projectSymbols = new ArrayList<String>() on heap;
+            }
+
+            // Replace the workspace symbol index (class/method/enum names from every project file). The shell
+            // rebuilds this on project open and after each save, so cross-file names are offered as you type
+            // without re-scanning the whole project on every keystroke.
+            public method setProjectSymbols(ArrayList<String>* names) returns void {
+                this.projectSymbols = names;
             }
 
             // Load the importable qualified names (one per line) that `import` completion offers -- generated
@@ -115,6 +124,15 @@ public bundle forge {
                     }
                     // then identifiers already in the buffer (deduped, excluding the prefix itself)
                     this.collectIdentifiers(c, pre, out);
+                    // then declaration names from across the whole project (classes/methods/enums)
+                    mutable int pj = 0;
+                    while (pj < this.projectSymbols.size() && out.size() < 200) {
+                        String s = this.projectSymbols.get(pj);
+                        if (s.length() > pre.length() && s.startsWith(pre) && !this.has(out, s)) {
+                            out.add(s);
+                        }
+                        pj = pj + 1;
+                    }
                 }
                 if (out.size() == 0) {
                     this.active = false;
