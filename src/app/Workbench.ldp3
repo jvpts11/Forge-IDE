@@ -9,9 +9,12 @@ import input.Key;
 import input.KeyMap;
 import System.Collections.ArrayList;
 import System.Text.Strings;
+import System.Text.StringBuilder;
 import System.IO.Paths;
 import System.IO.File;
 import System.IO.Files;
+import System.OS.Process;
+import System.OS.ProcessResult;
 
 program Forge;
 
@@ -270,6 +273,62 @@ public bundle forge {
                 this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
             }
 
+            // --- source control: drive git on the project directory, straight from the IDE ---
+            // Show the working-tree status as a navigable list (click a row to open that file).
+            public method gitStatusView() returns void {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir + "\" status --porcelain");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String line = raw.get(i);
+                    if (line.length() > 3) {
+                        String rel = line.substring(3, line.length());
+                        body.add(line);
+                        navFiles.add(Paths.join(this.projectDir, rel));
+                        navLines.add(0);
+                    }
+                    i = i + 1;
+                }
+                if (body.size() == 0) {
+                    body.add("(clean -- no changes)");
+                }
+                this.out.showNavigable("Source Control", body, navFiles, navLines);
+            }
+            // Stage everything and commit with `msg` (the common "commit all" flow), then refresh the gutter.
+            public method gitCommit(String msg) returns void {
+                String safe = Workbench.shellEscape(msg);
+                this.runShell("Commit", "git add -A && git commit -m \"" + safe + "\"");
+                this.refreshGit();
+            }
+            public method gitPush() returns void {
+                this.runShell("Push", "git push");
+            }
+            // Show the diff of the active file (or the whole tree if it has no path).
+            public method gitDiff() returns void {
+                String path = this.docs.active().document().path();
+                if (path.length() == 0) {
+                    this.runShell("Diff", "git --no-pager diff");
+                } else {
+                    this.runShell("Diff", "git --no-pager diff -- \"" + path + "\"");
+                }
+            }
+            // Escape a commit message for a double-quoted shell argument (drop the quotes that would end it).
+            private static method shellEscape(String s) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i < s.length()) {
+                    char c = s.charAt(i);
+                    if (c != '"') {
+                        sb.appendChar(c);
+                    }
+                    i = i + 1;
+                }
+                return sb.toString();
+            }
+
             // Feed a decoded key to the active document's editor. Returns whether it was handled.
             public method handleKey(Key* k) returns boolean {
                 if (!this.docs.hasActive()) {
@@ -324,6 +383,18 @@ public bundle forge {
                 }
                 if (id.equals("view.output")) {
                     this.out.toggle();
+                    return true;
+                }
+                if (id.equals("git.status")) {
+                    this.gitStatusView();
+                    return true;
+                }
+                if (id.equals("git.push")) {
+                    this.gitPush();
+                    return true;
+                }
+                if (id.equals("git.diff")) {
+                    this.gitDiff();
                     return true;
                 }
                 return false;

@@ -19,6 +19,8 @@ public bundle forge {
             public mutable ArrayList<String>* itemFiles;  // per-item file to open first (workspace symbols)
             public mutable String replace;         // replacement text (mode 2)
             public mutable boolean focusReplace;   // in mode 2, whether typing edits the replace field
+            public mutable String promptKind;      // mode 7: what Enter does (e.g. "commit")
+            public mutable String promptLabel;     // mode 7: the prompt shown before the input
 
             public constructor Overlay() {
                 this.mode = 0;
@@ -29,6 +31,18 @@ public bundle forge {
                 this.itemFiles = new ArrayList<String>() on heap;
                 this.replace = "";
                 this.focusReplace = false;
+                this.promptKind = "";
+                this.promptLabel = "";
+            }
+
+            // Open a single-line text prompt (mode 7). `kind` names the action Enter triggers; `label` is the
+            // hint shown before the input (e.g. "commit message: ").
+            public method openPrompt(String kind, String hint) returns void {
+                this.mode = 7;
+                this.query = "";
+                this.sel = 0;
+                this.promptKind = kind;
+                this.promptLabel = hint;
             }
 
             public method isOpen() returns boolean {

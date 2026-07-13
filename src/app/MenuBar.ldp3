@@ -86,6 +86,14 @@ public bundle forge {
                 run.add("Run Tests", "run.test");
                 this.menus.add(run);
 
+                Menu* git = new Menu("Git") on heap;
+                git.add("Source Control", "git.status");
+                git.add("Diff Current File", "git.diff");
+                git.sep();
+                git.add("Commit All...", "git.commit");
+                git.add("Push", "git.push");
+                this.menus.add(git);
+
                 Menu* help = new Menu("Help") on heap;
                 help.add("Standard Library", "help.stdlib");
                 help.add("Language Reference", "help.langref");

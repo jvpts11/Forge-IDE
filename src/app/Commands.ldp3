@@ -37,6 +37,10 @@ public bundle forge {
                 this.register("run.build", "Build Project");
                 this.register("run.program", "Run Project");
                 this.register("run.test", "Run Tests");
+                this.register("git.status", "Git: Source Control");
+                this.register("git.commit", "Git: Commit All");
+                this.register("git.push", "Git: Push");
+                this.register("git.diff", "Git: Diff (current)");
                 this.register("view.output", "Toggle Output Panel");
                 this.register("view.split", "Split Editor");
             }

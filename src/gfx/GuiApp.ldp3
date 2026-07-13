@@ -448,6 +448,22 @@ public bundle forge {
                     ov.open(2);
                     return;
                 }
+                if (id.equals("git.commit")) {
+                    ov.openPrompt("commit", "commit message: ");
+                    return;
+                }
+                if (id.equals("git.status")) {
+                    wb.gitStatusView();
+                    return;
+                }
+                if (id.equals("git.push")) {
+                    wb.gitPush();
+                    return;
+                }
+                if (id.equals("git.diff")) {
+                    wb.gitDiff();
+                    return;
+                }
                 if (id.equals("view.palette")) {
                     ov.open(1);
                     return;
@@ -855,6 +871,9 @@ public bundle forge {
                     wb.diagnose();
                     System.IO.Console.println("ok " + wb.errorCount().toString() + " errors "
                         + wb.warningCount().toString() + " warnings");
+                } else if (cmd.equals("gitstatus")) {
+                    wb.gitStatusView();
+                    System.IO.Console.println("ok " + wb.output().lineCount().toString() + " changed");
                 } else if (cmd.equals("state")) {
                     GuiApp.serveState(wb);
                 } else if (cmd.equals("metrics")) {
@@ -925,6 +944,9 @@ public bundle forge {
                         }
                         else if (ov.mode == 6) {
                             GuiApp.runGlobalSearch(ov, wb);
+                        }
+                        else if (ov.mode == 7) {
+                            GuiApp.runPrompt(ov, wb);
                         }
                         else {
                             wb.active().find(ov.query);
@@ -1110,7 +1132,7 @@ public bundle forge {
                         ov.open(1);
                     } else if (e.isKey() && ctrl && !shift && e.vk == 80) {  // Ctrl+P -> quick open file
                         ov.openFiles(tree.allFiles());
-                    } else if (e.isKey() && ctrl && e.vk == 71) {            // Ctrl+G -> go to line
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 71) {  // Ctrl+G -> go to line
                         ov.open(5);
                     } else if (e.isKey() && ctrl && shift && e.vk == 79) {   // Ctrl+Shift+O -> go-to-symbol
                         GuiApp.openSymbols(ov, wb);
@@ -1122,6 +1144,8 @@ public bundle forge {
                         ov.openSearch(tree.allFiles());
                     } else if (e.isKey() && ctrl && !shift && e.vk == 70) {  // Ctrl+F -> find
                         ov.open(2);
+                    } else if (e.isKey() && ctrl && shift && e.vk == 71) {   // Ctrl+Shift+G -> source control
+                        wb.gitStatusView();
                     } else if (e.isKey() && ctrl && e.vk == 87) {            // Ctrl+W -> close tab
                         wb.closeActiveTab();
                     } else if (e.isKey() && e.vk == 112) {                   // F1 -> standard library reference
@@ -1252,6 +1276,9 @@ public bundle forge {
                         else if (ov.mode == 6) {
                             GuiApp.runGlobalSearch(ov, wb);
                         }
+                        else if (ov.mode == 7) {
+                            GuiApp.runPrompt(ov, wb);
+                        }
                         else {
                             wb.active().find(ov.query);
                         }
@@ -1379,6 +1406,16 @@ public bundle forge {
 
             // Grep every project text file (captured in ov.items) for ov.query and list the matches, as
             // `file:line: text`, in the output panel. Bounded so a huge project can't stall the search.
+            // Run the action a text prompt (mode 7) was opened for, with the typed text.
+            private static method runPrompt(Overlay* ov, Workbench* wb) returns void {
+                if (ov.promptKind.equals("commit")) {
+                    if (ov.query.length() > 0) {
+                        wb.gitCommit(ov.query);
+                    }
+                }
+                return;
+            }
+
             private static method runGlobalSearch(Overlay* ov, Workbench* wb) returns void {
                 String q = ov.query;
                 if (q.length() == 0) {

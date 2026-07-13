@@ -1150,6 +1150,26 @@ public bundle forge {
                 else if (ov.mode == 6) {
                     this.drawFindInFiles(batch, ov, screenW);
                 }
+                else if (ov.mode == 7) {
+                    this.drawPrompt(batch, ov, screenW);
+                }
+            }
+
+            // A generic single-line text prompt (mode 7): the label, the typed text, a caret. Enter runs the
+            // action named by ov.promptKind (e.g. a commit message).
+            private method drawPrompt(Batch2D* batch, Overlay* ov, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 520;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                int bh = ch + 14;
+                batch.rect(bx, by, bw, bh, 0.055, 0.098, 0.106, 1.0);
+                batch.rect(bx, by, bw, 2, 0.918, 0.706, 0.392, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, ov.promptLabel, 0.502, 0.588, 0.584, 1.0);
+                int lx = bx + 12 + ov.promptLabel.length() * cw;
+                this.font.drawText(batch, lx, by + 7, ov.query, 0.804, 0.851, 0.843, 1.0);
+                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, 0.918, 0.706, 0.392, 1.0);
             }
 
             // Find-in-files box (Ctrl+Shift+F): a centered input; Enter greps the project into the output panel.
