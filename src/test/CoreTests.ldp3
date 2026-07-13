@@ -159,6 +159,21 @@ public bundle forge {
                 ma.typeMulti('Z');
                 a.eqStr(ma.document().line(0), "Z x Z y Z", "mc.all-replaced");
 
+                // --- column / box selection: Ctrl+Alt+Down carries the column span down, type replaces all ---
+                Editor cse = new Editor(new TextBuffer() on heap) on heap;
+                cse.document().loadText("abcd\nefgh\nijkl");
+                cse.setCaret(0, 1);
+                cse.selectRight();
+                cse.selectRight();
+                a.eqStr(cse.selectionText(), "bc", "colsel.primary");
+                cse.addCaretBelow();
+                cse.addCaretBelow();
+                a.eqInt(cse.extraCaretCount(), 2, "colsel.carets");
+                cse.typeMulti('X');
+                a.eqStr(cse.document().line(0), "aXd", "colsel.l0");
+                a.eqStr(cse.document().line(1), "eXh", "colsel.l1");
+                a.eqStr(cse.document().line(2), "iXl", "colsel.l2");
+
                 // --- expand / shrink selection (Shift+Alt+Right/Left): word -> inside () -> whole () ---
                 Editor ex = new Editor(new TextBuffer() on heap) on heap;
                 ex.document().loadText("foo(bar, baz)");

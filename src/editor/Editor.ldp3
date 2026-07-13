@@ -830,7 +830,9 @@ public bundle forge {
                 this.extraSelRows.add(selRow);
                 this.extraSelCols.add(selCol);
             }
-            // Add a caret one line below the bottom-most caret (or above the top-most), at the primary column.
+            // Add a caret one line below the bottom-most caret (or above the top-most). With a single-line
+            // selection this extends a COLUMN block -- each new caret carries the same column span (box select);
+            // otherwise it is a bare caret at the primary column.
             public method addCaretBelow() returns void {
                 mutable int maxRow = this.row;
                 mutable int i = 0;
@@ -841,7 +843,7 @@ public bundle forge {
                     i = i + 1;
                 }
                 if (maxRow + 1 < this.buf.lineCount()) {
-                    this.addCaretAt(maxRow + 1, this.col);
+                    this.addColumnCaretAt(maxRow + 1);
                 }
             }
             public method addCaretAbove() returns void {
@@ -854,7 +856,30 @@ public bundle forge {
                     i = i + 1;
                 }
                 if (minRow - 1 >= 0) {
-                    this.addCaretAt(minRow - 1, this.col);
+                    this.addColumnCaretAt(minRow - 1);
+                }
+            }
+            // Add a caret on `targetRow`: mirroring the primary's single-line selection span there (column/box
+            // select), clamped to the target line's length, or a bare caret at the primary column otherwise.
+            private method addColumnCaretAt(int targetRow) returns void {
+                if (this.hasSelection() && this.selRow == this.row) {
+                    mutable int a = this.selCol;
+                    mutable int b = this.col;
+                    if (b < a) {
+                        int t = a;
+                        a = b;
+                        b = t;
+                    }
+                    int len = this.buf.line(targetRow).length();
+                    if (a > len) {
+                        a = len;
+                    }
+                    if (b > len) {
+                        b = len;
+                    }
+                    this.addSelectionCaret(targetRow, a, targetRow, b);
+                } else {
+                    this.addCaretAt(targetRow, this.col);
                 }
             }
 
