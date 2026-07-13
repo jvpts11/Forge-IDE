@@ -30,10 +30,14 @@ public bundle forge {
             // or non-repo files simply yield no marks.
             public method refresh(String projectDir, String filePath) returns void {
                 this.clear();
-                if (filePath.length() == 0) { return; }
+                if (filePath.length() == 0) {
+                    return;
+                }
                 String cmd = "git -C \"" + projectDir + "\" --no-pager diff --unified=0 -- \"" + filePath + "\"";
                 ProcessResult r = Process.run(cmd);
-                if (r.exitCode != 0) { return; }
+                if (r.exitCode != 0) {
+                    return;
+                }
                 ArrayList<String> out = Strings.split(r.output, "\n");
                 mutable int i = 0;
                 while (i < out.size()) {
@@ -49,7 +53,9 @@ public bundle forge {
             // defaults to 1 when omitted (git's convention). Avoids two-argument indexOf by slicing.
             private method parseHunk(String header) returns void {
                 int plus = header.indexOf("+");
-                if (plus < 0) { return; }
+                if (plus < 0) {
+                    return;
+                }
                 String newPart = GitStatus.firstField(header.substring(plus + 1, header.length()));
                 int minus = header.indexOf("-");
                 mutable int oldCount = 1;
@@ -69,30 +75,41 @@ public bundle forge {
                 if (newCount == 0) {
                     // pure deletion: mark the line the removed text sat above
                     mutable int at = newStart;
-                    if (at < 1) { at = 1; }
+                    if (at < 1) {
+                        at = 1;
+                    }
                     this.add(at - 1, 3);
                     return;
                 }
                 mutable int kind = 1;                 // added
-                if (oldCount > 0) { kind = 2; }       // lines existed before -> modified
+                if (oldCount > 0) {
+                    kind = 2;                         // lines existed before -> modified
+                }
                 mutable int k = 0;
                 while (k < newCount) {
                     this.add(newStart - 1 + k, kind);
                     k = k + 1;
                 }
             }
+
             // The text up to the first space (the "12,3" range field of a hunk side).
             private static method firstField(String s) returns String {
                 int sp = s.indexOf(" ");
-                if (sp < 0) { return s; }
+                if (sp < 0) {
+                    return s;
+                }
                 return s.substring(0, sp);
             }
+
             // The count from a "start,count" field, or 1 when the count is omitted.
             private static method countField(String field) returns int {
                 int comma = field.indexOf(",");
-                if (comma < 0) { return 1; }
+                if (comma < 0) {
+                    return 1;
+                }
                 return field.substring(comma + 1, field.length()).toInt();
             }
+
             private method add(int line, int kind) returns void {
                 this.lines.add(line);
                 this.kinds.add(kind);
@@ -102,12 +119,17 @@ public bundle forge {
             public method kindAt(int line) returns int {
                 mutable int i = 0;
                 while (i < this.lines.size()) {
-                    if (this.lines.get(i) == line) { return this.kinds.get(i); }
+                    if (this.lines.get(i) == line) {
+                        return this.kinds.get(i);
+                    }
                     i = i + 1;
                 }
                 return 0;
             }
-            public method markCount() returns int { return this.lines.size(); }
+
+            public method markCount() returns int {
+                return this.lines.size();
+            }
         }
     }
 }
