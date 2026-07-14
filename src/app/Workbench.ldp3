@@ -516,6 +516,94 @@ public bundle forge {
                 }
                 return total;
             }
+            // Every diagnostic from the last build, as one navigable list: severity, where, and what.
+            // The compiler reports a file by basename, so each one is resolved against the project's files
+            // to get a path the panel can jump to. This is the view you keep open while you fix a build.
+            public method showProblems() returns int {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                ArrayList<String>* files = this.projectFiles();
+                mutable int i = 0;
+                while (i < this.diags.size()) {
+                    mutable String kind = "error  ";
+                    if (!this.diags.get(i).isError()) {
+                        kind = "warning";
+                    }
+                    body.add(kind + "  " + this.diags.get(i).file + ":"
+                             + this.diags.get(i).line.toString() + ":"
+                             + this.diags.get(i).col.toString() + "  " + this.diags.get(i).message);
+                    navFiles.add(this.resolveBasename(files, this.diags.get(i).file));
+                    navLines.add(this.diags.get(i).line - 1);
+                    i = i + 1;
+                }
+                if (this.diags.size() == 0) {
+                    body.add("no problems -- the last build was clean");
+                }
+                String caption = this.errorCount().toString() + " error(s), "
+                                 + this.warningCount().toString() + " warning(s)";
+                this.out.showNavigable("Problems -- " + caption, body, navFiles, navLines);
+                return this.diags.size();
+            }
+            private method resolveBasename(ArrayList<String>* files, String base) returns String {
+                mutable int i = 0;
+                while (i < files.size()) {
+                    if (Paths.basename(files.get(i)).equals(base)) {
+                        return files.get(i);
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+            // Replace every occurrence of `needle` with `replacement` across the project's searchable
+            // files, on disk. An open document is reloaded so the editor never shows stale text. Returns
+            // the number of occurrences replaced.
+            public method replaceInFiles(ArrayList<String>* files, String needle,
+                                         String replacement) returns int {
+                if (needle.length() == 0) {
+                    return 0;
+                }
+                mutable String activePath = "";
+                if (this.docs.hasActive()) {
+                    activePath = this.docs.active().document().path();
+                }
+                mutable int total = 0;
+                mutable int touched = 0;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".ldp3") && !path.endsWith(".toml") && !path.endsWith(".md")) {
+                        continue;
+                    }
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int hits = 0;
+                    ArrayList<String>* out = new ArrayList<String>() on heap;
+                    mutable int li = 0;
+                    while (li < lines.size()) {
+                        String line = lines.get(li);
+                        hits = hits + Strings.count(line, needle);
+                        out.add(Strings.replace(line, needle, replacement));
+                        li = li + 1;
+                    }
+                    if (hits > 0) {
+                        if (path.equals(activePath)) {
+                            // The open document is the source of truth for its own file: replace through
+                            // the editor, so the change is undoable and the view is never stale.
+                            this.docs.active().replaceAll(needle, replacement);
+                            this.docs.active().save();
+                        } else {
+                            Files.writeLines(path, out);
+                        }
+                        total = total + hits;
+                        touched = touched + 1;
+                    }
+                    delete out;
+                }
+                this.out.banner("Replace in Files", "Replaced " + total.toString()
+                    + " occurrence(s) of '" + needle + "' in " + touched.toString() + " file(s).");
+                return total;
+            }
             // Every project .ldp3 file, by a fresh recursive walk of the project root (independent of the
             // visual tree's expand state) -- powers workspace refactors like cross-file rename.
             public method projectFiles() returns ArrayList<String>* {
@@ -981,6 +1069,10 @@ public bundle forge {
                 }
                 if (id.equals("edit.sortLines")) {
                     c.sortSelectedLines();
+                    return true;
+                }
+                if (id.equals("view.problems")) {
+                    this.showProblems();
                     return true;
                 }
                 if (id.equals("edit.upperCase")) {

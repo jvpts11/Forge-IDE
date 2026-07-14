@@ -1600,6 +1600,10 @@ public bundle forge {
                         } else {
                             wb.active().nextBookmark(true);
                         }
+                    } else if (e.isKey() && ctrl && shift && e.vk == 77) {   // Ctrl+Shift+M -> problems panel
+                        wb.showProblems();
+                    } else if (e.isKey() && ctrl && shift && e.vk == 72) {   // Ctrl+Shift+H -> replace in files
+                        ov.openPrompt("replaceAll", "replace in files (find|replace): ");
                     } else if (e.isKey() && alt && shift && e.vk == 70) {    // Shift+Alt+F -> format document
                         wb.formatDocument();
                     } else if (e.isKey() && shift && e.vk == 117) {          // Shift+F6 -> rename symbol
@@ -2028,6 +2032,16 @@ public bundle forge {
                     }
                 } else if (ov.promptKind.equals("extractVar")) {
                     wb.active().extractVariable(ov.query);
+                } else if (ov.promptKind.equals("replaceAll")) {
+                    // One prompt, two answers: "find|replace". A single step keeps the flow honest --
+                    // the prompt caption says exactly what the separator is.
+                    int bar = ov.query.indexOf("|");
+                    if (bar > 0) {
+                        String needle = ov.query.substring(0, bar);
+                        String repl = ov.query.substring(bar + 1, ov.query.length());
+                        ArrayList<String>* files = wb.projectFiles();
+                        wb.replaceInFiles(files, needle, repl);
+                    }
                 } else if (ov.promptKind.equals("renameSymbol")) {
                     int n = wb.renameSymbolAcross(wb.renameTargetName(), ov.query);
                     wb.output().banner("Rename", "Renamed " + n.toString() + " occurrence(s) of '"

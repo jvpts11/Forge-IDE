@@ -9,6 +9,9 @@ import io.Document;
 import io.FileTree;
 import io.FileNode;
 import System.IO.File;
+import System.IO.Files;
+import System.IO.Paths;
+import System.OS.Env;
 import view.Viewport;
 import view.TextRenderer;
 import view.ScreenRenderer;
@@ -686,12 +689,12 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 44, "cmd.count");
-                a.eqInt(cr.filter("").size(), 44, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 46, "cmd.count");
+                a.eqInt(cr.filter("").size(), 46, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
-                a.eqInt(cr.filter("file").size(), 5, "cmd.filter-file");      // 4 File cmds + fuzzy "Re[f]actor: Extract Var[i]ab[le]"
+                a.eqInt(cr.filter("file").size(), 6, "cmd.filter-file");      // 4 File cmds + "Replace in Files" + fuzzy "Re[f]actor: Extract Var[i]ab[le]"
                 a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
                 a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
                 a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
@@ -713,6 +716,25 @@ public bundle forge {
                 wb.runCommand("edit.undo");
                 a.eqStr(wb.active().editor().document().line(0), "", "wb.undo-cmd");
                 a.eqBool(wb.runCommand("edit.selectAll"), true, "wb.selectall-cmd");
+
+                // --- problems panel: every diagnostic of the last build, navigable ---
+                a.eqInt(wb.showProblems(), 0, "wb.problems-empty");           // nothing built yet
+                a.eqBool(wb.output().line(0).indexOf("no problems") >= 0, true, "wb.problems-clean");
+                a.eqBool(wb.runCommand("view.problems"), true, "wb.problems-cmd");
+
+                // --- replace in files: rewrite on disk, count what changed ---
+                String tmp = "forge_replace_test.tmp.ldp3";   // written next to the working dir
+                ArrayList<String> src = new ArrayList<String>() on heap;
+                src.add("alpha beta alpha");
+                src.add("gamma");
+                Files.writeLines(tmp, src);
+                ArrayList<String>* targets = new ArrayList<String>() on heap;
+                targets.add(tmp);
+                a.eqInt(wb.replaceInFiles(targets, "alpha", "omega"), 2, "wb.replace-count");
+                ArrayList<String> back = Files.readLines(tmp);
+                a.eqStr(back.get(0), "omega beta omega", "wb.replace-content");
+                a.eqStr(back.get(1), "gamma", "wb.replace-untouched");
+                a.eqInt(wb.replaceInFiles(targets, "", "x"), 0, "wb.replace-empty-needle");
                 a.eqBool(wb.runCommand("bogus.cmd"), false, "wb.unknown-cmd");
 
                 // --- full IDE screen composition (tab bar + tree + editor + status) ---

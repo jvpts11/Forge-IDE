@@ -32,6 +32,8 @@ public bundle forge {
                 this.register("edit.redo", "Redo");
                 this.register("edit.find", "Find");
                 this.register("edit.replace", "Replace");
+                this.register("edit.replaceInFiles", "Replace in Files");
+                this.register("view.problems", "Problems");
                 this.register("edit.selectAll", "Select All");
                 this.register("edit.duplicateLine", "Duplicate Line");
                 this.register("edit.joinLines", "Join Lines");

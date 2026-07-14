@@ -18,7 +18,7 @@ public bundle forge {
             private mutable boolean open;
             private mutable boolean focused;
             private mutable ArrayList<String>* lines;   // completed output lines (scrollback)
-            private mutable String partial;              // the not-yet-newline-terminated tail of the output
+            private mutable String tail;              // the not-yet-newline-terminated tail of the output
             private mutable String input;                // the line the user is typing
             private mutable String cwd;                  // where the shell starts
 
@@ -27,7 +27,7 @@ public bundle forge {
                 this.open = false;
                 this.focused = false;
                 this.lines = new ArrayList<String>() on heap;
-                this.partial = "";
+                this.tail = "";
                 this.input = "";
                 this.cwd = ".";
             }
@@ -45,7 +45,7 @@ public bundle forge {
                 return this.lines;
             }
             public method partialLine() returns String {
-                return this.partial;
+                return this.tail;
             }
             public method inputLine() returns String {
                 return this.input;
@@ -79,7 +79,7 @@ public bundle forge {
             }
 
             // Drain whatever the shell has written since the last frame (never blocks), appending complete
-            // lines to the scrollback and keeping the in-progress tail in `partial`.
+            // lines to the scrollback and keeping the in-progress tail in `tail`.
             public method pump() returns void {
                 if (!this.started) {
                     return;
@@ -96,7 +96,7 @@ public bundle forge {
             }
 
             private method absorb(String chunk) returns void {
-                mutable String cur = this.partial;
+                mutable String cur = this.tail;
                 mutable int i = 0;
                 while (i < chunk.length()) {
                     char c = chunk.charAt(i);
@@ -108,7 +108,7 @@ public bundle forge {
                     }
                     i = i + 1;
                 }
-                this.partial = cur;
+                this.tail = cur;
                 // Bound the scrollback so a chatty command cannot grow it without limit.
                 while (this.lines.size() > 5000) {
                     this.lines.removeAt(0);
