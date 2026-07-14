@@ -418,6 +418,17 @@ public bundle forge {
                         return;
                     }
                 }
+                // a click in the structure panel jumps to that declaration
+                int outW = screen.outlineWidth(wb);
+                if (outW > 0 && mx >= win.width() - outW && my >= screen.editorTop()) {
+                    int idx = screen.outlineRowAt(my);
+                    ArrayList<Symbol>* syms = wb.outlineSymbols();
+                    if (idx >= 0 && idx < syms.size()) {
+                        wb.active().placeCaret(syms.get(idx).line - 1, 0);   // Symbol.line is 1-based
+                    }
+                    delete syms;
+                    return;
+                }
                 // a click on the minimap scrolls the editor to the corresponding line
                 if (wb.minimapVisible()) {
                     int mmW = screen.minimapW();
@@ -1600,6 +1611,8 @@ public bundle forge {
                         } else {
                             wb.active().nextBookmark(true);
                         }
+                    } else if (e.isKey() && ctrl && e.vk == 123) {           // Ctrl+F12 -> structure panel
+                        wb.toggleOutline();
                     } else if (e.isKey() && ctrl && shift && e.vk == 77) {   // Ctrl+Shift+M -> problems panel
                         wb.showProblems();
                     } else if (e.isKey() && ctrl && shift && e.vk == 72) {   // Ctrl+Shift+H -> replace in files

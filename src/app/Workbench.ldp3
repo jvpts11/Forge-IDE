@@ -7,6 +7,8 @@ import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
 import app.Diagnostic;
+import app.Symbol;
+import app.Symbols;
 import app.GitStatus;
 import input.Key;
 import input.KeyMap;
@@ -35,6 +37,7 @@ public bundle forge {
             private mutable KeyMap* keymap;
             private mutable OutputPanel* out;
             private mutable ArrayList<Diagnostic>* diags;
+            private mutable boolean outline;        // the structure panel: the file's declarations, at a glance
             private mutable String projectDir;      // where build/run commands execute (the project root)
             private mutable String projectName;     // from ldp3.toml, shown in the status bar
             private mutable GitStatus* git;         // change marks for the active file's gutter
@@ -61,6 +64,7 @@ public bundle forge {
                 this.out = new OutputPanel() on heap;
                 this.diags = new ArrayList<Diagnostic>() on heap;
                 this.projectDir = ".";
+                this.outline = false;
                 this.projectName = "";
                 this.git = new GitStatus() on heap;
                 this.dbg = new Debugger() on heap;
@@ -270,6 +274,35 @@ public bundle forge {
 
             // Point build/run and the project label at a workspace directory. Reads its ldp3.toml (if any)
             // for the program name, so the shell knows which project it's driving.
+            // The structure panel (Ctrl+F12): every declaration of the open file, in order, with the one
+            // holding the caret highlighted. Click a row to jump to it.
+            public method outlineOpen() returns boolean {
+                return this.outline;
+            }
+            public method toggleOutline() returns void {
+                this.outline = !this.outline;
+                return;
+            }
+            // The declarations of the active file, in source order.
+            public method outlineSymbols() returns ArrayList<Symbol>* {
+                return Symbols.list(this.docs.active());
+            }
+            // Which of them holds the caret: the last one declared at or above the caret's line (-1 = none).
+            // Symbol.line is 1-based (it is written to be shown), the caret's row is 0-based.
+            public method outlineCurrent() returns int {
+                ArrayList<Symbol>* syms = this.outlineSymbols();
+                int row = this.docs.active().editor().cursorRow() + 1;
+                mutable int best = 0 - 1;
+                mutable int i = 0;
+                while (i < syms.size()) {
+                    if (syms.get(i).line <= row) {
+                        best = i;
+                    }
+                    i = i + 1;
+                }
+                delete syms;
+                return best;
+            }
             public method setProjectDir(String dir) returns void {
                 this.projectDir = dir;
                 this.projectName = Workbench.readProjectName(dir);
@@ -1073,6 +1106,10 @@ public bundle forge {
                 }
                 if (id.equals("view.problems")) {
                     this.showProblems();
+                    return true;
+                }
+                if (id.equals("view.outline")) {
+                    this.toggleOutline();
                     return true;
                 }
                 if (id.equals("edit.upperCase")) {

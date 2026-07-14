@@ -190,10 +190,15 @@ public bundle forge {
                 } else {
                     panelH = this.outputPanelHeight(wb.output(), screenH);
                 }
+                int ow = this.outlineWidth(wb);
                 this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
                 this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
-                this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw);
-                this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw, screenH - etop - sh - panelH);
+                this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw - ow);
+                this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw - ow,
+                                screenH - etop - sh - panelH);
+                if (ow > 0) {
+                    this.drawOutline(batch, wb, screenW - ow, ctop, ow, screenH - ctop - sh, mx, my);
+                }
                 if (wb.diffView().isActive()) {
                     this.drawDiff(batch, wb, tw, etop, screenW - tw, screenH - etop - sh);
                 }
@@ -209,6 +214,67 @@ public bundle forge {
                     this.drawDebugPanel(batch, wb.debugger(), screenW, screenH);
                 }
                 this.drawStatusBar(batch, wb, screenW, screenH, sh);
+            }
+
+            // --- structure panel (Ctrl+F12): the file's declarations, in order, caret-aware ---
+            public method outlineWidth(Workbench* wb) returns int {
+                if (!wb.outlineOpen()) {
+                    return 0;
+                }
+                return 260;
+            }
+            public method outlineTop() returns int {
+                return this.menuH() + this.tabH() + 6 + this.font.lineHeight();   // below the caption
+            }
+            // Which outline row is under pixel y (-1 = none). Mirrors drawOutline's layout exactly.
+            public method outlineRowAt(int my) returns int {
+                int ch = this.font.lineHeight();
+                if (my < this.outlineTop()) {
+                    return 0 - 1;
+                }
+                return (my - this.outlineTop()) / ch;
+            }
+            private method drawOutline(Batch2D* batch, Workbench* wb, int ox, int oy, int w, int h,
+                                       int mx, int my) returns void {
+                batch.rect(ox, oy, w, h, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b,
+                           this.theme.panel.a);
+                batch.rect(ox, oy, 1, h, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b,
+                           this.theme.divider.a);
+                int ch = this.font.lineHeight();
+                this.font.drawText(batch, ox + 10, oy + 4, "STRUCTURE", this.theme.textDim.r,
+                                   this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                ArrayList<Symbol>* syms = wb.outlineSymbols();
+                int current = wb.outlineCurrent();
+                mutable int i = 0;
+                mutable int y = this.outlineTop();
+                while (i < syms.size() && y + ch <= oy + h) {
+                    String caption = syms.get(i).caption;
+                    boolean hover = mx >= ox && mx < ox + w && my >= y && my < y + ch;
+                    if (i == current) {
+                        batch.rect(ox + 1, y, w - 1, ch, this.theme.selection.r, this.theme.selection.g,
+                                   this.theme.selection.b, this.theme.selection.a);
+                    } else if (hover) {
+                        batch.rect(ox + 1, y, w - 1, ch, this.theme.hover.r, this.theme.hover.g,
+                                   this.theme.hover.b, this.theme.hover.a);
+                    }
+                    // A method sits inside a type, which sits inside a namespace: indent by kind, so the
+                    // shape of the file is visible at a glance rather than spelled out.
+                    mutable int indent = 0;
+                    if (GpuScreen.outlineIsMember(caption)) {
+                        indent = 16;
+                    }
+                    this.font.drawText(batch, ox + 10 + indent, y, caption, this.theme.text.r,
+                                       this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    y = y + ch;
+                    i = i + 1;
+                }
+                delete syms;
+                return;
+            }
+            // A member (method/constructor/destructor) as opposed to a container (namespace/class/...).
+            private static method outlineIsMember(String caption) returns boolean {
+                return caption.startsWith("method") || caption.startsWith("constructor")
+                       || caption.startsWith("destructor");
             }
 
             // Layout of the debug side panel, shared by drawing and click hit-testing.

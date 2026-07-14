@@ -100,6 +100,8 @@ public bundle forge {
                 view.add("Command Palette", "view.palette");
                 view.add("Toggle Output", "view.output");
                 view.add("Toggle Minimap", "view.minimap");
+                view.add("Toggle Structure Panel", "view.outline");
+                view.add("Problems", "view.problems");
                 view.add("Toggle Light/Dark Theme", "view.theme");
                 view.add("Toggle Terminal  Ctrl+`", "view.terminal");
                 view.sep();
