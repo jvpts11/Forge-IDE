@@ -446,6 +446,16 @@ public bundle forge {
                 if (screenRow < 0) {
                     return;
                 }
+                // With a split, the click first decides WHICH pane it is in: everything below reads
+                // wb.active(), and that has to already mean the pane the user pointed at.
+                int sx = screen.splitX(wb, win.width());
+                if (sx >= 0) {
+                    if (mx >= sx) {
+                        wb.focusPane(1);
+                    } else {
+                        wb.focusPane(0);
+                    }
+                }
                 Controller* c = wb.active();
                 // a click in the gutter (left of the code): the leftmost strip toggles a breakpoint (VS
                 // Code-style), the inner part toggles the fold on a foldable line.
@@ -1618,6 +1628,14 @@ public bundle forge {
                         // branches while you type the one you want, with no new picker to learn.
                         wb.runCommand("git.branch");
                         ov.openPrompt("checkout", "checkout branch: ");
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 220) {  // Ctrl+\ -> split / unsplit
+                        wb.toggleSplit();
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 49) {   // Ctrl+1 -> focus the left pane
+                        wb.focusPane(0);
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 50) {   // Ctrl+2 -> focus the right pane
+                        wb.focusPane(1);
+                    } else if (e.isKey() && ctrl && alt && e.vk == 39) {      // Ctrl+Alt+Right -> move the file
+                        wb.moveToOtherPane();
                     } else if (e.isKey() && alt && !ctrl && !shift && e.vk == 90) {  // Alt+Z -> word wrap
                         wb.toggleWrap();
                     } else if (e.isKey() && ctrl && e.vk == 123) {           // Ctrl+F12 -> structure panel

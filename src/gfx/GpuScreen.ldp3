@@ -191,11 +191,26 @@ public bundle forge {
                     panelH = this.outputPanelHeight(wb.output(), screenH);
                 }
                 int ow = this.outlineWidth(wb);
-                this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
                 this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
-                this.drawBreadcrumbs(batch, wb, tw, ctop, screenW - tw - ow);
-                this.drawEditor(batch, wb, ov, mx, my, tw, etop, screenW - tw - ow,
-                                screenH - etop - sh - panelH);
+                int editorW = screenW - tw - ow;
+                int editorH = screenH - etop - sh - panelH;
+                if (wb.isSplit()) {
+                    // Two panes, side by side. Each keeps its own tabs and its own view of a file; a file
+                    // open in both is ONE document, so an edit on either side shows on the other.
+                    int halfW = editorW / 2;
+                    this.drawTabBar(batch, wb.documentsOf(0), mh, tabh, mx, my);
+                    // The breadcrumb band is shared: the left half shows the focused scope, the right half
+                    // is where the second pane's own tab strip goes -- so it is drawn BEFORE the panes.
+                    this.drawBreadcrumbs(batch, wb, tw, ctop, halfW);
+                    this.drawPaneEditor(batch, wb, ov, 0, mx, my, tw, etop, halfW, editorH);
+                    this.drawPaneEditor(batch, wb, ov, 1, mx, my, tw + halfW, etop, editorW - halfW, editorH);
+                    batch.rect(tw + halfW, etop, 1, editorH, this.theme.divider.r, this.theme.divider.g,
+                               this.theme.divider.b, this.theme.divider.a);
+                } else {
+                    this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
+                    this.drawBreadcrumbs(batch, wb, tw, ctop, editorW);
+                    this.drawEditor(batch, wb, ov, mx, my, tw, etop, editorW, editorH);
+                }
                 if (ow > 0) {
                     this.drawOutline(batch, wb, screenW - ow, ctop, ow, screenH - ctop - sh, mx, my);
                 }
@@ -1044,6 +1059,57 @@ public bundle forge {
                     this.font.drawText(batch, 8, y, tree.rowLabel(node), r, g, b, 1.0);
                     i = i + 1;
                 }
+            }
+
+            // One pane of a split. drawEditor always draws the FOCUSED controller, so the pane being drawn
+            // is focused for the duration -- the least invasive seam there is, and the focus is restored
+            // immediately. The unfocused pane's tab bar is drawn above it, dimmed by its own inactivity.
+            private method drawPaneEditor(Batch2D* batch, Workbench* wb, Overlay* ov, int which, int mx, int my,
+                                          int ox, int oy, int pw, int ph) returns void {
+                int was = wb.activePane();
+                wb.focusPane(which);
+                if (which == 1) {
+                    this.drawTabBar2(batch, wb.documentsOf(1), ox, oy - this.crumbH(), pw, mx, my);
+                }
+                wb.active().sync();   // another view may have edited the buffer under this one
+                this.drawEditor(batch, wb, ov, mx, my, ox, oy, pw, ph);
+                wb.focusPane(was);
+                return;
+            }
+            // The right pane's tab strip, drawn inside the pane (the left pane keeps the window's tab bar).
+            private method drawTabBar2(Batch2D* batch, DocumentManager* docs, int ox, int oy, int pw,
+                                       int mx, int my) returns void {
+                int ch = this.font.lineHeight();
+                batch.rect(ox, oy, pw, ch + 4, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b,
+                           this.theme.chrome.a);
+                int cw = this.font.advance();
+                mutable int x = ox + 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    String title = docs.title(i);
+                    int tw2 = (title.length() + 2) * cw;
+                    if (i == docs.activeIndex()) {
+                        batch.rect(x - 4, oy, tw2 + 8, ch + 4, this.theme.bg.r, this.theme.bg.g,
+                                   this.theme.bg.b, this.theme.bg.a);
+                        this.font.drawText(batch, x, oy + 2, title, this.theme.text.r, this.theme.text.g,
+                                           this.theme.text.b, this.theme.text.a);
+                    } else {
+                        this.font.drawText(batch, x, oy + 2, title, this.theme.textFaint.r,
+                                           this.theme.textFaint.g, this.theme.textFaint.b,
+                                           this.theme.textFaint.a);
+                    }
+                    x = x + tw2 + 8;
+                    i = i + 1;
+                }
+                return;
+            }
+            // Where the split divides the editor area (screen x), or -1 when there is no split.
+            public method splitX(Workbench* wb, int screenW) returns int {
+                if (!wb.isSplit()) {
+                    return 0 - 1;
+                }
+                int editorW = screenW - this.treeW - this.outlineWidth(wb);
+                return this.treeW + editorW / 2;
             }
 
             // The editor pane at (ox, oy), size (pw, ph).

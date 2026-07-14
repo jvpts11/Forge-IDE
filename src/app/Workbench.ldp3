@@ -3,6 +3,7 @@ import syntax.Highlighter;
 import syntax.Span;
 import syntax.Tok;
 import app.Controller;
+import io.Document;
 import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
@@ -32,7 +33,10 @@ public bundle forge {
         // graphical, so the whole application logic is unit-testable. The project file tree is a separate
         // panel the shell owns; it is not part of the core Workbench state.
         public class Workbench {
-            private mutable DocumentManager* docs;
+            private mutable DocumentManager* docs;      // pane 0 -- always present
+            private mutable DocumentManager* docs2;     // pane 1 -- only while the editor is split
+            private mutable boolean split;              // is the editor split into two panes?
+            private mutable int pane;                   // which pane has focus (0 or 1)
             private mutable CommandRegistry* commands;
             private mutable KeyMap* keymap;
             private mutable OutputPanel* out;
@@ -61,6 +65,9 @@ public bundle forge {
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
+                this.docs2 = new DocumentManager(rows, cols) on heap;   // pane 1, empty until a split
+                this.split = false;
+                this.pane = 0;
                 this.commands = new CommandRegistry() on heap;
                 this.keymap = new KeyMap() on heap;
                 this.out = new OutputPanel() on heap;
@@ -447,17 +454,84 @@ public bundle forge {
                                       rest3.substring(c3 + 1, rest3.length()).trim()) on heap;
             }
 
+            // The ACTIVE pane's tabs. Every existing caller keeps meaning what it meant: "the editor the
+            // user is in". That is what made the split cheap -- the 100-odd call sites did not move.
             public method documents() returns DocumentManager* {
+                if (this.split && this.pane == 1) {
+                    return this.docs2;
+                }
                 return this.docs;
+            }
+            public method documentsOf(int which) returns DocumentManager* {
+                if (which == 1) {
+                    return this.docs2;
+                }
+                return this.docs;
+            }
+            public method isSplit() returns boolean {
+                return this.split;
+            }
+            public method activePane() returns int {
+                return this.pane;
+            }
+            public method focusPane(int which) returns void {
+                if (which == 1 && !this.split) {
+                    return;
+                }
+                this.pane = which;
+                return;
+            }
+            // Split the editor in two, showing the current file on both sides: one document, two views,
+            // each with its own caret and scroll. Splitting again closes the split (a toggle).
+            public method toggleSplit() returns void {
+                if (this.split) {
+                    this.split = false;
+                    this.pane = 0;
+                    return;
+                }
+                this.split = true;
+                this.pane = 1;
+                this.docs2.openView(this.docs.active().document());
+                return;
+            }
+            // Move the focused file to the other pane (opening the split if it is closed).
+            public method moveToOtherPane() returns void {
+                Document* d = this.documents().active().document();
+                if (!this.split) {
+                    this.split = true;
+                    this.docs2.openView(d);
+                    this.pane = 1;
+                    return;
+                }
+                int from = this.pane;
+                int to = 1 - from;
+                this.documentsOf(to).openView(d);
+                this.documentsOf(from).close(this.documentsOf(from).activeIndex());
+                this.pane = to;
+                return;
             }
             public method registry() returns CommandRegistry* {
                 return this.commands;
             }
             public method active() returns Controller* {
-                return this.docs.active();
+                return this.documents().active();
             }
+            // Open a file in the ACTIVE pane. If the OTHER pane already has it, the same document is
+            // shared rather than read twice -- two buffers of one file is how an editor loses your work.
             public method openFile(String path) returns Controller* {
-                Controller* c = this.docs.openFile(path);
+                if (this.split) {
+                    DocumentManager* other = this.documentsOf(1 - this.pane);
+                    mutable int i = 0;
+                    while (i < other.count()) {
+                        if (other.documentAt(i).path().equals(path)) {
+                            Controller* v = this.documents().openView(other.documentAt(i));
+                            this.refreshGit();
+                            return v;
+                        }
+                        i = i + 1;
+                    }
+                }
+                Controller* c = this.documents().openFile(path);
                 this.refreshGit();
                 return c;
             }
@@ -1250,6 +1324,14 @@ public bundle forge {
                 }
                 if (id.equals("view.problems")) {
                     this.showProblems();
+                    return true;
+                }
+                if (id.equals("view.split")) {
+                    this.toggleSplit();
+                    return true;
+                }
+                if (id.equals("view.moveToOtherPane")) {
+                    this.moveToOtherPane();
                     return true;
                 }
                 if (id.equals("view.wrap")) {

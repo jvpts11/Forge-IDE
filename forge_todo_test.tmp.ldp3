@@ -1,0 +1,3 @@
+    // TODO: wire this up
+    String s = "TODO: not a task, it is data";
+    x = 1;   // FIXME later

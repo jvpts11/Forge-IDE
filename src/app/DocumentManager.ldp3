@@ -1,6 +1,7 @@
 import System.Collections.ArrayList;
 import System.IO.Paths;
 import app.Controller;
+import io.Document;
 
 program Forge;
 
@@ -85,6 +86,27 @@ public bundle forge {
                 Controller* c = this.tabs.get(this.active);
                 c.openFile(path);
                 return c;
+            }
+            // Open a VIEW of a document another pane already has open: same buffer, same undo history, its
+            // own caret and scroll. Focuses the existing tab if this pane already shows that document.
+            public method openView(Document* shared) returns Controller* {
+                for (mutable int i = 0; i < this.tabs.size(); i++) {
+                    if (this.tabs.get(i).document() == shared) {
+                        this.prevActive = this.active;
+                        this.active = i;
+                        return this.tabs.get(i);
+                    }
+                }
+                this.prevActive = this.active;
+                this.tabs.add(new Controller(this.rows, this.cols) on heap);
+                this.active = this.tabs.size() - 1;
+                Controller* c = this.tabs.get(this.active);
+                c.attachDocument(shared);
+                return c;
+            }
+            // The document this pane shows in tab `i` (null-safe: an empty pane has none).
+            public method documentAt(int i) returns Document* {
+                return this.tabs.get(i).document();
             }
 
             // Close tab `i`, keeping the active index pointing at a sensible neighbour.

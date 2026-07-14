@@ -689,12 +689,12 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 50, "cmd.count");
-                a.eqInt(cr.filter("").size(), 50, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 51, "cmd.count");
+                a.eqInt(cr.filter("").size(), 51, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
-                a.eqInt(cr.filter("file").size(), 6, "cmd.filter-file");      // 4 File cmds + "Replace in Files" + fuzzy "Re[f]actor: Extract Var[i]ab[le]"
+                a.eqInt(cr.filter("file").size(), 7, "cmd.filter-file");      // 4 File cmds + "Replace in Files" + "Move File to Other Pane" + fuzzy "Re[f]actor: Extract Var[i]ab[le]"
                 a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
                 a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
                 a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
@@ -716,6 +716,25 @@ public bundle forge {
                 wb.runCommand("edit.undo");
                 a.eqStr(wb.active().editor().document().line(0), "", "wb.undo-cmd");
                 a.eqBool(wb.runCommand("edit.selectAll"), true, "wb.selectall-cmd");
+
+                // --- split editors: two panes, and a file open in both is ONE document ---
+                Workbench* sw = new Workbench(24, 80) on heap;
+                a.eqBool(sw.isSplit(), false, "split.starts-unsplit");
+                sw.active().editor().document().loadText("shared\n");
+                sw.runCommand("view.split");
+                a.eqBool(sw.isSplit(), true, "split.opened");
+                a.eqInt(sw.activePane(), 1, "split.focus-moves-right");
+                a.eqBool(sw.documentsOf(1).active().document() == sw.documentsOf(0).active().document(),
+                         true, "split.same-document-in-both");
+                sw.active().placeCaret(0, 6);
+                sw.active().insertChar('!');                        // edit through the RIGHT pane
+                sw.focusPane(0);
+                sw.active().sync();
+                a.eqStr(sw.active().editor().document().line(0), "shared!", "split.left-sees-right-edit");
+                a.eqInt(sw.active().editor().cursorCol(), 0, "split.left-caret-untouched");
+                sw.runCommand("view.split");
+                a.eqBool(sw.isSplit(), false, "split.toggles-closed");
+                a.eqInt(sw.activePane(), 0, "split.focus-returns-left");
 
                 // --- two views of ONE document: the shared buffer that split editors is built on ---
                 // Each view has its own caret, scroll and folds; the text, the undo history and the dirty
