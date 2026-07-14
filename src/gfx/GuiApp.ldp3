@@ -1611,6 +1611,11 @@ public bundle forge {
                         } else {
                             wb.active().nextBookmark(true);
                         }
+                    } else if (e.isKey() && ctrl && shift && e.vk == 66) {   // Ctrl+Shift+B -> branches
+                        // The list goes to the output panel and the prompt takes the name: you can SEE the
+                        // branches while you type the one you want, with no new picker to learn.
+                        wb.runCommand("git.branch");
+                        ov.openPrompt("checkout", "checkout branch: ");
                     } else if (e.isKey() && ctrl && e.vk == 123) {           // Ctrl+F12 -> structure panel
                         wb.toggleOutline();
                     } else if (e.isKey() && ctrl && shift && e.vk == 77) {   // Ctrl+Shift+M -> problems panel
@@ -2045,6 +2050,8 @@ public bundle forge {
                     }
                 } else if (ov.promptKind.equals("extractVar")) {
                     wb.active().extractVariable(ov.query);
+                } else if (ov.promptKind.equals("checkout")) {
+                    wb.gitCheckout(ov.query);
                 } else if (ov.promptKind.equals("replaceAll")) {
                     // One prompt, two answers: "find|replace". A single step keeps the flow honest --
                     // the prompt caption says exactly what the separator is.

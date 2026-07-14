@@ -689,8 +689,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 47, "cmd.count");
-                a.eqInt(cr.filter("").size(), 47, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 48, "cmd.count");
+                a.eqInt(cr.filter("").size(), 48, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -731,6 +731,10 @@ public bundle forge {
                 delete osyms;
                 wb.runCommand("view.outline");
                 a.eqBool(wb.outlineOpen(), false, "wb.outline-toggled-back");
+
+                // --- git: the branch is empty until a refresh reads it (and this test has no repo) ---
+                a.eqStr(wb.currentBranch(), "", "wb.branch-unknown");
+                a.eqBool(wb.runCommand("git.branch"), true, "wb.branch-cmd");
 
                 // --- problems panel: every diagnostic of the last build, navigable ---
                 a.eqInt(wb.showProblems(), 0, "wb.problems-empty");           // nothing built yet

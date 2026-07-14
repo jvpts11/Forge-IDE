@@ -123,6 +123,7 @@ public bundle forge {
 
                 Menu* git = new Menu("Git") on heap;
                 git.add("Source Control", "git.status");
+                git.add("Branches", "git.branch");
                 git.add("Diff Current File", "git.diff");
                 git.sep();
                 git.add("Commit All...", "git.commit");

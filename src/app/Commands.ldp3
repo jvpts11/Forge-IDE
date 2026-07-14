@@ -35,6 +35,7 @@ public bundle forge {
                 this.register("edit.replaceInFiles", "Replace in Files");
                 this.register("view.problems", "Problems");
                 this.register("view.outline", "Toggle Structure Panel");
+                this.register("git.branch", "Git: Branches");
                 this.register("edit.selectAll", "Select All");
                 this.register("edit.duplicateLine", "Duplicate Line");
                 this.register("edit.joinLines", "Join Lines");

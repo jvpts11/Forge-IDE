@@ -960,11 +960,21 @@ public bundle forge {
                     String wcnt = "!" + warns.toString();
                     this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, this.theme.warning.r, this.theme.warning.g, this.theme.warning.b, this.theme.warning.a);
                 }
+                // the git branch, just left of the caret position (empty when this is not a repository)
+                String branch = wb.currentBranch();
+                mutable int rightEdge = screenW;
+                if (branch.length() > 0) {
+                    String chip = "git: " + branch;
+                    int bx = screenW - (chip.length() + 2) * cw;
+                    this.font.drawText(batch, bx, ty, chip, this.theme.modified.r, this.theme.modified.g,
+                                       this.theme.modified.b, this.theme.modified.a);
+                    rightEdge = bx - cw;
+                }
                 // caret position, right side
                 String pos = "Ln " + (c.editor().cursorRow() + 1).toString()
                            + ", Col " + (c.editor().cursorCol() + 1).toString()
                            + "    " + c.lineCount().toString() + " lines";
-                int px = screenW - (pos.length() + 2) * cw;
+                int px = rightEdge - (pos.length() + 2) * cw;
                 this.font.drawText(batch, px, ty, pos, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
             }
 

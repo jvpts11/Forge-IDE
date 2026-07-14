@@ -46,6 +46,7 @@ public bundle forge {
             private mutable int dbgOutConsumed;      // how many debug-output lines are already in the panel
             private mutable boolean lightTheme;      // UI theme preference (true = light); the shell applies it
             private mutable Terminal* term;          // integrated terminal (a cmd.exe behind a Subprocess)
+            private mutable String branch;          // cached branch name (refreshed with the git status)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
             private mutable ArrayList<NavLoc>* navBack;  // Alt+Left history of caret locations before a jump
@@ -72,6 +73,7 @@ public bundle forge {
                 this.dbgOutConsumed = 0;
                 this.lightTheme = WorkspaceStore.loadTheme();
                 this.term = new Terminal() on heap;
+                this.branch = "";
                 this.treeDirty = false;
                 this.showMinimap = false;
                 this.navBack = new ArrayList<NavLoc>() on heap;
@@ -267,6 +269,13 @@ public bundle forge {
             // Recompute the active file's git change marks (called on open, save and tab switch).
             public method refreshGit() returns void {
                 this.git.refresh(this.projectDir, this.docs.active().document().path());
+                this.branch = this.gitBranch();   // asking git costs a process, so it happens HERE,
+                                                  // with the rest of the git refresh -- never per frame
+            }
+            // The branch shown in the status bar: whatever the last refreshGit() read. Empty when the
+            // project is not a git repository.
+            public method currentBranch() returns String {
+                return this.branch;
             }
             public method gitStatus() returns GitStatus* {
                 return this.git;
@@ -909,6 +918,51 @@ public bundle forge {
 
             // --- source control: drive git on the project directory, straight from the IDE ---
             // Show the working-tree status as a navigable list (click a row to open that file).
+            // --- branches: which one you are on, and switching to another ---
+            // The branch is read from git, not cached at startup: a checkout made in the terminal (or by
+            // another tool) shows up here the next time the status bar asks.
+            public method gitBranch() returns String {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" rev-parse --abbrev-ref HEAD 2>&1");
+                String b = r.output.trim();
+                if (b.length() == 0 || b.indexOf("fatal") >= 0 || b.indexOf(" ") >= 0) {
+                    return "";   // not a git repository (or a detached HEAD we cannot name)
+                }
+                return b;
+            }
+            // Every local branch, with the current one first.
+            public method gitBranches() returns ArrayList<String>* {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" branch --format=%(refname:short) 2>&1");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                String current = this.gitBranch();
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                if (current.length() > 0) {
+                    out.add(current);
+                }
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String b = raw.get(i).trim();
+                    i = i + 1;
+                    if (b.length() == 0 || b.equals(current) || b.indexOf("fatal") >= 0) {
+                        continue;
+                    }
+                    out.add(b);
+                }
+                return out;
+            }
+            // Check out `branch`. A dirty tree makes git refuse; its complaint is shown as-is, because a
+            // silent no-op here would be the worst possible outcome.
+            public method gitCheckout(String branch) returns void {
+                if (branch.length() == 0) {
+                    return;
+                }
+                this.runShell("Checkout", "git -C \"" + this.projectDir + "\" checkout "
+                              + Workbench.shellEscape(branch));
+                this.refreshGit();
+                this.treeDirty = true;
+                return;
+            }
             public method gitStatusView() returns void {
                 ProcessResult r = Process.run("git -C \"" + this.projectDir + "\" status --porcelain");
                 ArrayList<String> raw = Strings.split(r.output, "\n");
@@ -1177,6 +1231,10 @@ public bundle forge {
                 }
                 if (id.equals("view.terminal")) {
                     this.toggleTerminal();
+                    return true;
+                }
+                if (id.equals("git.branch")) {
+                    this.out.showLines("Branches", this.gitBranches());
                     return true;
                 }
                 if (id.equals("git.status")) {
