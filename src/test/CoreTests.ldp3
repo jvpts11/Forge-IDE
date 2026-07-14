@@ -27,6 +27,8 @@ import app.Workbench;
 import input.Key;
 import input.KeyCode;
 import input.KeyMap;
+import app.Checker;
+import app.Diagnostic;
 import test.Asserts;
 
 program Forge;
@@ -735,6 +737,32 @@ public bundle forge {
                 sw.runCommand("view.split");
                 a.eqBool(sw.isSplit(), false, "split.toggles-closed");
                 a.eqInt(sw.activePane(), 0, "split.focus-returns-left");
+
+                // --- live type-check: reading what the compiler actually says ---
+                // The compiler labels a diagnostic by the phase that caught it, and all three phases are
+                // errors to the person typing. A Windows path starts with a drive colon, which must not be
+                // read as the line separator -- the bug that would put every error on a line named "C".
+                ArrayList<Diagnostic>* ds = Checker.parse(
+                    "C:\\proj\\src\\gfx\\Theme.ldp3:1:1: parse error: expected 'program' but found 'ZZZ'\n"
+                    + "C:\\proj\\src\\app\\Workbench.ldp3:299:28: error: class 'Workbench' has no field 'wrapp'\n"
+                    + "src/io/Document.ldp3:7:3: warning: unused import\n"
+                    + "src/io/Document.ldp3:9:9: lex error: unterminated string literal\n"
+                    + "OK: entry point forge.app.Main.main\n"
+                    + "ldp3: building path dependency 'ldp3-opengl'...\n");
+                a.eqInt(ds.size(), 4, "check.four-diagnostics");
+                a.eqStr(ds.get(0).file, "Theme.ldp3", "check.file-is-the-basename");
+                a.eqInt(ds.get(0).line, 1, "check.line-is-one-based");
+                a.eqInt(ds.get(0).col, 1, "check.col-is-one-based");
+                a.eqInt(ds.get(0).severity, 0, "check.parse-error-is-an-error");
+                a.eqStr(ds.get(0).message, "expected 'program' but found 'ZZZ'",
+                        "check.message-drops-the-label");
+                a.eqInt(ds.get(1).line, 299, "check.semantic-error-line");
+                a.eqStr(ds.get(1).message, "class 'Workbench' has no field 'wrapp'",
+                        "check.semantic-message");
+                a.eqInt(ds.get(2).severity, 1, "check.warning-is-a-warning");
+                a.eqInt(ds.get(3).severity, 0, "check.lex-error-is-an-error");
+                a.eqInt(Checker.parse("OK: entry point forge.app.Main.main\n").size(), 0,
+                        "check.clean-project-has-no-diagnostics");
 
                 // --- two views of ONE document: the shared buffer that split editors is built on ---
                 // Each view has its own caret, scroll and folds; the text, the undo history and the dirty

@@ -5,6 +5,7 @@ import glfw.InputEvent;
 import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
+import app.Diagnostic;
 import app.Debugger;
 import app.Terminal;
 import app.ContextMenu;
@@ -20,6 +21,7 @@ import System.IO.File;
 import System.IO.Paths;
 import System.Text.StringBuilder;
 import System.Memory;
+import System.OS.Env;
 
 program Forge;
 
@@ -71,6 +73,7 @@ public bundle forge {
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
                                                       GuiApp.fileToOpenFor(ws));
                 wb.setProjectDir(treeRoot);
+                GuiApp.configureChecker(wb);
                 GuiApp.restoreSession(wb, treeRoot);
                 mutable FileTree* tree = new FileTree(treeRoot) on heap;
                 // No project yet? Show the welcome screen instead of an editor over the launch directory.
@@ -219,6 +222,10 @@ public bundle forge {
                     if (wb.treeNeedsRefresh()) {
                         tree = new FileTree(tree.root().path) on heap;
                     }
+                    // Live type-check: when typing has been still for ~half a second, the project is
+                    // checked with the unsaved buffers and the squiggles update. It never blocks a frame --
+                    // pumpCheck polls a subprocess and returns immediately.
+                    wb.pumpCheck(30);
                     // periodically persist the open tabs so the session survives a crash / next launch
                     if (frames % 300 == 0) {
                         WorkspaceStore.saveSession(wb.projectRoot(), wb.documents().openPaths());
@@ -883,6 +890,16 @@ public bundle forge {
 
             // Reopen the files that were open last time this project was closed, so Forge picks up where the
             // user left off. Called on opening/switching a project.
+            // Which `ldp3` the live checker runs. Normally the one on PATH -- the installed toolchain. A
+            // Forge built from source can be pointed at that build's driver with FORGE_LDP3, which is how it
+            // type-checks against a compiler newer than the installed one.
+            public static method configureChecker(Workbench* wb) returns void {
+                String tool = Env.get("FORGE_LDP3");
+                if (tool.length() > 0) {
+                    wb.checker().setTool("\"" + tool + "\"");
+                }
+                return;
+            }
             private static method restoreSession(Workbench* wb, String dir) returns void {
                 ArrayList<String>* sess = WorkspaceStore.loadSession(dir);
                 mutable int i = 0;
@@ -909,6 +926,8 @@ public bundle forge {
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
                                                       "src/gfx/GpuScreen.ldp3");
+                wb.setProjectDir(".");
+                GuiApp.configureChecker(wb);
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
@@ -1268,6 +1287,28 @@ public bundle forge {
                     wb.diagnose();
                     System.IO.Console.println("ok " + wb.errorCount().toString() + " errors "
                         + wb.warningCount().toString() + " warnings");
+                } else if (cmd.equals("check")) {
+                    // The live check, driven to completion: the debounce is skipped (delayFrames = 0) and
+                    // the poll is spun until the compiler exits. In the real UI these are just frames.
+                    wb.checker().touch();
+                    mutable boolean done = false;
+                    mutable int guard = 0;
+                    while (!done && guard < 2000000) {
+                        done = wb.pumpCheck(0);
+                        guard = guard + 1;
+                    }
+                    if (!done) {
+                        System.IO.Console.println("check DID NOT RUN: " + wb.checker().lastCommand());
+                    } else {
+                        System.IO.Console.println("check " + wb.errorCount().toString() + " errors "
+                            + wb.warningCount().toString() + " warnings, "
+                            + wb.unsavedCount().toString() + " unsaved");
+                        if (wb.diagnostics().size() > 0) {
+                            Diagnostic* d = wb.diagnostics().get(0);
+                            System.IO.Console.println("  " + d.file + ":" + (d.line + 1).toString() + " "
+                                                      + d.message);
+                        }
+                    }
                 } else if (cmd.equals("gitstatus")) {
                     wb.gitStatusView();
                     System.IO.Console.println("ok " + wb.output().lineCount().toString() + " changed");

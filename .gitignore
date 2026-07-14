@@ -28,3 +28,6 @@ frame.*
 
 # scratch files the test suite writes
 *.tmp.ldp3
+
+# live-check scratch buffers
+.forge/

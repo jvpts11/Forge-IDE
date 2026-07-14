@@ -8,6 +8,7 @@ import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
 import app.Diagnostic;
+import app.Checker;
 import app.Symbol;
 import app.Symbols;
 import app.GitStatus;
@@ -62,6 +63,8 @@ public bundle forge {
             private mutable boolean navInit;
             private mutable Peek* peek;              // inline peek-definition popup (Alt+F12)
             private mutable DiffView* diff;          // read-only git-diff view of the active file
+            private mutable Checker* chk;            // live type-check: the compiler's diagnostics while you type
+            private mutable int seenEdits;           // sum of open documents' revisions, to notice an edit
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -78,6 +81,8 @@ public bundle forge {
                 this.projectName = "";
                 this.git = new GitStatus() on heap;
                 this.dbg = new Debugger() on heap;
+                this.chk = new Checker() on heap;
+                this.seenEdits = 0;
                 this.renameOldName = "";
                 this.dbgOutConsumed = 0;
                 this.lightTheme = WorkspaceStore.loadTheme();
@@ -332,6 +337,7 @@ public bundle forge {
             public method setProjectDir(String dir) returns void {
                 this.projectDir = dir;
                 this.projectName = Workbench.readProjectName(dir);
+                this.chk.setProjectDir(dir);
             }
             public method projectRoot() returns String {
                 return this.projectDir;
@@ -368,7 +374,97 @@ public bundle forge {
                 return v;
             }
 
-            // --- diagnostics: run the LDP3 compiler and surface its errors/warnings inline ---
+            // --- live type-checking (see app.Checker) ---
+            // Called once per frame. An edit anywhere restarts a debounce; when typing has been still for
+            // `delayFrames`, the project is type-checked with the UNSAVED buffers, and its diagnostics
+            // replace the ones on screen. Nothing here blocks: the check is a subprocess being polled.
+            public method pumpCheck(int delayFrames) returns boolean {
+                if (this.projectDir.length() == 0 || !this.hasProject()) {
+                    return false;
+                }
+                int now = this.editStamp();
+                if (now != this.seenEdits) {
+                    this.seenEdits = now;
+                    this.chk.touch();
+                }
+                ArrayList<String>* paths = new ArrayList<String>() on heap;
+                ArrayList<String>* texts = new ArrayList<String>() on heap;
+                this.collectDirty(paths, texts);
+                boolean done = this.chk.pump(paths, texts, delayFrames);
+                delete paths;
+                delete texts;
+                if (done) {
+                    this.diags = this.chk.diagnostics();
+                }
+                return done;
+            }
+            public method checker() returns Checker* {
+                return this.chk;
+            }
+            // How many open documents have unsaved changes -- the buffers a check has to overlay.
+            public method unsavedCount() returns int {
+                ArrayList<String>* paths = new ArrayList<String>() on heap;
+                ArrayList<String>* texts = new ArrayList<String>() on heap;
+                this.collectDirty(paths, texts);
+                int n = paths.size();
+                delete paths;
+                delete texts;
+                return n;
+            }
+            // A number that changes whenever ANY open document changes: the sum of their revisions. It does
+            // not matter what it is, only that an edit moves it -- and that a document edited through the
+            // other pane moves it too, since both views share the one document.
+            private method editStamp() returns int {
+                mutable int sum = 0;
+                mutable int p = 0;
+                while (p < 2) {
+                    DocumentManager* dm = this.documentsOf(p);
+                    mutable int i = 0;
+                    while (i < dm.count()) {
+                        sum = sum + dm.documentAt(i).revision();
+                        i = i + 1;
+                    }
+                    p = p + 1;
+                    if (!this.split) {
+                        p = 2;
+                    }
+                }
+                return sum;
+            }
+            // Every open document that has unsaved changes AND lives in a file, as (path, text) pairs. The
+            // same document open in both panes is one buffer, so it is collected once.
+            private method collectDirty(ArrayList<String>* paths, ArrayList<String>* texts) returns void {
+                mutable int p = 0;
+                while (p < 2) {
+                    DocumentManager* dm = this.documentsOf(p);
+                    mutable int i = 0;
+                    while (i < dm.count()) {
+                        Document* d = dm.documentAt(i);
+                        if (d.isModified() && d.path().length() > 0 && !Workbench.listHas(paths, d.path())) {
+                            paths.add(d.path());
+                            texts.add(d.buffer().text());
+                        }
+                        i = i + 1;
+                    }
+                    p = p + 1;
+                    if (!this.split) {
+                        p = 2;
+                    }
+                }
+                return;
+            }
+            private static method listHas(ArrayList<String>* xs, String x) returns boolean {
+                mutable int i = 0;
+                while (i < xs.size()) {
+                    if (xs.get(i).equals(x)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+
+            // --- diagnostics: the compiler's errors/warnings, shown inline ---
             public method diagnostics() returns ArrayList<Diagnostic>* {
                 return this.diags;
             }
