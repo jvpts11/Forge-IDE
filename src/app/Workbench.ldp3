@@ -558,6 +558,86 @@ public bundle forge {
                 }
                 return total;
             }
+            // Every task marker left in the project, as one navigable list (see markerIn for the four the
+            // scanner knows). Only COMMENTS are scanned: a marker inside a string literal is not a task, and
+            // that is what keeps the panel trustworthy. (This comment deliberately spells none of them out --
+            // otherwise the scanner would report its own documentation.)
+            public method showTodos(ArrayList<String>* files) returns int {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                Highlighter* hl = new Highlighter() on heap;
+                mutable int count = 0;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".ldp3")) {
+                        continue;
+                    }
+                    String base = Paths.basename(path);
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String line = lines.get(row);
+                        int at = Workbench.todoAt(line, hl);
+                        if (at >= 0) {
+                            body.add(base + ":" + (row + 1).toString() + "  "
+                                     + line.substring(at, line.length()).trim());
+                            navFiles.add(path);
+                            navLines.add(row);
+                            count = count + 1;
+                        }
+                        row = row + 1;
+                    }
+                }
+                delete hl;
+                if (count == 0) {
+                    body.add("no task markers left in the project");
+                }
+                this.out.showNavigable("Tasks -- " + count.toString() + " marker(s)", body, navFiles,
+                                       navLines);
+                return count;
+            }
+            // Where the first task marker starts on this line, or -1. It must sit in a COMMENT: the
+            // highlighter already knows which spans are comments, so this reuses that answer instead of
+            // guessing with a second, weaker parser.
+            private static method todoAt(String line, Highlighter* hl) returns int {
+                mutable int best = 0 - 1;
+                ArrayList<Span> spans = hl.tokenize(line);
+                mutable int i = 0;
+                while (i < spans.size()) {
+                    if (spans.get(i).kind == Tok.COMMENT) {
+                        String text = line.substring(spans.get(i).start, spans.get(i).end);
+                        int rel = Workbench.markerIn(text);
+                        if (rel >= 0) {
+                            int abs = spans.get(i).start + rel;
+                            if (best < 0 || abs < best) {
+                                best = abs;
+                            }
+                        }
+                    }
+                    i = i + 1;
+                }
+                return best;
+            }
+            private static method markerIn(String text) returns int {
+                mutable int best = 0 - 1;
+                best = Workbench.earlier(best, text.indexOf("TODO"));
+                best = Workbench.earlier(best, text.indexOf("FIXME"));
+                best = Workbench.earlier(best, text.indexOf("HACK"));
+                best = Workbench.earlier(best, text.indexOf("XXX"));
+                return best;
+            }
+            private static method earlier(int best, int candidate) returns int {
+                if (candidate < 0) {
+                    return best;
+                }
+                if (best < 0 || candidate < best) {
+                    return candidate;
+                }
+                return best;
+            }
             // Every diagnostic from the last build, as one navigable list: severity, where, and what.
             // The compiler reports a file by basename, so each one is resolved against the project's files
             // to get a path the panel can jump to. This is the view you keep open while you fix a build.
@@ -1164,6 +1244,12 @@ public bundle forge {
                 }
                 if (id.equals("view.outline")) {
                     this.toggleOutline();
+                    return true;
+                }
+                if (id.equals("view.todos")) {
+                    ArrayList<String>* files = this.projectFiles();
+                    this.showTodos(files);
+                    delete files;
                     return true;
                 }
                 if (id.equals("edit.upperCase")) {

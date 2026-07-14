@@ -689,8 +689,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 48, "cmd.count");
-                a.eqInt(cr.filter("").size(), 48, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 49, "cmd.count");
+                a.eqInt(cr.filter("").size(), 49, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -731,6 +731,18 @@ public bundle forge {
                 delete osyms;
                 wb.runCommand("view.outline");
                 a.eqBool(wb.outlineOpen(), false, "wb.outline-toggled-back");
+
+                // --- tasks: markers are only found in comments, never in strings ---
+                String tfile = "forge_todo_test.tmp.ldp3";
+                ArrayList<String> tsrc = new ArrayList<String>() on heap;
+                tsrc.add("    // TODO: wire this up");
+                tsrc.add("    String s = \"TODO: not a task, it is data\";");
+                tsrc.add("    x = 1;   // FIXME later");
+                Files.writeLines(tfile, tsrc);
+                ArrayList<String>* tfiles = new ArrayList<String>() on heap;
+                tfiles.add(tfile);
+                a.eqInt(wb.showTodos(tfiles), 2, "wb.todos-comments-only");
+                a.eqBool(wb.runCommand("view.todos"), true, "wb.todos-cmd");
 
                 // --- git: the branch is empty until a refresh reads it (and this test has no repo) ---
                 a.eqStr(wb.currentBranch(), "", "wb.branch-unknown");
