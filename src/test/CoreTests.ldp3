@@ -717,6 +717,40 @@ public bundle forge {
                 a.eqStr(wb.active().editor().document().line(0), "", "wb.undo-cmd");
                 a.eqBool(wb.runCommand("edit.selectAll"), true, "wb.selectall-cmd");
 
+                // --- two views of ONE document: the shared buffer that split editors is built on ---
+                // Each view has its own caret, scroll and folds; the text, the undo history and the dirty
+                // flag belong to the document. An edit in one view is visible in the other, and either view
+                // can undo it -- which is the whole point, and the thing that would corrupt a file if the
+                // history were per view.
+                Controller* left = new Controller(24, 80) on heap;
+                left.editor().document().loadText("alpha\nbeta\n");
+                Controller* right = new Controller(24, 80) on heap;
+                right.attachDocument(left.document());
+                a.eqStr(right.editor().document().line(0), "alpha", "split.same-text");
+
+                left.placeCaret(0, 5);
+                left.insertChar('!');                              // edit through the LEFT view
+                a.eqStr(left.editor().document().line(0), "alpha!", "split.left-edited");
+                right.sync();
+                a.eqStr(right.editor().document().line(0), "alpha!", "split.right-sees-it");
+                a.eqBool(right.document().isModified(), true, "split.dirty-is-shared");
+
+                right.placeCaret(1, 0);
+                a.eqInt(left.editor().cursorRow(), 0, "split.carets-are-independent");
+
+                right.undo();                                      // undo the LEFT view's edit, from the RIGHT
+                a.eqStr(right.editor().document().line(0), "alpha", "split.undo-across-views");
+                left.sync();
+                a.eqStr(left.editor().document().line(0), "alpha", "split.left-sees-the-undo");
+
+                // A view whose caret sat past the end of a line the other view shortened is pulled back in.
+                left.placeCaret(0, 5);
+                right.placeCaret(0, 0);
+                right.insertChar('x');
+                right.editor().document().loadText("ab\n");        // the buffer shrank under the left view
+                left.sync();
+                a.eqBool(left.editor().cursorCol() <= 2, true, "split.caret-clamped");
+
                 // --- word wrap: a view concept, so the document is untouched and only the mapping changes ---
                 Controller* wc = wb.active();
                 wc.editor().document().loadText("0123456789ABCDEFGHIJ\nshort\n");

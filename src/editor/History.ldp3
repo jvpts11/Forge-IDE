@@ -1,0 +1,61 @@
+import System.Collections.ArrayList;
+import editor.Snapshot;
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // The undo/redo history of ONE document.
+        //
+        // It lives outside the Editor on purpose. When a file is open in two panes there is one buffer and
+        // two views of it, so there must be exactly one history: if each view kept its own stacks, an undo
+        // in the right pane would replay a snapshot taken before the left pane's edits and silently
+        // resurrect old text. Sharing the history is what makes two views of a file safe.
+        //
+        // A step is a whole-text snapshot plus the caret it was taken at, which is why a view that did not
+        // make an edit can still undo it -- the text it restores is the text, not a per-view delta.
+        public class History {
+            private mutable ArrayList<Snapshot>* undos;
+            private mutable ArrayList<Snapshot>* redos;
+
+            public constructor History() {
+                this.undos = new ArrayList<Snapshot>() on heap;
+                this.redos = new ArrayList<Snapshot>() on heap;
+            }
+            // Record the state BEFORE an edit. A fresh edit invalidates the redo branch.
+            public method push(String text, int row, int col) returns void {
+                this.undos.add(new Snapshot(text, row, col) on heap);
+                this.redos.clear();
+                return;
+            }
+            public method canUndo() returns boolean {
+                return this.undos.size() > 0;
+            }
+            public method canRedo() returns boolean {
+                return this.redos.size() > 0;
+            }
+            // Take the last undo step, handing back the state to restore. The caller passes the CURRENT
+            // state, which becomes the redo step.
+            public method popUndo(String text, int row, int col) returns Snapshot* {
+                this.redos.add(new Snapshot(text, row, col) on heap);
+                int last = this.undos.size() - 1;
+                Snapshot* s = this.undos.get(last);
+                this.undos.removeAt(last);
+                return s;
+            }
+            public method popRedo(String text, int row, int col) returns Snapshot* {
+                this.undos.add(new Snapshot(text, row, col) on heap);
+                int last = this.redos.size() - 1;
+                Snapshot* s = this.redos.get(last);
+                this.redos.removeAt(last);
+                return s;
+            }
+            public method undoDepth() returns int {
+                return this.undos.size();
+            }
+            public method redoDepth() returns int {
+                return this.redos.size();
+            }
+        }
+    }
+}

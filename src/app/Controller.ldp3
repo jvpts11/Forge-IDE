@@ -26,11 +26,14 @@ public bundle forge {
             private mutable boolean wrap;      // word wrap: a long line occupies several screen rows
             private mutable int wrapCols;      // the pane width in columns (the shell pushes it in per frame)
             private mutable int scrollMargin;
+            private mutable int seenRev;       // the document revision this view last reconciled with
             private mutable ArrayList<int>* bookmarks;   // 0-based lines the user bookmarked (F2 navigates)
 
             public constructor Controller(int rows, int cols) {
                 this.doc = new Document(new TextBuffer() on heap) on heap;
                 this.ed = new Editor(this.doc.buffer()) on heap;
+                this.ed.setHistory(this.doc.history());   // the history belongs to the document
+                this.seenRev = 0 - 1;
                 this.view = new Viewport(rows, cols) on heap;
                 this.hl = new Highlighter() on heap;
                 this.folds = new FoldState() on heap;
@@ -606,6 +609,34 @@ public bundle forge {
             // screen rows. Every mapping the UI reads through -- lineNumberAt, screenRowForDocLine,
             // renderLine/renderSpans, the caret -- goes through the same segment arithmetic below, which is
             // why the rest of the editor did not have to learn about wrapping at all.
+            // --- two views of one file ---
+            // Point this controller at a document that already exists: the SAME buffer, the SAME undo
+            // history, the SAME dirty flag -- and its own caret, selection, scroll and folds. That is the
+            // whole of "the file is open in both panes": one document, two views.
+            public method attachDocument(Document* shared) returns void {
+                Editor* old = this.ed;
+                this.doc = shared;
+                this.ed = new Editor(shared.buffer()) on heap;
+                this.ed.setHistory(shared.history());
+                delete old;
+                this.folds.recompute(this.ed.document());
+                this.seenRev = shared.revision();
+                this.moved();
+                return;
+            }
+            // Reconcile with an edit made through ANOTHER view of the same document: refold, and pull the
+            // caret back inside a buffer that may have shrunk under it. Cheap, and called before this view
+            // is drawn, so a stale caret never reaches the screen.
+            public method sync() returns void {
+                if (this.doc.revision() == this.seenRev) {
+                    return;
+                }
+                this.seenRev = this.doc.revision();
+                this.folds.recompute(this.ed.document());
+                this.ed.clampCaret();
+                this.moved();
+                return;
+            }
             public method setWrap(boolean enabled) returns void {
                 this.wrap = enabled;
                 return;

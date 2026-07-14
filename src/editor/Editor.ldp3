@@ -1,4 +1,5 @@
 import System.Collections.ArrayList;
+import editor.History;
 import System.Text.Strings;
 import System.Text.StringBuilder;
 import syntax.Highlighter;
@@ -24,8 +25,10 @@ public bundle forge {
             private mutable Search* search;
             private mutable Brackets* brackets;
             private mutable int tabWidth;
-            private mutable ArrayList<Snapshot>* undoStack;
-            private mutable ArrayList<Snapshot>* redoStack;
+            // The undo history belongs to the DOCUMENT, not to this view: two panes showing one file share
+            // it, or an undo in one would resurrect text the other had already replaced. An Editor built on
+            // its own starts with a private history, which is exactly the old behaviour.
+            private mutable History* hist;
             private mutable ArrayList<int>* extraRows;   // secondary carets (multi-cursor); primary is row/col
             private mutable ArrayList<int>* extraCols;
             private mutable ArrayList<int>* extraSelRows; // per-caret selection anchor; -1 row means "no selection"
@@ -48,8 +51,7 @@ public bundle forge {
                 this.search = new Search(doc) on heap;
                 this.brackets = new Brackets(doc) on heap;
                 this.tabWidth = 4;
-                this.undoStack = new ArrayList<Snapshot>() on heap;
-                this.redoStack = new ArrayList<Snapshot>() on heap;
+                this.hist = new History() on heap;
                 this.extraRows = new ArrayList<int>() on heap;
                 this.extraCols = new ArrayList<int>() on heap;
                 this.extraSelRows = new ArrayList<int>() on heap;
@@ -977,8 +979,7 @@ public bundle forge {
                 if (this.suppressUndo) {
                     return;
                 }
-                this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
-                this.redoStack.clear();
+                this.hist.push(this.buf.text(), this.row, this.col);
             }
 
             private method restore(Snapshot* s) returns void {
@@ -987,26 +988,64 @@ public bundle forge {
                 this.col = s.col;
             }
 
+            // Share this view's history with a document (the other view of the same file already has it).
+            public method setHistory(History* h) returns void {
+                this.hist = h;
+                return;
+            }
+            public method history() returns History* {
+                return this.hist;
+            }
+
             public method undo() returns boolean {
-                if (this.undoStack.size() == 0) {
+                if (!this.hist.canUndo()) {
                     return false;
                 }
-                this.redoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
-                int last = this.undoStack.size() - 1;
-                this.restore(this.undoStack.get(last));
-                this.undoStack.removeAt(last);
+                this.restore(this.hist.popUndo(this.buf.text(), this.row, this.col));
+                this.clampCaret();
                 return true;
             }
 
             public method redo() returns boolean {
-                if (this.redoStack.size() == 0) {
+                if (!this.hist.canRedo()) {
                     return false;
                 }
-                this.undoStack.add(new Snapshot(this.buf.text(), this.row, this.col) on heap);
-                int last = this.redoStack.size() - 1;
-                this.restore(this.redoStack.get(last));
-                this.redoStack.removeAt(last);
+                this.restore(this.hist.popRedo(this.buf.text(), this.row, this.col));
+                this.clampCaret();
                 return true;
+            }
+
+            // Pull the caret back inside the buffer. The text under a view can change without that view
+            // touching it -- the other pane edited it, or undid an edit -- so a caret that was valid a moment
+            // ago may now point past the end. Every view clamps before it is read.
+            public method clampCaret() returns void {
+                int lines = this.buf.lineCount();
+                if (this.row >= lines) {
+                    this.row = lines - 1;
+                }
+                if (this.row < 0) {
+                    this.row = 0;
+                }
+                int len = this.buf.line(this.row).length();
+                if (this.col > len) {
+                    this.col = len;
+                }
+                if (this.col < 0) {
+                    this.col = 0;
+                }
+                if (this.hasSel) {
+                    if (this.selRow >= lines) {
+                        this.selRow = lines - 1;
+                    }
+                    if (this.selRow < 0) {
+                        this.selRow = 0;
+                    }
+                    int slen = this.buf.line(this.selRow).length();
+                    if (this.selCol > slen) {
+                        this.selCol = slen;
+                    }
+                }
+                return;
             }
 
             // --- multi-cursor: secondary carets edited together with the primary (row, col) ---

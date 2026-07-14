@@ -2,6 +2,7 @@ import System.IO.Files;
 import System.Collections.ArrayList;
 import System.Text.Strings;
 import editor.TextBuffer;
+import editor.History;
 
 program Forge;
 
@@ -14,8 +15,15 @@ public bundle forge {
             private mutable TextBuffer* buf;
             private mutable String path;
             private mutable boolean modified;
+            // One history per DOCUMENT: two views of the same file share it (see editor.History).
+            private mutable History* hist;
+            // Bumped on every edit. A view compares it against what it last saw to notice that ANOTHER view
+            // changed the text under it -- that is when it re-folds and pulls its caret back in bounds.
+            private mutable int rev;
 
             public constructor Document(TextBuffer* buffer) {
+                this.hist = new History() on heap;
+                this.rev = 0;
                 this.buf = buffer;
                 this.path = "";
                 this.modified = false;
@@ -30,8 +38,15 @@ public bundle forge {
             public method isModified() returns boolean {
                 return this.modified;
             }
+            public method history() returns History* {
+                return this.hist;
+            }
+            public method revision() returns int {
+                return this.rev;
+            }
             public method markModified() returns void {
                 this.modified = true;
+                this.rev = this.rev + 1;   // every view of this document will notice
             }
 
             // Read a file from disk into the buffer, replacing its contents.
