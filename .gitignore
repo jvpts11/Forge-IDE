@@ -25,3 +25,6 @@ Thumbs.db
 *.ppm
 *.png
 frame.*
+
+# scratch files the test suite writes
+*.tmp.ldp3
