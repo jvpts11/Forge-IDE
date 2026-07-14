@@ -16,6 +16,7 @@ import app.Controller;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
+import app.ContextMenu;
 import app.Symbols;
 import app.Symbol;
 import app.Completion;
@@ -613,6 +614,27 @@ public bundle forge {
                 a.eqInt(mru.activeIndex(), 1, "mru.back-to-1");
                 mru.switchToPrevious();
                 a.eqInt(mru.activeIndex(), 0, "mru.toggle-0");
+
+                // --- right-click context menu: items depend on what was clicked ---
+                ContextMenu cmenu = new ContextMenu() on heap;
+                a.eqBool(cmenu.isActive(), false, "ctx.starts-closed");
+                cmenu.openForEditor(100, 200, true, false);          // on a word, no selection
+                a.eqBool(cmenu.isActive(), true, "ctx.open");
+                a.eqStr(cmenu.idAt(0), "ctx.gotoDef", "ctx.first-is-goto-def");
+                a.eqInt(cmenu.count(), 12, "ctx.editor-word-count");
+                cmenu.openForEditor(100, 200, false, false);         // not on a word: no navigation group
+                a.eqStr(cmenu.idAt(0), "ctx.paste", "ctx.no-word-starts-at-paste");
+                cmenu.openForEditor(100, 200, true, true);           // with a selection: cut/copy appear
+                a.eqInt(cmenu.count(), 16, "ctx.editor-sel-count");
+                cmenu.openForTree(10, 20, "src/app/X.ldp3", false);
+                a.eqStr(cmenu.idAt(0), "ctx.treeOpen", "ctx.tree-file-open");
+                a.eqStr(cmenu.targetPath, "src/app/X.ldp3", "ctx.tree-target");
+                cmenu.openForTree(10, 20, "src/app", true);          // a directory has no "Open"
+                a.eqStr(cmenu.idAt(0), "ctx.treeNewFile", "ctx.tree-dir-first");
+                cmenu.openForTab(10, 20, "a.ldp3");
+                a.eqStr(cmenu.idAt(0), "ctx.tabClose", "ctx.tab-first");
+                cmenu.close();
+                a.eqBool(cmenu.isActive(), false, "ctx.closed");
 
                 // --- file tree over a real temp directory (dirs first, lazy expand) ---
                 File.mkdir("ft_tree.tmp");

@@ -7,6 +7,7 @@ import gltext.FontAtlas;
 import app.Workbench;
 import app.Debugger;
 import app.Terminal;
+import app.ContextMenu;
 import app.Command;
 import io.FileTree;
 import io.FileNode;
@@ -83,8 +84,10 @@ public bundle forge {
                 comp.loadImports(GuiApp.referencePath("imports.txt"));
                 GuiApp.refreshProjectSymbols(comp, tree);
                 MenuBar* menu = new MenuBar() on heap;
+                ContextMenu* ctx = new ContextMenu() on heap;
                 OpenRequest* req = new OpenRequest() on heap;
                 mutable boolean prevDown = false;
+                mutable boolean prevRight = false;
                 mutable boolean dragging = false;
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
@@ -153,9 +156,31 @@ public bundle forge {
                         continue;
                     }
                     GuiApp.processInput(win, wb, ov, comp, menu, tree);
-                    // left click -> menu bar / tab / tree / caret (edge-triggered); ignored while an overlay
-                    // is open, but menu clicks still work because the menu isn't a modal overlay
+                    // right click -> the context menu for whatever is under the cursor (editor / tree / tab)
+                    boolean rdown = win.keyDown(2);   // VK_RBUTTON
+                    if (rdown && !prevRight && !ov.isOpen()) {
+                        menu.close();
+                        GuiApp.rightClickAt(win, screen, wb, tree, ctx, win.cursorX(), win.cursorY());
+                    }
+                    prevRight = rdown;
+                    // left click -> context-menu item (when open), else menu bar / tab / tree / caret
                     boolean down = win.keyDown(1);   // VK_LBUTTON
+                    if (down && !prevDown && ctx.isActive()) {
+                        int cxi = win.cursorX();
+                        int cyi = win.cursorY();
+                        int item = screen.contextItemAt(ctx, cxi, cyi, win.width(), win.height());
+                        if (item >= 0) {
+                            GuiApp.runContextCommand(win, screen, wb, tree, ov, req, ctx, ctx.idAt(item));
+                        } else if (!screen.contextHit(ctx, cxi, cyi, win.width(), win.height())) {
+                            ctx.close();       // a click outside dismisses it
+                        }
+                        prevDown = down;
+                        dragging = false;
+                        GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, ctx);
+                        win.swap();
+                        win.sleep(8);
+                        continue;
+                    }
                     if (down && !prevDown && !ov.isOpen()) {
                         int cxNow = win.cursorX();
                         int cyNow = win.cursorY();
@@ -234,7 +259,7 @@ public bundle forge {
                         blink = 0;
                     }
                     screen.setCaretOn(blink < 30);
-                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, ctx);
                     win.swap();
                     win.sleep(8);
                 }
@@ -404,6 +429,162 @@ public bundle forge {
                 } else {
                     c.beginSelect(c.lineNumberAt(screenRow), c.firstColumn() + col);  // anchor a drag selection
                 }
+                return;
+            }
+
+            // Right-click at pixel (mx, my): open the context menu appropriate to what's under the cursor -- the
+            // editor (code navigation / refactor / clipboard, with the caret moved to the click first, so the
+            // actions apply to what you clicked), the file tree (file operations on that entry), or the tab bar
+            // (tab operations). Anywhere else just closes any open popup.
+            private static method rightClickAt(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
+                                               ContextMenu* ctx, int mx, int my) returns void {
+                ctx.close();
+                if (my < screen.menuH()) {
+                    return;
+                }
+                if (my < screen.contentTop()) {
+                    int ti = screen.tabAtX(wb.documents(), mx);
+                    if (ti >= 0) {
+                        wb.documents().setActive(ti);
+                        ctx.openForTab(mx, my, wb.documents().at(ti).document().path());
+                    }
+                    return;
+                }
+                if (mx < screen.treeWidth()) {
+                    int ri = screen.treeRowAtY(my);
+                    ArrayList<FileNode*>* rows = tree.visible();
+                    if (ri >= 0 && ri < rows.size()) {
+                        FileNode* node = rows.get(ri);
+                        ctx.openForTree(mx, my, node.path, node.isDir);
+                    }
+                    return;
+                }
+                int panelH = screen.outputPanelHeight(wb.output(), win.height());
+                if (panelH > 0 && my >= win.height() - screen.statusH() - panelH) {
+                    return;
+                }
+                int screenRow = (my - screen.textOy()) / screen.lineH();
+                if (screenRow < 0 || mx < screen.textOx()) {
+                    return;
+                }
+                Controller* c = wb.active();
+                mutable int col = (mx - screen.textOx()) / screen.charW();
+                if (col < 0) {
+                    col = 0;
+                }
+                int docRow = c.lineNumberAt(screenRow);
+                int docCol = c.firstColumn() + col;
+                // Keep an existing selection if the click landed inside it (so Cut/Copy act on it); otherwise
+                // move the caret to the click, the way every editor does.
+                boolean inSel = c.editor().hasSelection() && GuiApp.insideSelection(c, docRow, docCol);
+                if (!inSel) {
+                    c.placeCaret(docRow, docCol);
+                }
+                boolean hasWord = c.wordAtCaret().length() > 0;
+                ctx.openForEditor(mx, my, hasWord, c.editor().hasSelection());
+                return;
+            }
+            // Is (row, col) inside the active selection? (document order, half-open at the end)
+            private static method insideSelection(Controller* c, int row, int col) returns boolean {
+                int sr = c.editor().selStartRow();
+                int sc = c.editor().selStartCol();
+                int er = c.editor().selEndRow();
+                int ec = c.editor().selEndCol();
+                if (row < sr || row > er) {
+                    return false;
+                }
+                if (row == sr && col < sc) {
+                    return false;
+                }
+                if (row == er && col > ec) {
+                    return false;
+                }
+                return true;
+            }
+
+            // Run a context-menu item. Context-only ids (ctx.*) are handled here -- they need the file tree, the
+            // window, or the menu's target path; everything else is a normal command id the workbench knows.
+            private static method runContextCommand(GlWindow* win, GpuScreen* screen, Workbench* wb,
+                                                    FileTree* tree, Overlay* ov, OpenRequest* req,
+                                                    ContextMenu* ctx, String id) returns void {
+                String target = ctx.targetPath;
+                ctx.close();
+                if (id.equals("ctx.gotoDef")) {
+                    GuiApp.gotoDef(wb, tree);
+                    return;
+                }
+                if (id.equals("ctx.peekDef")) {
+                    wb.peekDefinition(tree.allFiles());
+                    return;
+                }
+                if (id.equals("ctx.findRefs")) {
+                    wb.findReferencesAcross(tree.allFiles());
+                    return;
+                }
+                if (id.equals("ctx.cut")) {
+                    wb.active().cut();
+                    return;
+                }
+                if (id.equals("ctx.copy")) {
+                    wb.active().copy();
+                    return;
+                }
+                if (id.equals("ctx.paste")) {
+                    wb.active().paste();
+                    return;
+                }
+                if (id.equals("ctx.comment")) {
+                    wb.active().toggleComment();
+                    return;
+                }
+                if (id.equals("ctx.treeOpen")) {
+                    if (target.length() > 0) {
+                        wb.openFile(target);
+                    }
+                    return;
+                }
+                if (id.equals("ctx.treeNewFile")) {
+                    ov.openPrompt("newfile", "new file (path): ");
+                    return;
+                }
+                if (id.equals("ctx.treeRename")) {
+                    if (target.length() > 0) {
+                        wb.openFile(target);
+                        ov.openPrompt("rename", "rename to: ");
+                    }
+                    return;
+                }
+                if (id.equals("ctx.treeDelete")) {
+                    if (target.length() > 0) {
+                        wb.openFile(target);
+                        ov.openPrompt("delete", "delete '" + Paths.basename(target) + "'? type y to confirm: ");
+                    }
+                    return;
+                }
+                if (id.equals("ctx.treeCopyPath")) {
+                    wb.output().banner("Path", target);
+                    return;
+                }
+                if (id.equals("ctx.treeReveal")) {
+                    if (target.length() > 0) {
+                        wb.runShell("Explorer", "explorer /select,\"" + target + "\"");
+                    }
+                    return;
+                }
+                if (id.equals("ctx.tabClose")) {
+                    wb.closeActiveTab();
+                    return;
+                }
+                if (id.equals("ctx.tabCloseOthers")) {
+                    wb.closeOtherTabs();
+                    return;
+                }
+                if (id.equals("ctx.tabSave")) {
+                    wb.active().save();
+                    wb.refreshGit();
+                    return;
+                }
+                GuiApp.runMenuCommand(win, wb, ov, req, id);   // a plain command id (rename, format, nav, ...)
                 return;
             }
 
@@ -684,6 +865,7 @@ public bundle forge {
                 comp.loadImports(GuiApp.referencePath("imports.txt"));
                 GuiApp.refreshProjectSymbols(comp, tree);
                 MenuBar* menu = new MenuBar() on heap;
+                ContextMenu* ctx = new ContextMenu() on heap;
                 OpenRequest* req = new OpenRequest() on heap;
                 System.IO.Console.println("forge-serve ready");
                 Win32.fflush(0);
@@ -698,7 +880,7 @@ public bundle forge {
                         running = false;
                     }
                     else {
-                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp, menu, req);
+                        GuiApp.serveCommand(line, win, batch, screen, wb, tree, ov, comp, menu, ctx, req);
                         Win32.fflush(0);
                     }
                 }
@@ -707,7 +889,7 @@ public bundle forge {
 
             private static method serveCommand(String line, GlWindow* win, Batch2D* batch, GpuScreen* screen,
                                                Workbench* wb, FileTree* tree, Overlay* ov, Completion* comp,
-                                               MenuBar* menu, OpenRequest* req) returns void {
+                                               MenuBar* menu, ContextMenu* ctx, OpenRequest* req) returns void {
                 String cmd = GuiApp.firstWord(line);
                 String arg = GuiApp.rest(line);
                 if (cmd.equals("type")) {
@@ -738,6 +920,25 @@ public bundle forge {
                     String ry = GuiApp.rest(arg);
                     GuiApp.clickAt(win, screen, wb, tree, ov, menu, req, rx.toInt(), ry.toInt(), true);
                     System.IO.Console.println("ok carets=" + (wb.active().extraCaretCount() + 1).toString());
+                } else if (cmd.equals("rclick")) {
+                    String rx = GuiApp.firstWord(arg);              // rclick <x> <y>: open the context menu there
+                    String ry = GuiApp.rest(arg);
+                    GuiApp.rightClickAt(win, screen, wb, tree, ctx, rx.toInt(), ry.toInt());
+                    System.IO.Console.println("ok ctx items=" + ctx.count().toString());
+                } else if (cmd.equals("ctxdump")) {
+                    mutable int ci = 0;
+                    while (ci < ctx.count()) {
+                        System.IO.Console.println("C" + ci.toString() + "| " + ctx.captionAt(ci)
+                            + "  [" + ctx.idAt(ci) + "]");
+                        ci = ci + 1;
+                    }
+                    System.IO.Console.println("ok");
+                } else if (cmd.equals("ctxrun")) {
+                    int ci = arg.toInt();                            // ctxrun <i>: activate context item i
+                    if (ci >= 0 && ci < ctx.count()) {
+                        GuiApp.runContextCommand(win, screen, wb, tree, ov, req, ctx, ctx.idAt(ci));
+                    }
+                    System.IO.Console.println("ok");
                 } else if (cmd.equals("dragto")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
@@ -1002,7 +1203,7 @@ public bundle forge {
                     ov.close();
                     System.IO.Console.println("ok");
                 } else if (cmd.equals("shot")) {
-                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
+                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, ctx);
                     Wgl.glFinish();
                     int w = win.width();
                     int h = win.height();
@@ -1285,7 +1486,7 @@ public bundle forge {
                 win.pump();
                 GuiApp.processInput(win, wb, ov, comp, menu, tree);
 
-                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, new ContextMenu() on heap);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -1929,7 +2130,7 @@ public bundle forge {
                 GuiApp.refreshProjectSymbols(comp, tree);
                 MenuBar* menu = new MenuBar() on heap;
                 win.pump();
-                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu);
+                GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, new ContextMenu() on heap);
                 Wgl.glFinish();
                 int w = win.width();
                 int h = win.height();
@@ -2004,7 +2205,8 @@ public bundle forge {
             // One frame: clear to the Forge ground, draw the full IDE (tabs + tree + editor), then any
             // open modal overlay on top.
             private static method drawFrame(GlWindow* win, Batch2D* batch, GpuScreen* screen, Workbench* wb,
-                                            FileTree* tree, Overlay* ov, Completion* comp, MenuBar* menu)
+                                            FileTree* tree, Overlay* ov, Completion* comp, MenuBar* menu,
+                                            ContextMenu* ctx)
                     returns void {
                 // Drain any debug-adapter messages that arrived since the last frame (non-blocking): the
                 // stopped line, call stack, variables and program output update in step with the UI.
@@ -2038,6 +2240,7 @@ public bundle forge {
                 }
                 screen.drawMenuBar(batch, menu, wb, mx, my, w);
                 screen.drawMenuDropdown(batch, menu, mx, my);
+                screen.drawContextMenu(batch, ctx, mx, my, w, h);
                 if (ov.isOpen()) {
                     screen.drawOverlay(batch, ov, wb, w, h);
                 }

@@ -24,6 +24,7 @@ import syntax.Span;
 import syntax.Highlighter;
 import app.Peek;
 import app.DiffView;
+import app.ContextMenu;
 import editor.Match;
 import System.Collections.ArrayList;
 import System.IO.Paths;
@@ -538,6 +539,135 @@ public bundle forge {
                     }
                     i = i + 1;
                 }
+            }
+
+            // The right-click context menu, drawn at the click point (nudged back on-screen if it would spill
+            // past the right/bottom edge). Same visual language as the menu-bar dropdown: panel fill, an amber
+            // top rule, hairline separators, and a hover band.
+            public method drawContextMenu(Batch2D* batch, ContextMenu* ctx, int mx, int my, int screenW,
+                                          int screenH) returns void {
+                if (!ctx.isActive()) {
+                    return;
+                }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int rowH = ch + 6;
+                int w = this.contextWidth(ctx, cw);
+                int h = this.contextHeight(ctx, rowH);
+                int x = this.contextX(ctx, screenW, w);
+                int y = this.contextY(ctx, screenH, h);
+                batch.rect(x, y, w, h, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(x, y, w, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int ry = y + 3;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    if (ctx.isSeparator(i)) {
+                        batch.rect(x + 6, ry + 3, w - 12, 1, this.theme.textFaint.r, this.theme.textFaint.g,
+                                   this.theme.textFaint.b, this.theme.textFaint.a);
+                        ry = ry + 7;
+                    } else {
+                        boolean hover = mx >= x && mx < x + w && my >= ry - 1 && my < ry - 1 + rowH;
+                        if (hover) {
+                            batch.rect(x + 2, ry - 1, w - 4, rowH, this.theme.accent.r, this.theme.accent.g,
+                                       this.theme.accent.b, 0.18);
+                        }
+                        this.font.drawText(batch, x + cw, ry + 3, ctx.captionAt(i), this.theme.text.r,
+                                           this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                        ry = ry + rowH;
+                    }
+                    i = i + 1;
+                }
+                return;
+            }
+            // The index of the context-menu item at (mx, my), or -1 (also -1 over a separator or outside).
+            public method contextItemAt(ContextMenu* ctx, int mx, int my, int screenW, int screenH) returns int {
+                if (!ctx.isActive()) {
+                    return 0 - 1;
+                }
+                int cw = this.font.advance();
+                int rowH = this.font.lineHeight() + 6;
+                int w = this.contextWidth(ctx, cw);
+                int h = this.contextHeight(ctx, rowH);
+                int x = this.contextX(ctx, screenW, w);
+                int y = this.contextY(ctx, screenH, h);
+                if (mx < x || mx >= x + w || my < y || my >= y + h) {
+                    return 0 - 1;
+                }
+                mutable int ry = y + 3;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    if (ctx.isSeparator(i)) {
+                        if (my >= ry && my < ry + 7) {
+                            return 0 - 1;
+                        }
+                        ry = ry + 7;
+                    } else {
+                        if (my >= ry - 1 && my < ry - 1 + rowH) {
+                            return i;
+                        }
+                        ry = ry + rowH;
+                    }
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Is (mx, my) inside the context popup at all? (A click outside just dismisses it.)
+            public method contextHit(ContextMenu* ctx, int mx, int my, int screenW, int screenH) returns boolean {
+                if (!ctx.isActive()) {
+                    return false;
+                }
+                int cw = this.font.advance();
+                int rowH = this.font.lineHeight() + 6;
+                int w = this.contextWidth(ctx, cw);
+                int h = this.contextHeight(ctx, rowH);
+                int x = this.contextX(ctx, screenW, w);
+                int y = this.contextY(ctx, screenH, h);
+                return mx >= x && mx < x + w && my >= y && my < y + h;
+            }
+            private method contextWidth(ContextMenu* ctx, int cw) returns int {
+                mutable int maxc = 14;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    int len = ctx.captionAt(i).length();
+                    if (len > maxc) {
+                        maxc = len;
+                    }
+                    i = i + 1;
+                }
+                return (maxc + 3) * cw;
+            }
+            private method contextHeight(ContextMenu* ctx, int rowH) returns int {
+                mutable int h = 6;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    if (ctx.isSeparator(i)) {
+                        h = h + 7;
+                    } else {
+                        h = h + rowH;
+                    }
+                    i = i + 1;
+                }
+                return h;
+            }
+            private method contextX(ContextMenu* ctx, int screenW, int w) returns int {
+                mutable int x = ctx.x;
+                if (x + w > screenW) {
+                    x = screenW - w;
+                }
+                if (x < 0) {
+                    x = 0;
+                }
+                return x;
+            }
+            private method contextY(ContextMenu* ctx, int screenH, int h) returns int {
+                mutable int y = ctx.y;
+                if (y + h > screenH) {
+                    y = screenH - h;
+                }
+                if (y < 0) {
+                    y = 0;
+                }
+                return y;
             }
 
             private method dropdownWidth(Menu* m, int cw) returns int {

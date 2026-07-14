@@ -1,0 +1,119 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // The right-click context menu: a small popup at the mouse position whose items depend on where the
+        // click landed (editor, file tree, tab bar). Items reuse the same command ids the palette and menu bar
+        // use, plus a few context-only ones the shell interprets directly. A caption of "-" is a separator.
+        // Pure state -- GpuScreen draws it, GuiApp opens/hit-tests/dispatches it.
+        public class ContextMenu {
+            public mutable boolean active;
+            public mutable int x;                       // top-left of the popup, in window pixels
+            public mutable int y;
+            public mutable ArrayList<String>* captions;
+            public mutable ArrayList<String>* ids;
+            public mutable String targetPath;           // the tree/tab item the menu was opened on (may be empty)
+
+            public constructor ContextMenu() {
+                this.active = false;
+                this.x = 0;
+                this.y = 0;
+                this.captions = new ArrayList<String>() on heap;
+                this.ids = new ArrayList<String>() on heap;
+                this.targetPath = "";
+            }
+
+            public method isActive() returns boolean {
+                return this.active;
+            }
+            public method close() returns void {
+                this.active = false;
+            }
+            public method count() returns int {
+                return this.captions.size();
+            }
+            public method captionAt(int i) returns String {
+                return this.captions.get(i);
+            }
+            public method idAt(int i) returns String {
+                return this.ids.get(i);
+            }
+            public method isSeparator(int i) returns boolean {
+                return this.captions.get(i).equals("-");
+            }
+
+            private method begin(int x, int y) returns void {
+                this.captions = new ArrayList<String>() on heap;
+                this.ids = new ArrayList<String>() on heap;
+                this.targetPath = "";
+                this.x = x;
+                this.y = y;
+                this.active = true;
+            }
+            private method add(String caption, String id) returns void {
+                this.captions.add(caption);
+                this.ids.add(id);
+            }
+            private method sep() returns void {
+                this.captions.add("-");
+                this.ids.add("-");
+            }
+
+            // The editor's menu: code-navigation actions on the identifier under the click, then refactors,
+            // then clipboard. `hasWord` gates the navigation group; `hasSel` the cut/copy group.
+            public method openForEditor(int x, int y, boolean hasWord, boolean hasSel) returns void {
+                this.begin(x, y);
+                if (hasWord) {
+                    this.add("Go to Definition        F12", "ctx.gotoDef");
+                    this.add("Peek Definition    Alt+F12", "ctx.peekDef");
+                    this.add("Find All References  Sh+F12", "ctx.findRefs");
+                    this.add("Rename Symbol...    Sh+F6", "edit.rename");
+                    this.sep();
+                }
+                if (hasSel) {
+                    this.add("Extract Variable...", "refactor.extractVariable");
+                    this.sep();
+                    this.add("Cut                   Ctrl+X", "ctx.cut");
+                    this.add("Copy                  Ctrl+C", "ctx.copy");
+                }
+                this.add("Paste                 Ctrl+V", "ctx.paste");
+                this.sep();
+                this.add("Format Document  Sh+Alt+F", "edit.format");
+                this.add("Toggle Comment       Ctrl+/", "ctx.comment");
+                this.sep();
+                this.add("Go Back              Alt+Left", "nav.back");
+                this.add("Go Forward         Alt+Right", "nav.forward");
+            }
+
+            // The file tree's menu, acting on the file/folder that was right-clicked.
+            public method openForTree(int x, int y, String path, boolean isDir) returns void {
+                this.begin(x, y);
+                this.targetPath = path;
+                if (!isDir) {
+                    this.add("Open", "ctx.treeOpen");
+                    this.sep();
+                }
+                this.add("New File Here...", "ctx.treeNewFile");
+                this.add("Rename...", "ctx.treeRename");
+                this.add("Delete...", "ctx.treeDelete");
+                this.sep();
+                this.add("Copy Path", "ctx.treeCopyPath");
+                this.add("Reveal in Explorer", "ctx.treeReveal");
+            }
+
+            // The tab bar's menu, acting on the tab that was right-clicked.
+            public method openForTab(int x, int y, String path) returns void {
+                this.begin(x, y);
+                this.targetPath = path;
+                this.add("Close                Ctrl+W", "ctx.tabClose");
+                this.add("Close Others", "ctx.tabCloseOthers");
+                this.sep();
+                this.add("Save                 Ctrl+S", "ctx.tabSave");
+                this.add("Copy Path", "ctx.treeCopyPath");
+            }
+        }
+    }
+}

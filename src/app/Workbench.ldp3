@@ -419,6 +419,29 @@ public bundle forge {
             public method closeActiveTab() returns void {
                 this.closeTab(this.docs.activeIndex());
             }
+            // Close every tab except the active one (the tab bar's "Close Others" context action).
+            public method closeOtherTabs() returns void {
+                String keep = this.docs.active().document().path();
+                mutable int guard = 0;
+                while (this.docs.count() > 1 && guard < 200) {
+                    guard = guard + 1;
+                    mutable int victim = 0 - 1;
+                    mutable int i = 0;
+                    while (i < this.docs.count()) {
+                        if (i != this.docs.activeIndex()) {
+                            victim = i;
+                        }
+                        i = i + 1;
+                    }
+                    if (victim < 0) {
+                        return;
+                    }
+                    this.docs.close(victim);
+                }
+                if (keep.length() > 0) {
+                    this.openFile(keep);
+                }
+            }
 
             // Find all references to the identifier under the caret in the active file and list them in the
             // output panel (whole-word matches). Returns the number found.
