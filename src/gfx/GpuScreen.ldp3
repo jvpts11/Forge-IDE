@@ -1196,13 +1196,17 @@ public bundle forge {
                 // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
                 this.drawOverviewRuler(batch, wb, ox + pw, oy, ph);
 
-                // hover tooltip: the declaration of the identifier under the mouse (only when no overlay covers it)
+                // hover tooltip: a diagnostic message when the mouse is over a line the build flagged (that's
+                // what you want to read there), otherwise the declaration of the identifier under the mouse.
                 if (!ov.isOpen() && mx >= textX && my >= oy + this.topPad && my < oy + ph) {
                     int hsr = (my - (oy + this.topPad)) / ch;
                     if (hsr >= 0 && hsr < visible) {
                         int hdoc = c.lineNumberAt(hsr);
                         int hcol = c.firstColumn() + (mx - textX) / cw;
-                        String info = c.hoverInfo(hdoc, hcol);
+                        mutable String info = this.diagnosticAt(wb, base, hdoc);
+                        if (info.length() == 0) {
+                            info = c.hoverInfo(hdoc, hcol);
+                        }
                         if (info.length() > 0) {
                             int tw2 = (info.length() + 2) * cw;
                             mutable int tx = mx;
@@ -1273,6 +1277,27 @@ public bundle forge {
                     i = i + 1;
                 }
                 return i;
+            }
+
+            // The build message on document line `docLine` of the file `base` (0-based), prefixed by severity,
+            // or "" if the line is clean. Feeds the hover tooltip.
+            private method diagnosticAt(Workbench* wb, String base, int docLine) returns String {
+                if (base.length() == 0) {
+                    return "";
+                }
+                ArrayList<Diagnostic>* ds = wb.diagnostics();
+                mutable int i = 0;
+                while (i < ds.size()) {
+                    Diagnostic* d = ds.get(i);
+                    if (d.file.equals(base) && d.line - 1 == docLine) {
+                        if (d.severity == 0) {
+                            return "error: " + d.message;
+                        }
+                        return "warning: " + d.message;
+                    }
+                    i = i + 1;
+                }
+                return "";
             }
 
             // Read-only git-diff view over the editor (Git > Diff Current File): the raw diff, colour-coded --
