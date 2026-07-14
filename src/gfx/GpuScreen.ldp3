@@ -1054,6 +1054,10 @@ public bundle forge {
                 int ch = this.font.lineHeight();
                 int gpx = this.gutterPx();
                 int textX = ox + gpx + 6;
+                // Word wrap follows the pane: the wrap width is the number of columns that fit, recomputed
+                // every frame, so resizing the window (or opening a side panel) rewraps immediately.
+                c.setWrap(wb.wrapEnabled());
+                c.setWrapCols((pw - gpx - 8) / cw);
                 int caretRow = c.caretScreenRow();
                 int visible = c.visibleRows();
                 int firstLine = c.firstLine();
@@ -1091,8 +1095,14 @@ public bundle forge {
                     if (dbg.isStoppedAt(dbgPath, docLine + 1)) {
                         batch.rect(ox + gpx, y, pw - gpx, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.16);
                     }
+                    // A wrapped line's continuation rows carry no gutter furniture: the number, the markers
+                    // and the change bar belong to the LINE, and are drawn once, on the row it starts at.
+                    boolean firstRow = c.segStartAt(r) == 0;
                     // git change bar at the gutter's left edge: green added, blue modified, red deletion tick
-                    int gk = git.kindAt(docLine);
+                    mutable int gk = git.kindAt(docLine);
+                    if (!firstRow) {
+                        gk = 0;
+                    }
                     if (gk == 1) {
                         batch.rect(ox, y, 3, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
                     } else if (gk == 2) {
@@ -1102,27 +1112,31 @@ public bundle forge {
                         batch.rect(ox, y + ch - 3, 3, 6, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, this.theme.removed.a);
                     }
                     // bookmark marker: a small amber square at the gutter's inner edge
-                    if (c.hasBookmark(docLine)) {
+                    if (firstRow && c.hasBookmark(docLine)) {
                         batch.rect(ox + gpx - 5, y + ch / 2 - 3, 5, 6, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                     }
                     // breakpoint marker: a red dot at the gutter's left edge (VS Code-style)
-                    if (dbg.hasBreakpoint(dbgPath, docLine + 1)) {
+                    if (firstRow && dbg.hasBreakpoint(dbgPath, docLine + 1)) {
                         batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, this.theme.breakpoint.r, this.theme.breakpoint.g, this.theme.breakpoint.b, this.theme.breakpoint.a);
                     }
-                    String num = (docLine + 1).toString();
-                    int nx = ox + gpx - 8 - num.length() * cw;
-                    // the caret's line number is brighter (amber), the rest dim
-                    if (r == caretRow) {
-                        this.font.drawText(batch, nx, y, num, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, this.theme.accent.a);
-                    } else {
-                        this.font.drawText(batch, nx, y, num, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
-                    }
-                    // fold marker in the gutter/text gap for foldable header lines
-                    if (c.isFoldable(docLine)) {
-                        this.drawFoldMarker(batch, ox + gpx - 3, y + ch / 2, c.isFolded(docLine));
+                    if (firstRow) {
+                        String num = (docLine + 1).toString();
+                        int nx = ox + gpx - 8 - num.length() * cw;
+                        // the caret's line number is brighter (amber), the rest dim
+                        if (docLine == c.editor().cursorRow()) {
+                            this.font.drawText(batch, nx, y, num, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, this.theme.accent.a);
+                        } else {
+                            this.font.drawText(batch, nx, y, num, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                        }
+                        // fold marker in the gutter/text gap for foldable header lines
+                        if (c.isFoldable(docLine)) {
+                            this.drawFoldMarker(batch, ox + gpx - 3, y + ch / 2, c.isFolded(docLine));
+                        }
                     }
                     String line = c.renderLine(r);
-                    this.drawIndentGuides(batch, c.guideIndent(docLine), textX, y, cw, ch);
+                    if (firstRow) {
+                        this.drawIndentGuides(batch, c.guideIndent(docLine), textX, y, cw, ch);
+                    }
                     // carry the bracket depth across any lines a fold skipped since the last drawn line
                     if (docLine > expectDoc) {
                         bdepth = bdepth + c.bracketDeltaBetween(expectDoc, docLine);
@@ -1516,6 +1530,49 @@ public bundle forge {
                 }
             }
 
+            // Paint [startCol, endCol) of a document line. With wrap on that range can cross several screen
+            // rows, so it becomes one rectangle per row -- and every highlight in the editor (selection, find
+            // matches, occurrences) gets wrapping right by going through here, instead of each learning it.
+            // padEmpty widens a zero-width range to one cell: how a selection shows that it ate the newline.
+            private method paintRange(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
+                                      int visible, int docLine, int startCol, int endCol, boolean padEmpty,
+                                      float rr, float gg, float bb, float aa) returns void {
+                if (endCol < startCol) {
+                    return;
+                }
+                mutable int w = 1000000000;   // no wrap: the line is one very wide segment
+                if (c.isWrapped() && c.wrapWidth() > 0) {
+                    w = c.wrapWidth();
+                }
+                mutable int from = startCol;
+                mutable int guard = 0;
+                while (guard < 4096) {
+                    guard = guard + 1;
+                    int segStart = (from / w) * w;
+                    int segEnd = segStart + w;
+                    mutable int to = endCol;
+                    if (to > segEnd) {
+                        to = segEnd;
+                    }
+                    int row = c.screenRowFor(docLine, from);
+                    if (row >= 0 && row < visible) {
+                        mutable int width = (to - from) * cw;
+                        if (width < cw && padEmpty) {
+                            width = cw;
+                        }
+                        if (width > 0) {
+                            batch.rect(textX + (from - segStart) * cw, oy + this.topPad + row * ch, width, ch,
+                                       rr, gg, bb, aa);
+                        }
+                    }
+                    if (to >= endCol) {
+                        return;
+                    }
+                    from = to;
+                }
+                return;
+            }
+
             private method drawSelection(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
                                          int visible, int firstLine) returns void {
                 int sr = c.editor().selStartRow();
@@ -1524,23 +1581,17 @@ public bundle forge {
                 int ec = c.editor().selEndCol();
                 mutable int row = sr;
                 while (row <= er) {
-                    int screenRow = c.screenRowForDocLine(row);
-                    if (screenRow >= 0 && screenRow < visible) {
-                        mutable int startCol = 0;
-                        if (row == sr) {
-                            startCol = sc;
-                        }
-                        mutable int endCol = c.editor().document().line(row).length();
-                        if (row == er) {
-                            endCol = ec;
-                        }
-                        mutable int wsel = (endCol - startCol) * cw;
-                        if (wsel < cw && row < er) {
-                            wsel = cw;
-                        }
-                        int x = textX + startCol * cw;
-                        batch.rect(x, oy + this.topPad + screenRow * ch, wsel, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.22);
+                    mutable int startCol = 0;
+                    if (row == sr) {
+                        startCol = sc;
                     }
+                    mutable int endCol = c.editor().document().line(row).length();
+                    if (row == er) {
+                        endCol = ec;
+                    }
+                    // a line fully inside the selection shows that it swallowed the newline, as one extra cell
+                    this.paintRange(batch, c, textX, oy, cw, ch, visible, row, startCol, endCol, row < er,
+                                    this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.22);
                     row = row + 1;
                 }
             }
@@ -1554,14 +1605,15 @@ public bundle forge {
                 mutable int r = 0;
                 while (r < visible) {
                     int docRow = c.lineNumberAt(r);
-                    if (docRow < total) {
+                    // a wrapped line spans several rows; scan it once, on the row it starts at
+                    if (docRow < total && c.segStartAt(r) == 0) {
                         String line = c.editor().document().line(docRow);
                         int n = line.length();
                         mutable int i = 0;
                         while (i + qlen <= n) {
                             if (this.matchAt(line, query, i)) {
-                                batch.rect(textX + i * cw, oy + this.topPad + r * ch, qlen * cw, ch,
-                                           0.918, 0.706, 0.392, 0.26);
+                                this.paintRange(batch, c, textX, oy, cw, ch, visible, docRow, i, i + qlen,
+                                                false, 0.918, 0.706, 0.392, 0.26);
                                 i = i + qlen;
                             } else {
                                 i = i + 1;
@@ -1587,7 +1639,8 @@ public bundle forge {
                 mutable int r = 0;
                 while (r < visible) {
                     int docRow = c.lineNumberAt(r);
-                    if (docRow < total) {
+                    // a wrapped line spans several rows; scan it once, on the row it starts at
+                    if (docRow < total && c.segStartAt(r) == 0) {
                         String line = c.editor().document().line(docRow);
                         int n = line.length();
                         mutable int i = 0;
@@ -1595,8 +1648,8 @@ public bundle forge {
                             if (GpuScreen.wordMatchAt(line, word, i)) {
                                 boolean isCaretOne = docRow == caretRow && caretCol >= i && caretCol <= i + wlen;
                                 if (!isCaretOne) {
-                                    batch.rect(textX + i * cw, oy + this.topPad + r * ch, wlen * cw, ch,
-                                               0.549, 0.784, 0.624, 0.13);
+                                    this.paintRange(batch, c, textX, oy, cw, ch, visible, docRow, i, i + wlen,
+                                                    false, 0.549, 0.784, 0.624, 0.13);
                                 }
                                 i = i + wlen;
                             } else {

@@ -689,8 +689,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 49, "cmd.count");
-                a.eqInt(cr.filter("").size(), 49, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 50, "cmd.count");
+                a.eqInt(cr.filter("").size(), 50, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -716,6 +716,24 @@ public bundle forge {
                 wb.runCommand("edit.undo");
                 a.eqStr(wb.active().editor().document().line(0), "", "wb.undo-cmd");
                 a.eqBool(wb.runCommand("edit.selectAll"), true, "wb.selectall-cmd");
+
+                // --- word wrap: a view concept, so the document is untouched and only the mapping changes ---
+                Controller* wc = wb.active();
+                wc.editor().document().loadText("0123456789ABCDEFGHIJ\nshort\n");
+                wc.setWrap(true);
+                wc.setWrapCols(10);
+                a.eqInt(wc.rowsForLine(0), 2, "wrap.rows-long");        // 20 chars in a 10-column pane
+                a.eqInt(wc.rowsForLine(1), 1, "wrap.rows-short");
+                a.eqInt(wc.screenRowForDocLine(1), 2, "wrap.line-below-a-wrapped-one");
+                a.eqInt(wc.screenRowFor(0, 12), 1, "wrap.col-on-second-row");
+                a.eqStr(wc.renderLine(1), "ABCDEFGHIJ", "wrap.continuation-text");
+                a.eqInt(wc.segStartAt(1), 10, "wrap.continuation-offset");
+                a.eqInt(wc.docColAt(1, 3), 13, "wrap.click-on-continuation");
+                a.eqStr(wc.renderLine(2), "short", "wrap.next-line");
+                wc.setWrap(false);
+                a.eqInt(wc.rowsForLine(0), 1, "wrap.off-rows");
+                a.eqStr(wc.renderLine(0), "0123456789ABCDEFGHIJ", "wrap.off-full-line");
+                a.eqInt(wc.docColAt(0, 3), 3, "wrap.off-click");
 
                 // --- structure panel: the file's declarations, and the one holding the caret ---
                 a.eqBool(wb.outlineOpen(), false, "wb.outline-closed");

@@ -101,6 +101,7 @@ public bundle forge {
                 view.add("Toggle Output", "view.output");
                 view.add("Toggle Minimap", "view.minimap");
                 view.add("Toggle Structure Panel", "view.outline");
+                view.add("Toggle Word Wrap", "view.wrap");
                 view.add("Problems", "view.problems");
                 view.add("Tasks (TODO / FIXME)", "view.todos");
                 view.add("Toggle Light/Dark Theme", "view.theme");

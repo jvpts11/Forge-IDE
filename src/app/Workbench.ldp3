@@ -37,6 +37,7 @@ public bundle forge {
             private mutable KeyMap* keymap;
             private mutable OutputPanel* out;
             private mutable ArrayList<Diagnostic>* diags;
+            private mutable boolean wrap;           // word wrap: a long line occupies several screen rows
             private mutable boolean outline;        // the structure panel: the file's declarations, at a glance
             private mutable String projectDir;      // where build/run commands execute (the project root)
             private mutable String projectName;     // from ldp3.toml, shown in the status bar
@@ -66,6 +67,7 @@ public bundle forge {
                 this.diags = new ArrayList<Diagnostic>() on heap;
                 this.projectDir = ".";
                 this.outline = false;
+                this.wrap = false;
                 this.projectName = "";
                 this.git = new GitStatus() on heap;
                 this.dbg = new Debugger() on heap;
@@ -285,6 +287,14 @@ public bundle forge {
             // for the program name, so the shell knows which project it's driving.
             // The structure panel (Ctrl+F12): every declaration of the open file, in order, with the one
             // holding the caret highlighted. Click a row to jump to it.
+            // Word wrap (Alt+Z): a view preference, so it holds across tabs -- the document is untouched.
+            public method wrapEnabled() returns boolean {
+                return this.wrap;
+            }
+            public method toggleWrap() returns void {
+                this.wrap = !this.wrap;
+                return;
+            }
             public method outlineOpen() returns boolean {
                 return this.outline;
             }
@@ -1240,6 +1250,10 @@ public bundle forge {
                 }
                 if (id.equals("view.problems")) {
                     this.showProblems();
+                    return true;
+                }
+                if (id.equals("view.wrap")) {
+                    this.toggleWrap();
                     return true;
                 }
                 if (id.equals("view.outline")) {

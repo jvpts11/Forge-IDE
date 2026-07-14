@@ -462,10 +462,12 @@ public bundle forge {
                 if (col < 0) {
                     col = 0;
                 }
+                // docColAt turns the screen column into a document column: with wrap on, a continuation row
+                // starts partway into the line, and the click has to mean what it points at.
                 if (alt) {
-                    c.addCaretAt(c.lineNumberAt(screenRow), c.firstColumn() + col);   // Alt+click adds a caret
+                    c.addCaretAt(c.lineNumberAt(screenRow), c.docColAt(screenRow, col));   // Alt+click: a caret
                 } else {
-                    c.beginSelect(c.lineNumberAt(screenRow), c.firstColumn() + col);  // anchor a drag selection
+                    c.beginSelect(c.lineNumberAt(screenRow), c.docColAt(screenRow, col));  // anchor a drag
                 }
                 return;
             }
@@ -511,7 +513,7 @@ public bundle forge {
                     col = 0;
                 }
                 int docRow = c.lineNumberAt(screenRow);
-                int docCol = c.firstColumn() + col;
+                int docCol = c.docColAt(screenRow, col);
                 // Keep an existing selection if the click landed inside it (so Cut/Copy act on it); otherwise
                 // move the caret to the click, the way every editor does.
                 boolean inSel = c.editor().hasSelection() && GuiApp.insideSelection(c, docRow, docCol);
@@ -1616,6 +1618,8 @@ public bundle forge {
                         // branches while you type the one you want, with no new picker to learn.
                         wb.runCommand("git.branch");
                         ov.openPrompt("checkout", "checkout branch: ");
+                    } else if (e.isKey() && alt && !ctrl && !shift && e.vk == 90) {  // Alt+Z -> word wrap
+                        wb.toggleWrap();
                     } else if (e.isKey() && ctrl && e.vk == 123) {           // Ctrl+F12 -> structure panel
                         wb.toggleOutline();
                     } else if (e.isKey() && ctrl && shift && e.vk == 77) {   // Ctrl+Shift+M -> problems panel
