@@ -9,6 +9,7 @@ import app.CommandRegistry;
 import app.OutputPanel;
 import app.Diagnostic;
 import app.Checker;
+import app.QuickFix;
 import app.Symbol;
 import app.Symbols;
 import app.GitStatus;
@@ -467,6 +468,53 @@ public bundle forge {
             // --- diagnostics: the compiler's errors/warnings, shown inline ---
             public method diagnostics() returns ArrayList<Diagnostic>* {
                 return this.diags;
+            }
+            // Is there a fix Alt+Enter can apply on the active file's caret line? Drives the lightbulb hint.
+            public method hasQuickFixAtCaret() returns boolean {
+                return this.fixableDiagAtCaret() >= 0;
+            }
+            // The message of the fixable diagnostic on the caret line ("" if none) -- shown next to the
+            // lightbulb so you see what Alt+Enter would do before pressing it.
+            public method quickFixHint() returns String {
+                int i = this.fixableDiagAtCaret();
+                if (i < 0) {
+                    return "";
+                }
+                Diagnostic* d = this.diags.get(i);
+                return "Change '" + QuickFix.flaggedName(d.message) + "' to '"
+                    + QuickFix.suggestion(d.message) + "'";
+            }
+            // Apply the quick fix on the caret line, if any. Returns a description, or "" if none applied.
+            public method applyQuickFixAtCaret() returns String {
+                int i = this.fixableDiagAtCaret();
+                if (i < 0) {
+                    return "";
+                }
+                Diagnostic* d = this.diags.get(i);
+                String bad = QuickFix.flaggedName(d.message);
+                String good = QuickFix.suggestion(d.message);
+                if (this.active().applyQuickFix(d.line - 1, d.col - 1, bad, good)) {
+                    return "Changed '" + bad + "' to '" + good + "'";
+                }
+                return "";
+            }
+            // The index of a fixable diagnostic on the active file's caret line, or -1. A diagnostic names a
+            // file basename; only the active file's diagnostics apply to its caret.
+            private method fixableDiagAtCaret() returns int {
+                if (!this.hasProject()) {
+                    return 0 - 1;
+                }
+                String base = Paths.basename(this.active().document().path());
+                int row = this.active().caretRow();
+                mutable int i = 0;
+                while (i < this.diags.size()) {
+                    Diagnostic* d = this.diags.get(i);
+                    if (d.line - 1 == row && d.file.equals(base) && QuickFix.isFixable(d.message)) {
+                        return i;
+                    }
+                    i = i + 1;
+                }
+                return 0 - 1;
             }
             public method errorCount() returns int {
                 return this.countBySeverity(0);

@@ -1343,6 +1343,19 @@ public bundle forge {
                         }
                         di = di + 1;
                     }
+                    // a lightbulb in the gutter of the caret line when Alt+Enter has a fix to offer -- the
+                    // hint that a squiggle here is one the compiler already knows how to repair.
+                    if (wb.hasQuickFixAtCaret()) {
+                        int csr = c.screenRowForDocLine(c.editor().cursorRow());
+                        if (csr >= 0 && csr < visible) {
+                            int ly = oy + this.topPad + csr * ch;
+                            float lr = this.theme.warning.r;
+                            float lg = this.theme.warning.g;
+                            float lb = this.theme.warning.b;
+                            batch.rect(ox + 2, ly + ch / 2 - 4, 5, 6, lr, lg, lb, 1.0);  // bulb
+                            batch.rect(ox + 3, ly + ch / 2 + 2, 3, 2, lr, lg, lb, 1.0);  // base
+                        }
+                    }
                 }
 
                 // the code minimap (right of the text, left of the overview ruler), when enabled

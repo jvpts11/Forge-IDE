@@ -574,6 +574,19 @@ public bundle forge {
             public method renameSymbol(String oldName, String newName) returns int {
                 int n = this.ed.renameWord(oldName, newName, this.hl); this.edited(); return n;
             }
+            // Apply a quick fix: change `oldName` to `newName` on line `row`, near column `col` (the
+            // diagnostic's position). Returns false if the word is no longer there, in which case nothing
+            // is edited. The caret is where the diagnostic pointed, so the fix is what needs it.
+            public method applyQuickFix(int row, int col, String oldName, String newName) returns boolean {
+                boolean ok = this.ed.replaceWordOn(row, col, oldName, newName);
+                if (ok) {
+                    this.edited();
+                }
+                return ok;
+            }
+            public method caretRow() returns int {
+                return this.ed.cursorRow();
+            }
             public method openFile(String path) returns void {
                 this.doc.openFile(path);
                 this.ed.moveDocStart();

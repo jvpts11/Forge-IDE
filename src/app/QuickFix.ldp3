@@ -1,0 +1,66 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // Reading a fix out of a compiler diagnostic.
+        //
+        // The compiler already knows the fix for a misspelled name -- it says so: "class 'Point' has no
+        // field 'heigth'; did you mean 'height'?". Rather than re-derive that in the IDE, Forge reads it
+        // back. `suggestion` is the name to change TO, `flaggedName` is the name to change FROM; the editor
+        // replaces one with the other on the diagnostic's line (see Editor.replaceWordOn). That keeps the
+        // fix in lockstep with the compiler: teach the compiler a new suggestion and Alt+Enter offers it,
+        // with no change here.
+        public class QuickFix {
+            // The replacement in a "... did you mean 'X'?" message, or "" when the message has none.
+            public static method suggestion(String message) returns String {
+                return QuickFix.quotedAfter(message, "did you mean '");
+            }
+            // The name the compiler flagged: the quoted token immediately before "; did you mean". The
+            // message is built by appending the suffix right after the offending name, so it always ends
+            // "...'FLAGGED'; did you mean 'X'?". Returns "" when there is no suggestion suffix.
+            public static method flaggedName(String message) returns String {
+                int cut = message.indexOf("; did you mean '");
+                if (cut < 0) {
+                    return "";
+                }
+                return QuickFix.lastQuoted(message.substring(0, cut));
+            }
+            // True when this diagnostic carries a fix Alt+Enter can apply.
+            public static method isFixable(String message) returns boolean {
+                return QuickFix.suggestion(message).length() > 0;
+            }
+
+            // The text between the first `marker` and the next single quote after it, or "".
+            private static method quotedAfter(String s, String marker) returns String {
+                int at = s.indexOf(marker);
+                if (at < 0) {
+                    return "";
+                }
+                String rest = s.substring(at + marker.length(), s.length());
+                int close = rest.indexOf("'");
+                if (close < 0) {
+                    return "";
+                }
+                return rest.substring(0, close);
+            }
+            // The content of the LAST '...'-quoted token in `s`, or "".
+            private static method lastQuoted(String s) returns String {
+                char q = "'".charAt(0);
+                mutable int end = 0 - 1;
+                mutable int i = s.length() - 1;
+                while (i >= 0) {
+                    if (s.charAt(i) == q) {
+                        if (end < 0) {
+                            end = i;
+                        } else {
+                            return s.substring(i + 1, end);
+                        }
+                    }
+                    i = i - 1;
+                }
+                return "";
+            }
+        }
+    }
+}

@@ -303,6 +303,56 @@ public bundle forge {
                 return whole.size();
             }
 
+            // Replace one whole-word occurrence of `oldName` on `row` -- the one covering or nearest to
+            // `col` -- with `newName`. One undo step; the caret lands after the replacement. Returns false
+            // if the word is not on that line, which happens when the buffer changed since the diagnostic
+            // that asked for the fix was produced (the caller then just does nothing). Powers Alt+Enter.
+            public method replaceWordOn(int row, int col, String oldName, String newName) returns boolean {
+                if (row < 0 || row >= this.buf.lineCount() || oldName.length() == 0) {
+                    return false;
+                }
+                String cur = this.buf.line(row);
+                int at = Editor.wholeWordNear(cur, col, oldName);
+                if (at < 0) {
+                    return false;
+                }
+                this.saveUndo();
+                this.clearSelection();
+                this.buf.setLine(row, cur.substring(0, at) + newName
+                    + cur.substring(at + oldName.length(), cur.length()));
+                this.row = row;
+                this.col = at + newName.length();
+                this.clampCaret();
+                return true;
+            }
+            // The start index of `word` as a WHOLE word on `line`, choosing the occurrence nearest `col`, or
+            // -1. Whole-word so replacing `width` never touches `widthOf`, and nearest-`col` so the fix lands
+            // on the identifier the diagnostic pointed at even if the line has the name more than once.
+            private static method wholeWordNear(String line, int col, String word) returns int {
+                int m = word.length();
+                mutable int best = 0 - 1;
+                mutable int bestDist = 1000000;
+                mutable int i = 0;
+                while (i + m <= line.length()) {
+                    if (line.substring(i, i + m).equals(word)) {
+                        boolean leftOk = i == 0 || !Editor.isIdentChar(line.charAt(i - 1));
+                        boolean rightOk = i + m >= line.length() || !Editor.isIdentChar(line.charAt(i + m));
+                        if (leftOk && rightOk) {
+                            mutable int dist = i - col;
+                            if (dist < 0) {
+                                dist = 0 - dist;
+                            }
+                            if (dist < bestDist) {
+                                bestDist = dist;
+                                best = i;
+                            }
+                        }
+                    }
+                    i = i + 1;
+                }
+                return best;
+            }
+
             // --- clipboard: copy/cut the selection, paste at the caret (replacing any selection) ---
             public method copy() returns void {
                 if (this.hasSelection()) {

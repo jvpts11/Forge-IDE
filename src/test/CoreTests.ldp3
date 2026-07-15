@@ -28,6 +28,7 @@ import input.Key;
 import input.KeyCode;
 import input.KeyMap;
 import app.Checker;
+import app.QuickFix;
 import app.Diagnostic;
 import test.Asserts;
 
@@ -763,6 +764,21 @@ public bundle forge {
                 a.eqInt(ds.get(3).severity, 0, "check.lex-error-is-an-error");
                 a.eqInt(Checker.parse("OK: entry point forge.app.Main.main\n").size(), 0,
                         "check.clean-project-has-no-diagnostics");
+
+                // --- quick fix: reading the compiler's "did you mean?" back out of a diagnostic ---
+                // The suggestion is the name to change TO, the flagged name is the name to change FROM; the
+                // editor then swaps one for the other on the line (Editor.replaceWordOn, exercised by the
+                // serve `quickfix` command end to end). A diagnostic with no suggestion is not fixable.
+                String fieldMsg = "class 'Point' has no field 'heigth'; did you mean 'height'?";
+                a.eqStr(QuickFix.suggestion(fieldMsg), "height", "quickfix.reads-the-suggestion");
+                a.eqStr(QuickFix.flaggedName(fieldMsg), "heigth", "quickfix.reads-the-flagged-name");
+                a.eqBool(QuickFix.isFixable(fieldMsg), true, "quickfix.field-typo-is-fixable");
+                String localMsg = "use of undeclared variable 'totl'; did you mean 'total'?";
+                a.eqStr(QuickFix.suggestion(localMsg), "total", "quickfix.local-suggestion");
+                a.eqStr(QuickFix.flaggedName(localMsg), "totl", "quickfix.local-flagged");
+                String plainMsg = "use of undeclared variable 'xyzzy'";
+                a.eqBool(QuickFix.isFixable(plainMsg), false, "quickfix.no-suggestion-not-fixable");
+                a.eqStr(QuickFix.suggestion(plainMsg), "", "quickfix.no-suggestion-empty");
 
                 // --- two views of ONE document: the shared buffer that split editors is built on ---
                 // Each view has its own caret, scroll and folds; the text, the undo history and the dirty
