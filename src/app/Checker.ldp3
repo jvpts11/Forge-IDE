@@ -255,12 +255,14 @@ public bundle forge {
             // phase that raised it -- "lex error", "parse error", "error" (semantic) -- and all three are
             // errors to the person typing. An IDE that only understood one of the three would show a clean
             // file with a syntax error in it, which is worse than showing nothing.
+            // A coded diagnostic reads "...: error[LDP3-0102]: msg", an un-coded one "...: error: msg", and a
+            // front-end one "...: parse error: msg" / "lex error". All are errors to the person typing.
             private static method severityOf(String s) returns int {
-                if (Strings.count(s, ": error: ") > 0 || Strings.count(s, ": parse error: ") > 0
-                    || Strings.count(s, ": lex error: ") > 0) {
+                if (Strings.count(s, ": error: ") > 0 || Strings.count(s, ": error[") > 0
+                    || Strings.count(s, ": parse error: ") > 0 || Strings.count(s, ": lex error: ") > 0) {
                     return 0;
                 }
-                if (Strings.count(s, ": warning: ") > 0) {
+                if (Strings.count(s, ": warning: ") > 0 || Strings.count(s, ": warning[") > 0) {
                     return 1;
                 }
                 return 0 - 1;

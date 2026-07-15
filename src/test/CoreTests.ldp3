@@ -743,9 +743,11 @@ public bundle forge {
                 // The compiler labels a diagnostic by the phase that caught it, and all three phases are
                 // errors to the person typing. A Windows path starts with a drive colon, which must not be
                 // read as the line separator -- the bug that would put every error on a line named "C".
+                // A semantic error now carries a stable code -- "error[LDP3-0102]:" -- while lex/parse
+                // errors and warnings keep the plain label; the parser must read all of them.
                 ArrayList<Diagnostic>* ds = Checker.parse(
                     "C:\\proj\\src\\gfx\\Theme.ldp3:1:1: parse error: expected 'program' but found 'ZZZ'\n"
-                    + "C:\\proj\\src\\app\\Workbench.ldp3:299:28: error: class 'Workbench' has no field 'wrapp'\n"
+                    + "C:\\proj\\src\\app\\Workbench.ldp3:299:28: error[LDP3-0102]: class 'Workbench' has no field 'wrapp'\n"
                     + "src/io/Document.ldp3:7:3: warning: unused import\n"
                     + "src/io/Document.ldp3:9:9: lex error: unterminated string literal\n"
                     + "OK: entry point forge.app.Main.main\n"
@@ -758,8 +760,9 @@ public bundle forge {
                 a.eqStr(ds.get(0).message, "expected 'program' but found 'ZZZ'",
                         "check.message-drops-the-label");
                 a.eqInt(ds.get(1).line, 299, "check.semantic-error-line");
+                a.eqInt(ds.get(1).severity, 0, "check.coded-error-is-an-error");
                 a.eqStr(ds.get(1).message, "class 'Workbench' has no field 'wrapp'",
-                        "check.semantic-message");
+                        "check.coded-message-drops-the-code");
                 a.eqInt(ds.get(2).severity, 1, "check.warning-is-a-warning");
                 a.eqInt(ds.get(3).severity, 0, "check.lex-error-is-an-error");
                 a.eqInt(Checker.parse("OK: entry point forge.app.Main.main\n").size(), 0,
