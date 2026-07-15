@@ -1309,6 +1309,12 @@ public bundle forge {
                                                       + d.message);
                         }
                     }
+                } else if (cmd.equals("explain")) {
+                    if (wb.explainDiagnosticAtCaret()) {
+                        System.IO.Console.println("explain " + wb.output().lineCount().toString() + " lines");
+                    } else {
+                        System.IO.Console.println("explain none");
+                    }
                 } else if (cmd.equals("quickfix")) {
                     // Apply the Alt+Enter quick fix on the caret line and report what happened.
                     String applied = wb.applyQuickFixAtCaret();
@@ -1692,6 +1698,10 @@ public bundle forge {
                         }
                     } else if (e.isKey() && alt && !ctrl && !shift && e.vk == 90) {  // Alt+Z -> word wrap
                         wb.toggleWrap();
+                    } else if (e.isKey() && ctrl && e.vk == 112) {           // Ctrl+F1 -> explain the diagnostic
+                        if (!wb.explainDiagnosticAtCaret()) {
+                            wb.output().banner("Explain", "Put the caret on a coded diagnostic first.");
+                        }
                     } else if (e.isKey() && ctrl && e.vk == 123) {           // Ctrl+F12 -> structure panel
                         wb.toggleOutline();
                     } else if (e.isKey() && ctrl && shift && e.vk == 77) {   // Ctrl+Shift+M -> problems panel

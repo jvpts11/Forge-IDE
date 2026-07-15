@@ -13,6 +13,7 @@ public bundle forge {
             public mutable int col;
             public mutable int severity;
             public mutable String message;
+            public mutable String code;   // stable diagnostic code (e.g. "LDP3-0401"), "" if the line had none
 
             public constructor Diagnostic(String file, int line, int col, int severity, String message) {
                 this.file = file;
@@ -20,9 +21,13 @@ public bundle forge {
                 this.col = col;
                 this.severity = severity;
                 this.message = message;
+                this.code = "";
             }
             public method isError() returns boolean {
                 return this.severity == 0;
+            }
+            public method hasCode() returns boolean {
+                return this.code.length() > 0;
             }
         }
     }

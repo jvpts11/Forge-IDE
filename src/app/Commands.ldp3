@@ -34,6 +34,7 @@ public bundle forge {
                 this.register("edit.replace", "Replace");
                 this.register("edit.replaceInFiles", "Replace in Files");
                 this.register("view.problems", "Problems");
+                this.register("diag.explain", "Explain Diagnostic (why / fix / prevent)");
                 this.register("view.outline", "Toggle Structure Panel");
                 this.register("view.wrap", "Toggle Word Wrap");
                 this.register("git.branch", "Git: Branches");

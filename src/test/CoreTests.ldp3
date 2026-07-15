@@ -692,8 +692,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 51, "cmd.count");
-                a.eqInt(cr.filter("").size(), 51, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 52, "cmd.count");
+                a.eqInt(cr.filter("").size(), 52, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -782,6 +782,16 @@ public bundle forge {
                 String plainMsg = "use of undeclared variable 'xyzzy'";
                 a.eqBool(QuickFix.isFixable(plainMsg), false, "quickfix.no-suggestion-not-fixable");
                 a.eqStr(QuickFix.suggestion(plainMsg), "", "quickfix.no-suggestion-empty");
+
+                // --- a coded diagnostic carries its LDP3-NNNN code (drives Ctrl+F1 explain) ---
+                ArrayList<Diagnostic>* cd = Checker.parse(
+                    "src/gfx/Theme.ldp3:6:7: error[LDP3-0401]: cannot assign to immutable variable 'x'\n"
+                    + "src/gfx/Theme.ldp3:9:9: error: some uncoded error\n");
+                a.eqStr(cd.get(0).code, "LDP3-0401", "diag.code-parsed");
+                a.eqBool(cd.get(0).hasCode(), true, "diag.has-code");
+                a.eqStr(cd.get(0).message, "cannot assign to immutable variable 'x'", "diag.coded-message");
+                a.eqBool(cd.get(1).hasCode(), false, "diag.uncoded-has-no-code");
+                a.eqStr(cd.get(1).code, "", "diag.uncoded-code-empty");
 
                 // --- two views of ONE document: the shared buffer that split editors is built on ---
                 // Each view has its own caret, scroll and folds; the text, the undo history and the dirty

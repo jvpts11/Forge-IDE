@@ -67,6 +67,10 @@ public bundle forge {
                 this.projectDir = dir;
                 return;
             }
+            // The toolchain driver used for check/explain (so `<tool> explain <code>` uses the same one).
+            public method toolPath() returns String {
+                return this.tool;
+            }
             public method isRunning() returns boolean {
                 return this.running;
             }
@@ -248,7 +252,10 @@ public bundle forge {
                 }
                 // 1-based line/col, matching the Diagnostic the build path produces and the renderer
                 // expects (GpuScreen subtracts 1). Store 0-based here and every squiggle lands a line high.
-                return new Diagnostic(Paths.basename(path), lineNo.toInt(), colNo.toInt(), sev, msg) on heap;
+                Diagnostic* d = new Diagnostic(Paths.basename(path), lineNo.toInt(), colNo.toInt(), sev,
+                                               msg) on heap;
+                d.code = Checker.codeOf(after);   // "LDP3-0401" from "error[LDP3-0401]: ...", or ""
+                return d;
             }
 
             // 0 = error, 1 = warning, -1 = not a diagnostic at all. The compiler labels a diagnostic by the
@@ -266,6 +273,20 @@ public bundle forge {
                     return 1;
                 }
                 return 0 - 1;
+            }
+
+            // The code inside a "error[LDP3-0401]: ..." label, or "" if the label carries none. `s` is the
+            // text after the column (the severity token + message).
+            private static method codeOf(String s) returns String {
+                int open = s.indexOf("[");
+                if (open < 0) {
+                    return "";
+                }
+                int close = s.indexOf("]");
+                if (close < 0 || close < open) {
+                    return "";
+                }
+                return s.substring(open + 1, close);
             }
 
             private static method isNumber(String s) returns boolean {

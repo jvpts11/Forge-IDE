@@ -1459,10 +1459,15 @@ public bundle forge {
                 while (i < ds.size()) {
                     Diagnostic* d = ds.get(i);
                     if (d.file.equals(base) && d.line - 1 == docLine) {
-                        if (d.severity == 0) {
-                            return "error: " + d.message;
+                        mutable String sev = "error";
+                        if (d.severity != 0) {
+                            sev = "warning";
                         }
-                        return "warning: " + d.message;
+                        if (d.hasCode()) {
+                            // Show the code and point at Ctrl+F1 for the full why/fix/prevent.
+                            return sev + "[" + d.code + "]: " + d.message + "   (Ctrl+F1: why/fix/prevent)";
+                        }
+                        return sev + ": " + d.message;
                     }
                     i = i + 1;
                 }
