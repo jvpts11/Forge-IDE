@@ -993,30 +993,9 @@ public bundle forge {
                 int chipW = 6 * cw;
                 batch.rect(0, y0, chipW, sh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 this.font.drawText(batch, cw, ty, "LDP3", this.theme.onAccent.r, this.theme.onAccent.g, this.theme.onAccent.b, this.theme.onAccent.a);
-                // file name + dirty marker
-                mutable String name = c.document().path();
-                if (name.length() == 0) {
-                    name = "untitled";
-                }
-                if (c.document().isModified()) {
-                    name = name + " *";
-                }
-                this.font.drawText(batch, chipW + cw, ty, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
-                // diagnostics count (errors red, warnings amber)
-                int errs = wb.errorCount();
-                int warns = wb.warningCount();
-                if (errs > 0 || warns > 0) {
-                    int dx = chipW + cw + (name.length() + 3) * cw;
-                    String ecnt = "x" + errs.toString();
-                    mutable float er = 0.902;
-                    if (errs == 0) {
-                        er = 0.4;
-                    }
-                    this.font.drawText(batch, dx, ty, ecnt, er, 0.318, 0.263, 1.0);
-                    String wcnt = "!" + warns.toString();
-                    this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, this.theme.warning.r, this.theme.warning.g, this.theme.warning.b, this.theme.warning.a);
-                }
-                // the git branch, just left of the caret position (empty when this is not a repository)
+
+                // Lay the RIGHT side out first (git branch, then the caret position) so the file name on the
+                // left can be clipped to stop short of it -- a long absolute path used to overprint "Ln, Col".
                 String branch = wb.currentBranch();
                 mutable int rightEdge = screenW;
                 if (branch.length() > 0) {
@@ -1026,13 +1005,63 @@ public bundle forge {
                                        this.theme.modified.b, this.theme.modified.a);
                     rightEdge = bx - cw;
                 }
-                // caret position, right side (with a selection summary in front of it when there is one)
                 String pos = c.editor().selectionInfo()
                            + "Ln " + (c.editor().cursorRow() + 1).toString()
                            + ", Col " + (c.editor().cursorCol() + 1).toString()
                            + "    " + c.lineCount().toString() + " lines";
                 int px = rightEdge - (pos.length() + 2) * cw;
                 this.font.drawText(batch, px, ty, pos, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+
+                // The file name, shown RELATIVE to the project (src/view/TextRenderer.ldp3, not the whole
+                // C:/Users/... path), plus a dirty marker, clipped with a leading "..." so it never reaches
+                // the caret info even when nested deep.
+                int nameX = chipW + cw;
+                mutable String name = c.document().path();
+                if (name.length() == 0) {
+                    name = "untitled";
+                } else {
+                    name = this.relativePath(name, wb.projectRoot());
+                }
+                if (c.document().isModified()) {
+                    name = name + " *";
+                }
+                mutable int maxNameCols = (px - nameX) / cw - 10;   // leave ~10 cols for the diagnostics count
+                if (maxNameCols < 8) {
+                    maxNameCols = 8;
+                }
+                if (name.length() > maxNameCols) {
+                    name = "..." + name.substring(name.length() - (maxNameCols - 3), name.length());
+                }
+                this.font.drawText(batch, nameX, ty, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                // diagnostics count (errors red, warnings amber), after the name
+                int errs = wb.errorCount();
+                int warns = wb.warningCount();
+                if (errs > 0 || warns > 0) {
+                    int dx = nameX + (name.length() + 3) * cw;
+                    String ecnt = "x" + errs.toString();
+                    mutable float er = 0.902;
+                    if (errs == 0) {
+                        er = 0.4;
+                    }
+                    this.font.drawText(batch, dx, ty, ecnt, er, 0.318, 0.263, 1.0);
+                    String wcnt = "!" + warns.toString();
+                    this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, this.theme.warning.r, this.theme.warning.g, this.theme.warning.b, this.theme.warning.a);
+                }
+            }
+
+            // A path shown relative to the project root when it lives inside it (src/view/Foo.ldp3), else the
+            // path unchanged. Keeps the status bar short and readable instead of a full C:/Users/... path.
+            private method relativePath(String path, String root) returns String {
+                if (root.length() > 0 && path.startsWith(root)) {
+                    mutable String rel = path.substring(root.length(), path.length());
+                    if (rel.length() > 0 && (rel.charAt(0) == '/' || rel.charAt(0) == '\\')) {
+                        rel = rel.substring(1, rel.length());
+                    }
+                    if (rel.length() > 0) {
+                        return rel;
+                    }
+                }
+                return path;
             }
 
             private method drawTabBar(Batch2D* batch, DocumentManager* docs, int top, int tabh, int mx, int my)
