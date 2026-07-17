@@ -1892,17 +1892,6 @@ public bundle forge {
                     this.col = len;
                 }
             }
-
-            // Clamp both coordinates back into the buffer after a bulk edit (e.g. replaceAll).
-            private method clampCaret() returns void {
-                if (this.row >= this.buf.lineCount()) {
-                    this.row = this.buf.lineCount() - 1;
-                }
-                if (this.row < 0) {
-                    this.row = 0;
-                }
-                this.clampCol();
-            }
         }
     }
 }
