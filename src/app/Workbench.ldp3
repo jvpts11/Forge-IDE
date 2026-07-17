@@ -969,9 +969,14 @@ public bundle forge {
                 ArrayList<String>* files = this.projectFiles();
                 mutable int i = 0;
                 while (i < this.diags.size()) {
-                    mutable String kind = "error  ";
+                    mutable String kind = "error";
                     if (!this.diags.get(i).isError()) {
                         kind = "warning";
+                    }
+                    // Show the stable code (LDP3-NNNN) right on the severity, mirroring the compiler's own
+                    // "error[LDP3-0101]:" format, so it is cross-referable with `ldp3 explain` / Ctrl+F1.
+                    if (this.diags.get(i).hasCode()) {
+                        kind = kind + "[" + this.diags.get(i).code + "]";
                     }
                     body.add(kind + "  " + this.diags.get(i).file + ":"
                              + this.diags.get(i).line.toString() + ":"
