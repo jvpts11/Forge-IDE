@@ -51,6 +51,7 @@ public bundle forge {
                     }
                     row = row + 1;
                 }
+                delete depths;
                 return names;
             }
 
@@ -91,6 +92,7 @@ public bundle forge {
                     }
                     row = row + 1;
                 }
+                delete depths;
                 return lines;
             }
 
@@ -139,6 +141,8 @@ public bundle forge {
                     }
                     k = k + 1;
                 }
+                delete headerLines;
+                delete depths;
                 return out;
             }
 

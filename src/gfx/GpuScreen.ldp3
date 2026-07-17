@@ -405,6 +405,7 @@ public bundle forge {
                 ArrayList<String>* trail = Breadcrumbs.trail(wb.active());
                 if (trail.size() == 0) {
                     this.font.drawText(batch, ox + 12, ty, "(top level)", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                    delete trail;
                     return;
                 }
                 mutable int x = ox + 12;
@@ -428,6 +429,7 @@ public bundle forge {
                     }
                     i = i + 1;
                 }
+                delete trail;
             }
 
             // Which breadcrumb segment is under pixel x, or -1. Mirrors drawBreadcrumbs's advancing layout
@@ -1139,6 +1141,7 @@ public bundle forge {
                 while (i < rows.size()) {
                     int y = top + 6 + i * ch;
                     if (y + ch > screenH) {
+                        delete rows;
                         return;
                     }
                     boolean hover = mx >= 0 && mx < this.treeW && my >= y && my < y + ch;
@@ -1161,6 +1164,7 @@ public bundle forge {
                     this.font.drawText(batch, 8, y, rowLbl, r, g, b, 1.0);
                     i = i + 1;
                 }
+                delete rows;
             }
 
             // One pane of a split. drawEditor always draws the FOCUSED controller, so the pane being drawn
@@ -1379,6 +1383,7 @@ public bundle forge {
                 if (sc > 0) {
                     batch.rect(ox, oy + this.topPad + sc * ch, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.35);
                 }
+                delete sticky;
 
                 // matching-bracket highlight (both the bracket at the caret and its partner)
                 Match* bm = c.editor().matchingBracket();
