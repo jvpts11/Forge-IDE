@@ -732,7 +732,7 @@ public bundle forge {
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
-                a.eqInt(cr.filter("file").size(), 7, "cmd.filter-file");      // 4 File cmds + "Replace in Files" + "Move File to Other Pane" + fuzzy "Re[f]actor: Extract Var[i]ab[le]"
+                a.eqInt(cr.filter("file").size(), 8, "cmd.filter-file");   // + "Revert File (reload from disk)"
                 a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
                 a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
                 a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
