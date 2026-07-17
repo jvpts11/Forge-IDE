@@ -150,7 +150,7 @@ public bundle forge {
                 mutable int x = 6;
                 mutable int i = 0;
                 while (i < docs.count()) {
-                    int tw = (docs.title(i).length() + 4) * cw;
+                    int tw = (this.tabLabel(docs.title(i)).length() + 4) * cw;
                     if (mx >= x && mx < x + tw) {
                         return i;
                     }
@@ -165,7 +165,7 @@ public bundle forge {
                 mutable int x = 6;
                 mutable int i = 0;
                 while (i < docs.count()) {
-                    int tw = (docs.title(i).length() + 4) * cw;
+                    int tw = (this.tabLabel(docs.title(i)).length() + 4) * cw;
                     int xx = x + tw - 2 * cw;
                     if (mx >= xx && mx < xx + 2 * cw) {
                         return i;
@@ -1064,6 +1064,16 @@ public bundle forge {
                 return path;
             }
 
+            // A tab caption clipped to a sane width: a very long file name would otherwise make one tab span
+            // most of the bar. Draw and both hit-tests all go through this so they stay in lockstep.
+            private method tabLabel(String title) returns String {
+                int cap = 24;
+                if (title.length() <= cap) {
+                    return title;
+                }
+                return title.substring(0, cap - 3) + "...";
+            }
+
             private method drawTabBar(Batch2D* batch, DocumentManager* docs, int top, int tabh, int mx, int my)
                     returns void {
                 int cw = this.font.advance();
@@ -1071,7 +1081,7 @@ public bundle forge {
                 mutable int x = 6;
                 mutable int i = 0;
                 while (i < docs.count()) {
-                    String title = docs.title(i);
+                    String title = this.tabLabel(docs.title(i));
                     int tw = (title.length() + 4) * cw;
                     boolean active = i == docs.activeIndex();
                     boolean hover = my >= top && my < top + tabh && mx >= x && mx < x + tw;
