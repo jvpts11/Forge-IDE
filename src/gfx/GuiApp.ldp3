@@ -94,6 +94,7 @@ public bundle forge {
                 mutable boolean prevRight = false;
                 mutable boolean prevMiddle = false;
                 mutable boolean dragging = false;
+                mutable int scrollDrag = 0;   // 0 none, 1 dragging the vertical scrollbar, 2 the horizontal
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
                 mutable int blink = 0;
@@ -189,9 +190,22 @@ public bundle forge {
                     if (down && !prevDown && !ov.isOpen()) {
                         int cxNow = win.cursorX();
                         int cyNow = win.cursorY();
+                        // A click on a scrollbar scrolls and starts a scrollbar drag -- never a caret or a
+                        // selection. This is checked first so the vertical bar and the horizontal bar are not
+                        // mistaken for the text area beneath them.
+                        int vl = screen.vscrollTargetLine(wb, win.width(), win.height(), cxNow, cyNow);
+                        int hc = screen.hscrollTargetCol(wb, win.width(), win.height(), cxNow, cyNow);
                         boolean dbl = frames - lastClickFrame < 22
                             && GuiApp.absDiff(cxNow, lastClickX) < 5 && GuiApp.absDiff(cyNow, lastClickY) < 5;
-                        if (dbl && cxNow >= screen.textOx() && GuiApp.overEditor(screen, win, ov, win.height())) {
+                        if (vl >= 0) {
+                            wb.active().scrollToLine(vl);
+                            scrollDrag = 1;
+                            dragging = false;
+                        } else if (hc >= 0) {
+                            wb.active().scrollToColumn(hc);
+                            scrollDrag = 2;
+                            dragging = false;
+                        } else if (dbl && cxNow >= screen.textOx() && GuiApp.overEditor(screen, win, ov, win.height())) {
                             GuiApp.selectWordAtMouse(screen, wb, win);       // double-click selects the word
                             dragging = false;
                         } else {
@@ -203,11 +217,16 @@ public bundle forge {
                         lastClickFrame = frames;
                         lastClickX = cxNow;
                         lastClickY = cyNow;
+                    } else if (down && prevDown && scrollDrag == 1 && !ov.isOpen()) {
+                        wb.active().scrollToLine(screen.vscrollLineAtY(wb, win.height(), win.cursorY()));
+                    } else if (down && prevDown && scrollDrag == 2 && !ov.isOpen()) {
+                        wb.active().scrollToColumn(screen.hscrollColAtX(wb, win.width(), win.cursorX()));
                     } else if (down && prevDown && dragging && !ov.isOpen()) {
                         GuiApp.dragExtend(screen, wb, win);                   // extend the selection
                     }
                     if (!down) {
                         dragging = false;
+                        scrollDrag = 0;
                     }
                     prevDown = down;
                     // a "File > Open Folder" click asked to switch projects: swap the tree live
@@ -449,6 +468,18 @@ public bundle forge {
                         }
                         return;
                     }
+                }
+                // A click on a scrollbar scrolls the editor; it must never fall through to caret placement
+                // (the reason clicking near the right edge used to drop the caret there).
+                int vl = screen.vscrollTargetLine(wb, win.width(), win.height(), mx, my);
+                if (vl >= 0) {
+                    wb.active().scrollToLine(vl);
+                    return;
+                }
+                int hc = screen.hscrollTargetCol(wb, win.width(), win.height(), mx, my);
+                if (hc >= 0) {
+                    wb.active().scrollToColumn(hc);
+                    return;
                 }
                 int screenRow = (my - screen.textOy()) / screen.lineH();
                 if (screenRow < 0) {
@@ -980,6 +1011,12 @@ public bundle forge {
                 } else if (cmd.equals("key")) {
                     GuiApp.serveKey(wb, ov, comp, arg);
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("probe")) {
+                    String rx = GuiApp.firstWord(arg);
+                    String ry = GuiApp.rest(arg);
+                    int vl = screen.vscrollTargetLine(wb, win.width(), win.height(), rx.toInt(), ry.toInt());
+                    int hc = screen.hscrollTargetCol(wb, win.width(), win.height(), rx.toInt(), ry.toInt());
+                    System.IO.Console.println("probe vscroll=" + vl.toString() + " hscroll=" + hc.toString());
                 } else if (cmd.equals("click")) {
                     String rx = GuiApp.firstWord(arg);
                     String ry = GuiApp.rest(arg);
@@ -1479,6 +1516,8 @@ public bundle forge {
                     + " col=" + (c.editor().cursorCol() + 1).toString()
                     + " lines=" + c.lineCount().toString()
                     + " tabs=" + wb.documents().count().toString()
+                    + " firstLine=" + c.firstLine().toString()
+                    + " firstCol=" + c.firstColumn().toString()
                     + " dirty=" + dirty.toString());
                 return;
             }

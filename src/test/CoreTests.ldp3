@@ -442,6 +442,18 @@ public bundle forge {
                 vp2.pageDown();
                 a.eqInt(vp2.firstLine(), 10, "vp.pagedown");
 
+                // scrollbar drag setters: jump the view directly (clamped), for the draggable scrollbars
+                vp2.scrollToLine(40);
+                a.eqInt(vp2.firstLine(), 40, "vp.scrollToLine");
+                vp2.scrollToLine(9999);                         // past the end -> clamped to last screen
+                a.eqInt(vp2.firstLine(), 90, "vp.scrollToLine-clamped");
+                vp2.scrollToLine(0 - 5);                        // before the start -> clamped to 0
+                a.eqInt(vp2.firstLine(), 0, "vp.scrollToLine-neg");
+                vp2.scrollToColumn(37);
+                a.eqInt(vp2.firstColumn(), 37, "vp.scrollToColumn");
+                vp2.scrollToColumn(0 - 3);
+                a.eqInt(vp2.firstColumn(), 0, "vp.scrollToColumn-neg");
+
                 Viewport vp3 = new Viewport(10, 20) on heap;
                 vp3.setTotalLines(5);                           // fewer lines than the viewport
                 vp3.scrollToCaret(4, 0, 0);

@@ -94,6 +94,19 @@ public bundle forge {
             public method pageDown() returns void {
                 this.scrollDown(this.rows - 1);
             }
+            // Scroll so `top` is the first visible line (clamped). Drives the vertical scrollbar drag.
+            public method scrollToLine(int top) returns void {
+                this.top = top;
+                this.clampTop();
+            }
+            // Scroll horizontally so `left` is the first visible column (never past 0). Drives the
+            // horizontal scrollbar drag; the upper bound is left to the caller (it knows the longest line).
+            public method scrollToColumn(int left) returns void {
+                this.left = left;
+                if (this.left < 0) {
+                    this.left = 0;
+                }
+            }
 
             // Keep `top` in [0, max(0, totalLines - rows)] so the last screen isn't scrolled past the end.
             private method clampTop() returns void {

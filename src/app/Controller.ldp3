@@ -615,6 +615,40 @@ public bundle forge {
             public method firstColumn() returns int {
                 return this.view.firstColumn();
             }
+            public method viewCols() returns int {
+                return this.view.width();
+            }
+            // Scroll so `top` is the first visible line (vertical scrollbar drag). moved() keeps the rest of
+            // the view (folds, wrap) consistent without touching the caret.
+            public method scrollToLine(int top) returns void {
+                this.view.scrollToLine(top);
+                return;
+            }
+            // Scroll so `left` is the first visible column, clamped to the widest line (horizontal drag).
+            public method scrollToColumn(int left) returns void {
+                mutable int l = left;
+                int maxLeft = this.maxColumn() - this.view.width() + 4;
+                if (l > maxLeft) {
+                    l = maxLeft;
+                }
+                this.view.scrollToColumn(l);
+                return;
+            }
+            // The length of the widest line in the whole document -- the horizontal scroll extent. Scanned
+            // fresh; the files an editor opens are small enough that this is cheap next to a repaint.
+            public method maxColumn() returns int {
+                mutable int mx = 0;
+                mutable int i = 0;
+                int n = this.ed.document().lineCount();
+                while (i < n) {
+                    int len = this.ed.document().line(i).length();
+                    if (len > mx) {
+                        mx = len;
+                    }
+                    i = i + 1;
+                }
+                return mx;
+            }
             // The document row drawn at screen row `screenRow`, walking from the viewport top and skipping any
             // lines hidden by a collapsed fold. This is the single fold-aware mapping the UI reads through.
             // --- word wrap (Alt+Z) ---

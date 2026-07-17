@@ -1364,6 +1364,8 @@ public bundle forge {
                 }
                 // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
                 this.drawOverviewRuler(batch, wb, ox + pw, oy, ph);
+                // the horizontal scrollbar at the bottom, shown only when a line runs past the view
+                this.drawHScrollbar(batch, c, ox, oy + ph, pw);
 
                 // hover tooltip: a diagnostic message when the mouse is over a line the build flagged (that's
                 // what you want to read there), otherwise the declaration of the identifier under the mouse.
@@ -1694,6 +1696,119 @@ public bundle forge {
                     }
                     i = i + 1;
                 }
+            }
+
+            // The height of the horizontal scrollbar (0 when it is not needed).
+            public method hscrollH() returns int {
+                return 10;
+            }
+            // The horizontal scrollbar at the bottom of the editor, drawn only when the widest line runs
+            // past the visible columns. The thumb's width and offset track firstColumn over maxColumn.
+            private method drawHScrollbar(Batch2D* batch, Controller* c, int ox, int bottomY, int pw)
+                    returns void {
+                int maxCol = c.maxColumn();
+                int cols = c.viewCols();
+                if (maxCol <= cols) {
+                    return;
+                }
+                int bh = this.hscrollH();
+                int y = bottomY - bh;
+                int trackW = pw - 14;                       // leave room for the vertical ruler on the right
+                batch.rect(ox, y, trackW, bh, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b,
+                           this.theme.chrome.a);
+                mutable int thumbW = cols * trackW / maxCol;
+                if (thumbW < 24) {
+                    thumbW = 24;
+                }
+                int thumbX = ox + c.firstColumn() * (trackW - thumbW) / (maxCol - cols);
+                batch.rect(thumbX, y + 1, thumbW, bh - 2, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 0.28);
+                return;
+            }
+
+            // --- scrollbar hit-testing (so a click there scrolls instead of placing the caret) ---
+            // The first line to scroll to so the vertical scrollbar thumb centres on `my`, or -1 when
+            // (mx, my) is not on the vertical scrollbar. Mirrors drawOverviewRuler's geometry.
+            public method vscrollTargetLine(Workbench* wb, int screenW, int screenH, int mx, int my)
+                    returns int {
+                int rightEdge = screenW - this.outlineWidth(wb);
+                if (mx < rightEdge - 12 || mx >= rightEdge) {
+                    return 0 - 1;
+                }
+                int top = this.editorTop();
+                int bottom = screenH - this.statusH() - this.outputPanelHeight(wb.output(), screenH);
+                if (my < top || my >= bottom || bottom <= top) {
+                    return 0 - 1;
+                }
+                Controller* c = wb.active();
+                int total = c.lineCount();
+                int vis = c.visibleRows();
+                mutable int line = (my - top) * total / (bottom - top) - vis / 2;
+                if (line < 0) {
+                    line = 0;
+                }
+                return line;
+            }
+            // The first column to scroll to so the horizontal scrollbar thumb tracks `mx`, or -1 when
+            // (mx, my) is not on the horizontal scrollbar.
+            public method hscrollTargetCol(Workbench* wb, int screenW, int screenH, int mx, int my)
+                    returns int {
+                Controller* c = wb.active();
+                int maxCol = c.maxColumn();
+                int cols = c.viewCols();
+                if (maxCol <= cols) {
+                    return 0 - 1;
+                }
+                int bottom = screenH - this.statusH() - this.outputPanelHeight(wb.output(), screenH);
+                int y = bottom - this.hscrollH();
+                if (my < y || my >= bottom) {
+                    return 0 - 1;
+                }
+                int ox = this.textOx();
+                int rightEdge = screenW - this.outlineWidth(wb);
+                int trackW = rightEdge - ox - 14;
+                if (mx < ox || mx >= ox + trackW || trackW <= 0) {
+                    return 0 - 1;
+                }
+                mutable int col = (mx - ox) * maxCol / trackW - cols / 2;
+                if (col < 0) {
+                    col = 0;
+                }
+                return col;
+            }
+            // The target first line from `my` alone (no x check), for a vertical scrollbar DRAG in progress
+            // -- so it keeps scrolling even if the cursor drifts off the 12px bar.
+            public method vscrollLineAtY(Workbench* wb, int screenH, int my) returns int {
+                int top = this.editorTop();
+                int bottom = screenH - this.statusH() - this.outputPanelHeight(wb.output(), screenH);
+                if (bottom <= top) {
+                    return 0;
+                }
+                Controller* c = wb.active();
+                int total = c.lineCount();
+                int vis = c.visibleRows();
+                mutable int line = (my - top) * total / (bottom - top) - vis / 2;
+                if (line < 0) {
+                    line = 0;
+                }
+                return line;
+            }
+            // The target first column from `mx` alone, for a horizontal scrollbar drag in progress.
+            public method hscrollColAtX(Workbench* wb, int screenW, int mx) returns int {
+                Controller* c = wb.active();
+                int maxCol = c.maxColumn();
+                int cols = c.viewCols();
+                int ox = this.textOx();
+                int rightEdge = screenW - this.outlineWidth(wb);
+                int trackW = rightEdge - ox - 14;
+                if (trackW <= 0) {
+                    return 0;
+                }
+                mutable int col = (mx - ox) * maxCol / trackW - cols / 2;
+                if (col < 0) {
+                    col = 0;
+                }
+                return col;
             }
 
             // Paint [startCol, endCol) of a document line. With wrap on that range can cross several screen
