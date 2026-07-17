@@ -1274,6 +1274,18 @@ public bundle forge {
                         }
                         si = si + 1;
                     }
+                    // render-whitespace (View toggle): a faint dot centred in each space cell of the row.
+                    if (wb.renderWhitespace()) {
+                        mutable int wi = 0;
+                        while (wi < line.length()) {
+                            if (line.charAt(wi) == ' ') {
+                                batch.rect(textX + wi * cw + cw / 2 - 1, y + ch / 2 - 1, 2, 2,
+                                           this.theme.textFaint.r, this.theme.textFaint.g,
+                                           this.theme.textFaint.b, 0.55);
+                            }
+                            wi = wi + 1;
+                        }
+                    }
                     expectDoc = docLine + 1;
                     // a "..." badge after a collapsed header shows the block is folded
                     if (c.isFolded(docLine)) {

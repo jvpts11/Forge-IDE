@@ -56,6 +56,7 @@ public bundle forge {
             private mutable String branch;          // cached branch name (refreshed with the git status)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
+            private mutable boolean renderWs;        // view preference: draw a dot at each space (whitespace)
             private mutable ArrayList<NavLoc>* navBack;  // Alt+Left history of caret locations before a jump
             private mutable ArrayList<NavLoc>* navFwd;   // Alt+Right stack (locations popped off navBack)
             private mutable String lastNavFile;      // the last settled caret location, to detect a "far" jump
@@ -94,6 +95,7 @@ public bundle forge {
                 this.branch = "";
                 this.treeDirty = false;
                 this.showMinimap = false;
+                this.renderWs = false;
                 this.navBack = new ArrayList<NavLoc>() on heap;
                 this.navFwd = new ArrayList<NavLoc>() on heap;
                 this.lastNavFile = "";
@@ -470,6 +472,13 @@ public bundle forge {
 
             // A palette/menu request to toggle the sidebar. The shell owns the screen, so it consumes this
             // each frame (Ctrl+B toggles the screen directly; the palette entry goes through here).
+            public method renderWhitespace() returns boolean {
+                return this.renderWs;
+            }
+            public method toggleRenderWhitespace() returns void {
+                this.renderWs = !this.renderWs;
+                return;
+            }
             public method requestSidebarToggle() returns void {
                 this.sidebarToggle = true;
                 return;
@@ -1531,6 +1540,10 @@ public bundle forge {
                 }
                 if (id.equals("view.problems")) {
                     this.showProblems();
+                    return true;
+                }
+                if (id.equals("view.whitespace")) {
+                    this.toggleRenderWhitespace();
                     return true;
                 }
                 if (id.equals("view.sidebar")) {

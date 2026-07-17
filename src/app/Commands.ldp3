@@ -36,6 +36,7 @@ public bundle forge {
                 this.register("file.reopenClosed", "Reopen Closed Tab");
                 this.register("view.problems", "Problems");
                 this.register("view.sidebar", "Toggle Sidebar");
+                this.register("view.whitespace", "Toggle Render Whitespace");
                 this.register("diag.explain", "Explain Diagnostic (why / fix / prevent)");
                 this.register("view.outline", "Toggle Structure Panel");
                 this.register("view.wrap", "Toggle Word Wrap");

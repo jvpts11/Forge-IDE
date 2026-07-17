@@ -1371,6 +1371,13 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("explain none");
                     }
+                } else if (cmd.equals("whitespace")) {
+                    wb.toggleRenderWhitespace();
+                    mutable String v = "off";
+                    if (wb.renderWhitespace()) {
+                        v = "on";
+                    }
+                    System.IO.Console.println("ok whitespace " + v);
                 } else if (cmd.equals("toggletree")) {
                     screen.toggleTree();
                     mutable String v = "hidden";
