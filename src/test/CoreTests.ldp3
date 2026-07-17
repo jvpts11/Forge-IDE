@@ -21,6 +21,7 @@ import app.Command;
 import app.CommandRegistry;
 import app.ContextMenu;
 import app.Symbols;
+import app.Breadcrumbs;
 import app.Symbol;
 import app.Completion;
 import app.Workbench;
@@ -136,6 +137,19 @@ public bundle forge {
                 si2.document().loadText("ab\ncd\nef");
                 si2.selectDown(); si2.selectDown();                            // spans 3 lines
                 a.eqStr(si2.selectionInfo(), "(6 chars, 3 lines)   ", "sel.info-multi");
+                // breadcrumbs: the trail names and the line each was declared on, for clickable crumbs
+                Controller bc = new Controller(24, 80) on heap;
+                bc.editor().document().loadText("program P;\npublic bundle b {\n    public namespace n {\n        public class C {\n            public method m() returns void {\n                return;\n            }\n        }\n    }\n}");
+                bc.editor().setCaret(5, 0);                    // inside method m()
+                ArrayList<String>* bt = Breadcrumbs.trail(bc);
+                ArrayList<int>* bl = Breadcrumbs.trailLines(bc);
+                a.eqInt(bt.size(), 4, "crumb.trail-len");
+                a.eqStr(bt.get(0), "b", "crumb.bundle");
+                a.eqStr(bt.get(3), "m", "crumb.method");
+                a.eqInt(bl.size(), 4, "crumb.lines-len");
+                a.eqInt(bl.get(0), 1, "crumb.bundle-line");
+                a.eqInt(bl.get(2), 3, "crumb.class-line");
+                a.eqInt(bl.get(3), 4, "crumb.method-line");
 
                 Editor es2 = new Editor(new TextBuffer() on heap) on heap;
                 es2.document().loadText("aaa\nbbb\nccc");

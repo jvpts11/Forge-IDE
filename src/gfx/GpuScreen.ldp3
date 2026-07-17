@@ -396,6 +396,28 @@ public bundle forge {
                 }
             }
 
+            // Which breadcrumb segment is under pixel x, or -1. Mirrors drawBreadcrumbs's advancing layout
+            // (segment then " > "), so a click resolves to the same segment that was drawn there.
+            public method crumbAtX(Workbench* wb, int ox, int mx) returns int {
+                int cw = this.font.advance();
+                ArrayList<String>* trail = Breadcrumbs.trail(wb.active());
+                mutable int x = ox + 12;
+                mutable int i = 0;
+                while (i < trail.size()) {
+                    String seg = trail.get(i);
+                    int segW = seg.length() * cw;
+                    if (mx >= x && mx < x + segW) {
+                        return i;
+                    }
+                    x = x + (seg.length() + 1) * cw;
+                    if (i != trail.size() - 1) {
+                        x = x + 2 * cw;
+                    }
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+
             // The start screen shown when no project is open: the Forge banner, the New Project / Open Folder /
             // Open Project actions, and the list of recent projects to click. Layout is mirrored by welcomeHit.
             // btnX(k)/btnW give the three action buttons a shared geometry both methods use.

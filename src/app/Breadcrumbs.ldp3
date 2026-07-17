@@ -54,6 +54,46 @@ public bundle forge {
                 return names;
             }
 
+            // The 0-based document line each trail() segment was declared on, in the same order -- so a
+            // click on a breadcrumb can jump to that declaration. Same brace walk as trail(), tracking the
+            // line the pending name came from.
+            public static method trailLines(Controller* c) returns ArrayList<int>* {
+                int caret = c.editor().cursorRow();
+                ArrayList<int>* lines = new ArrayList<int>() on heap;
+                ArrayList<int>* depths = new ArrayList<int>() on heap;
+                mutable int pendingLine = 0 - 1;
+                mutable int depth = 0;
+                mutable int row = 0;
+                while (row <= caret) {
+                    String line = Breadcrumbs.stripComment(c.editor().document().line(row));
+                    if (Breadcrumbs.declName(line).length() > 0) {
+                        pendingLine = row;
+                    }
+                    mutable int i = 0;
+                    int n = line.length();
+                    while (i < n) {
+                        char ch = line.charAt(i);
+                        if (ch == '{') {
+                            depth = depth + 1;
+                            if (pendingLine >= 0) {
+                                lines.add(pendingLine);
+                                depths.add(depth);
+                                pendingLine = 0 - 1;
+                            }
+                        } else if (ch == '}') {
+                            depth = depth - 1;
+                            while (lines.size() > 0 && depths.get(depths.size() - 1) > depth) {
+                                lines.removeAt(lines.size() - 1);
+                                depths.removeAt(depths.size() - 1);
+                            }
+                        }
+                        i = i + 1;
+                    }
+                    row = row + 1;
+                }
+                return lines;
+            }
+
             // The header lines of the scopes enclosing `firstDocLine` that are scrolled off above it -- the
             // source for sticky scroll (pinning class/method headers at the top of the editor). Same
             // brace-depth walk as trail(), but keyed by the line each scope opened on. Outermost first.

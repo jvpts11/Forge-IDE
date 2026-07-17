@@ -402,6 +402,18 @@ public bundle forge {
                     }
                     return;
                 }
+                // a click on a breadcrumb segment jumps to that declaration (the bar between tabs and code)
+                if (my >= screen.contentTop() && my < screen.editorTop() && mx >= screen.treeWidth()) {
+                    int ci = screen.crumbAtX(wb, screen.treeWidth(), mx);
+                    if (ci >= 0) {
+                        ArrayList<int>* tl = Breadcrumbs.trailLines(wb.active());
+                        if (ci < tl.size()) {
+                            wb.active().placeCaret(tl.get(ci), 0);
+                        }
+                        delete tl;
+                    }
+                    return;
+                }
                 if (mx < screen.treeWidth()) {
                     int ri = screen.treeRowAtY(my);
                     ArrayList<FileNode*>* rows = tree.visible();
