@@ -400,8 +400,11 @@ public bundle forge {
                 return s;
             }
 
-            // True when the mouse is over the editable text region (right of the tree, below the breadcrumb
-            // bar, above the status bar) and no modal overlay covers it -- the region that gets the I-beam.
+            // True when the mouse is over the actual editable TEXT -- right of the gutter (textOx, not just
+            // right of the tree, so the line-number gutter keeps the arrow: a click there folds, it does not
+            // place a caret), left of the scrollbar/overview-ruler strip on the far right, below the
+            // breadcrumb bar, above the status bar, and with no modal overlay open. That region gets the
+            // I-beam; everything else (chrome, gutter, scrollbars) keeps the arrow.
             private static method overEditor(GpuScreen* screen, GlWindow* win, Overlay* ov, int screenH)
                     returns boolean {
                 if (ov.isOpen()) {
@@ -409,7 +412,8 @@ public bundle forge {
                 }
                 int mx = win.cursorX();
                 int my = win.cursorY();
-                return mx >= screen.treeWidth() && my >= screen.editorTop() && my < screenH - screen.statusH();
+                return mx >= screen.textOx() && mx < win.width() - 16
+                    && my >= screen.editorTop() && my < screenH - screen.statusH();
             }
 
             private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
