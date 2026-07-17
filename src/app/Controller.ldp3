@@ -624,6 +624,11 @@ public bundle forge {
                 this.view.scrollToLine(top);
                 return;
             }
+            // Scroll horizontally by `delta` columns (Shift+wheel). Negative scrolls left.
+            public method scrollColumns(int delta) returns void {
+                this.scrollToColumn(this.view.firstColumn() + delta);
+                return;
+            }
             // Scroll so `left` is the first visible column, clamped to the widest line (horizontal drag).
             public method scrollToColumn(int left) returns void {
                 mutable int l = left;

@@ -277,6 +277,8 @@ public bundle forge {
                                 wb.active().resizeViewport(screen.paneRowsFor(win.height()),
                                                            screen.paneColsFor(win.width()));
                             }
+                        } else if (win.modShift()) {
+                            wb.active().scrollColumns(0 - (scroll / 120) * 6);   // Shift+wheel -> horizontal
                         } else {
                             wb.active().scrollLines(0 - (scroll / 120) * 3);
                         }
