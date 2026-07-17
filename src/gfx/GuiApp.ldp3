@@ -403,9 +403,18 @@ public bundle forge {
             // (caret, selection, scroll, edits) are caught by the event/mouse checks instead.
             private static method asyncSignature(Workbench* wb) returns long {
                 mutable long s = cast<long>(wb.output().lineCount());
-                s = s * 1000003 + cast<long>(wb.diagnostics().size());
                 s = s * 1000003 + cast<long>(wb.currentBranch().length());
                 s = s * 1000003 + cast<long>(wb.debugger().stoppedAtLine());
+                // Fold the diagnostics in by position+severity, not just count: a check that swaps one error
+                // for another at a different line keeps the count but must still refresh the squiggles.
+                ArrayList<Diagnostic>* ds = wb.diagnostics();
+                s = s * 1000003 + cast<long>(ds.size());
+                mutable int i = 0;
+                while (i < ds.size()) {
+                    Diagnostic* d = ds.get(i);
+                    s = s * 131 + cast<long>(d.line * 97 + d.col * 7 + d.severity);
+                    i = i + 1;
+                }
                 return s;
             }
 
