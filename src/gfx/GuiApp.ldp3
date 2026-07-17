@@ -761,7 +761,7 @@ public bundle forge {
                     return;
                 }
                 if (id.equals("edit.find")) {
-                    ov.open(2);
+                    GuiApp.openFind(ov, wb);
                     return;
                 }
                 if (id.equals("edit.rename")) {
@@ -1577,6 +1577,20 @@ public bundle forge {
                 }
                 return "0";
             }
+            // Open the find bar, pre-filling it with the current selection when it is a single line -- the
+            // behaviour every editor has, so "select a word, Ctrl+F" searches for it without retyping.
+            private static method openFind(Overlay* ov, Workbench* wb) returns void {
+                ov.open(2);
+                Editor* ed = wb.active().editor();
+                if (ed.hasSelection()) {
+                    String sel = ed.selectionText();
+                    if (sel.length() > 0 && sel.indexOf("\n") < 0) {
+                        ov.query = sel;
+                    }
+                }
+                return;
+            }
+
             // Start a symbol rename: stash the identifier under the caret and open a prompt pre-filled with it.
             private static method beginRenameSymbol(Workbench* wb, Overlay* ov) returns void {
                 String w = wb.active().wordAtCaret();
@@ -1760,7 +1774,7 @@ public bundle forge {
                     } else if (e.isKey() && ctrl && shift && e.vk == 70) {   // Ctrl+Shift+F -> find in files
                         ov.openSearch(tree.allFiles());
                     } else if (e.isKey() && ctrl && !shift && e.vk == 70) {  // Ctrl+F -> find
-                        ov.open(2);
+                        GuiApp.openFind(ov, wb);
                     } else if (e.isKey() && ctrl && shift && e.vk == 71) {   // Ctrl+Shift+G -> source control
                         wb.gitStatusView();
                     } else if (e.isKey() && ctrl && e.vk == 9) {             // Ctrl+Tab -> last-used tab
