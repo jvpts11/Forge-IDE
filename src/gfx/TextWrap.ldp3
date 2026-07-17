@@ -1,0 +1,48 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Pure word-wrapping, split out from the renderer so it stays testable without dragging in the
+        // graphics stack. Breaks a string into lines no wider than a character budget, preferring to break
+        // on spaces and hard-splitting a word that is itself over the limit. Feeds the multi-line hover card.
+        public class TextWrap {
+            public static method wrap(String s, int maxCols) returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                mutable int maxc = maxCols;
+                if (maxc < 1) {
+                    maxc = 1;   // guard against a non-positive budget; never stalls (i always advances)
+                }
+                int n = s.length();
+                mutable int lineStart = 0;
+                mutable int lastBreak = 0 - 1;   // index of the last space seen on the current line
+                mutable int i = 0;
+                while (i < n) {
+                    if (s.charAt(i) == ' ') {
+                        lastBreak = i;
+                    }
+                    if (i - lineStart >= maxc) {
+                        if (lastBreak > lineStart) {
+                            out.add(s.substring(lineStart, lastBreak));
+                            lineStart = lastBreak + 1;   // skip the space we broke on
+                        } else {
+                            out.add(s.substring(lineStart, i));   // no space to break on: hard split
+                            lineStart = i;
+                        }
+                        lastBreak = 0 - 1;
+                    }
+                    i = i + 1;
+                }
+                if (lineStart < n) {
+                    out.add(s.substring(lineStart, n));
+                }
+                if (out.size() == 0) {
+                    out.add(s);
+                }
+                return out;
+            }
+        }
+    }
+}

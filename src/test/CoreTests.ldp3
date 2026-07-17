@@ -31,6 +31,7 @@ import input.KeyMap;
 import app.Checker;
 import app.QuickFix;
 import app.Diagnostic;
+import gfx.TextWrap;
 import test.Asserts;
 
 program Forge;
@@ -969,6 +970,22 @@ public bundle forge {
                 a.eqStr(tw.document().line(0), "  x", "tab.indent-2");
                 tw.dedent();
                 a.eqStr(tw.document().line(0), "x", "tab.dedent-2");
+
+                // --- word-wrap helper for the multi-line hover card ---
+                ArrayList<String>* w1 = TextWrap.wrap("hello world", 58);
+                a.eqInt(w1.size(), 1, "wrap.fits-one-line");
+                a.eqStr(w1.get(0), "hello world", "wrap.fits-content");
+                ArrayList<String>* w2 = TextWrap.wrap("abcd efgh", 4);   // breaks on the space
+                a.eqInt(w2.size(), 2, "wrap.space-count");
+                a.eqStr(w2.get(0), "abcd", "wrap.space-0");
+                a.eqStr(w2.get(1), "efgh", "wrap.space-1");
+                ArrayList<String>* w3 = TextWrap.wrap("abcdefghij", 4);   // no space: hard split
+                a.eqInt(w3.size(), 3, "wrap.hard-count");
+                a.eqStr(w3.get(0), "abcd", "wrap.hard-0");
+                a.eqStr(w3.get(2), "ij", "wrap.hard-2");
+                ArrayList<String>* w4 = TextWrap.wrap("", 10);
+                a.eqInt(w4.size(), 1, "wrap.empty-one");
+                a.eqStr(w4.get(0), "", "wrap.empty-content");
 
                 a.summary("editor tests");
                 return a.failCount();
