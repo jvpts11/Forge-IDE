@@ -302,18 +302,20 @@ public bundle forge {
                     // size, then re-fits the viewport to the new metrics). Edge-triggered so one press = one step.
                     boolean zplus = win.modCtrl() && win.keyDown(187);   // VK_OEM_PLUS (the '=' key)
                     boolean zminus = win.modCtrl() && win.keyDown(189);  // VK_OEM_MINUS (the '-' key)
-                    if ((zplus || zminus) && !prevZoom) {
-                        if (zplus && fontPx < 32) {
+                    boolean zreset = win.modCtrl() && win.keyDown(48);   // Ctrl+0 -> reset to the default size
+                    if ((zplus || zminus || zreset) && !prevZoom) {
+                        if (zreset) {
+                            fontPx = 18;
+                        } else if (zplus && fontPx < 32) {
                             fontPx = fontPx + 2;
-                        }
-                        if (zminus && fontPx > 10) {
+                        } else if (zminus && fontPx > 10) {
                             fontPx = fontPx - 2;
                         }
                         screen.setFont(GuiApp.loadFont(win, fontPx));
                         wb.active().resizeViewport(screen.paneRowsFor(win.height()),
                                                    screen.paneColsFor(win.width()));
                     }
-                    prevZoom = zplus || zminus;
+                    prevZoom = zplus || zminus || zreset;
                     // window resize -> re-fit the viewport
                     int w2 = win.width();
                     int h2 = win.height();
