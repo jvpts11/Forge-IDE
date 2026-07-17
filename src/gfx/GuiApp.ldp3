@@ -168,8 +168,17 @@ public bundle forge {
                         }
                         prevDown = wdown;
                         win.setIBeam(false);
-                        GuiApp.drawWelcomeFrame(win, batch, screen, recent);
-                        win.swap();
+                        // Same idea as the editor loop: the welcome screen only redraws when the mouse moves
+                        // (its buttons and recents highlight on hover) or a key/click arrives -- otherwise it
+                        // sits idle without rebuilding strings every frame.
+                        int wmx = win.cursorX();
+                        int wmy = win.cursorY();
+                        if (hadEvents || wmx != lastMx || wmy != lastMy || wdown) {
+                            GuiApp.drawWelcomeFrame(win, batch, screen, recent);
+                            win.swap();
+                        }
+                        lastMx = wmx;
+                        lastMy = wmy;
                         win.sleep(8);
                         continue;
                     }
