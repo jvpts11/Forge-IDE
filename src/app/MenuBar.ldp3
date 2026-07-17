@@ -62,7 +62,8 @@ public bundle forge {
                 file.add("Rename File...", "file.rename");
                 file.add("Delete File...", "file.delete");
                 file.sep();
-                file.add("Close Tab", "file.close");
+                file.add("Close Tab  Ctrl+W", "file.close");
+                file.add("Reopen Closed Tab  Ctrl+Shift+T", "file.reopenClosed");
                 file.add("Exit", "app.quit");
                 this.menus.add(file);
 
@@ -85,6 +86,7 @@ public bundle forge {
                 edit.add("Go Back  Alt+Left", "nav.back");
                 edit.add("Go Forward  Alt+Right", "nav.forward");
                 edit.add("Find", "edit.find");
+                edit.add("Explain Diagnostic  Ctrl+F1", "diag.explain");
                 edit.sep();
                 edit.add("Rename Symbol  Shift+F6", "edit.rename");
                 edit.add("Extract Variable", "refactor.extractVariable");
@@ -98,10 +100,12 @@ public bundle forge {
 
                 Menu* view = new Menu("View") on heap;
                 view.add("Command Palette", "view.palette");
+                view.add("Toggle Sidebar  Ctrl+B", "view.sidebar");
                 view.add("Toggle Output", "view.output");
                 view.add("Toggle Minimap", "view.minimap");
                 view.add("Toggle Structure Panel", "view.outline");
                 view.add("Toggle Word Wrap", "view.wrap");
+                view.add("Toggle Render Whitespace", "view.whitespace");
                 view.add("Split Editor", "view.split");
                 view.add("Move File to Other Pane", "view.moveToOtherPane");
                 view.add("Problems", "view.problems");
