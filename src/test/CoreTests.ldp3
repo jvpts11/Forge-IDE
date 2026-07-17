@@ -127,6 +127,15 @@ public bundle forge {
                 es.type('H'); es.type('i');                    // replace the selection with "Hi"
                 a.eqStr(es.document().line(0), "Hi world", "sel.replace");
                 a.eqBool(es.hasSelection(), false, "sel.cleared");
+                // selection summary for the status bar
+                Editor si = new Editor(new TextBuffer() on heap) on heap;
+                si.document().loadText("hello world");
+                si.selectRight(); si.selectRight(); si.selectRight();          // "hel"
+                a.eqStr(si.selectionInfo(), "(3 selected)   ", "sel.info-single");
+                Editor si2 = new Editor(new TextBuffer() on heap) on heap;
+                si2.document().loadText("ab\ncd\nef");
+                si2.selectDown(); si2.selectDown();                            // spans 3 lines
+                a.eqStr(si2.selectionInfo(), "(6 chars, 3 lines)   ", "sel.info-multi");
 
                 Editor es2 = new Editor(new TextBuffer() on heap) on heap;
                 es2.document().loadText("aaa\nbbb\nccc");

@@ -182,6 +182,41 @@ public bundle forge {
                 return cast<char>(0);
             }
 
+            // A short summary of the current selection for the status bar ("N selected", or "N chars, M
+            // lines" across lines), or "" when there is no selection. Counts a line break as one character.
+            public method selectionInfo() returns String {
+                if (!this.hasSel) {
+                    return "";
+                }
+                mutable int sr = this.selRow;
+                mutable int sc = this.selCol;
+                mutable int er = this.row;
+                mutable int ec = this.col;
+                if (!this.anchorBeforeCaret()) {
+                    sr = this.row;
+                    sc = this.col;
+                    er = this.selRow;
+                    ec = this.selCol;
+                }
+                int lines = er - sr + 1;
+                mutable int chars = 0;
+                if (sr == er) {
+                    chars = ec - sc;
+                } else {
+                    chars = this.buf.line(sr).length() - sc;
+                    mutable int r = sr + 1;
+                    while (r < er) {
+                        chars = chars + this.buf.line(r).length() + 1;
+                        r = r + 1;
+                    }
+                    chars = chars + 1 + ec;
+                }
+                if (lines > 1) {
+                    return "(" + chars.toString() + " chars, " + lines.toString() + " lines)   ";
+                }
+                return "(" + chars.toString() + " selected)   ";
+            }
+
             // The matching bracket for a bracket at or just before the caret, or an invalid Match.
             public method matchingBracket() returns Match* {
                 Match* m = this.brackets.matchAt(this.row, this.col);
