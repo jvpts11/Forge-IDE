@@ -1484,10 +1484,18 @@ public bundle forge {
                 batch.rect(ox, oy, pw, ph, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, 1.0);
                 batch.rect(ox, oy, pw, ch + 8, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
                 batch.rect(ox, oy + ch + 8, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);
-                this.font.drawText(batch, ox + 8, oy + 4, dv.title + "   (Esc to close)",
+                mutable String hint = "   (Esc close, Ctrl+Shift+D unified)";
+                if (!dv.sideBySide) {
+                    hint = "   (Esc close, Ctrl+Shift+D side-by-side)";
+                }
+                this.font.drawText(batch, ox + 8, oy + 4, dv.title + hint,
                     this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                 int top = oy + ch + 12;
                 int rows = (ph - ch - 12) / ch;
+                if (dv.sideBySide) {
+                    this.drawDiffSideBySide(batch, dv, ox, top, pw, rows, cw, ch);
+                    return;
+                }
                 mutable int r = 0;
                 while (r < rows && dv.scroll + r < dv.lines.size()) {
                     int idx = dv.scroll + r;
@@ -1519,6 +1527,80 @@ public bundle forge {
                     this.font.drawText(batch, ox + 8, y, line, cr, cg, cb, 1.0);
                     r = r + 1;
                 }
+                return;
+            }
+
+            // The side-by-side diff: old on the left, new on the right, split by a divider. Each paired row
+            // draws its two halves independently -- a removed line tinted red on the left, the added line
+            // that replaced it green on the right, a gap dimmed. Headers span both columns.
+            private method drawDiffSideBySide(Batch2D* batch, DiffView* dv, int ox, int top, int pw, int rows,
+                                              int cw, int ch) returns void {
+                int half = pw / 2;
+                int leftX = ox + 6;
+                int rightX = ox + half + 8;
+                int leftChars = (half - 12) / cw;    // characters that fit in a column, so long lines
+                int rightChars = (half - 16) / cw;   // are clipped instead of bleeding into the other side
+                batch.rect(ox + half, top, 1, rows * ch, this.theme.divider.r, this.theme.divider.g,
+                           this.theme.divider.b, this.theme.divider.a);
+                mutable int r = 0;
+                while (r < rows && dv.scroll + r < dv.leftText.size()) {
+                    int idx = dv.scroll + r;
+                    int y = top + r * ch;
+                    int lk = dv.leftKind.get(idx);
+                    int rk = dv.rightKind.get(idx);
+                    if (lk == 3 || lk == 4) {
+                        // A header row spans the whole width (hunk/file header).
+                        mutable float hr = this.theme.accent.r;
+                        mutable float hg = this.theme.accent.g;
+                        mutable float hb = this.theme.accent.b;
+                        if (lk == 4) {
+                            hr = this.theme.textDim.r;
+                            hg = this.theme.textDim.g;
+                            hb = this.theme.textDim.b;
+                        }
+                        this.font.drawText(batch, leftX, y, dv.leftText.get(idx), hr, hg, hb, 1.0);
+                    } else {
+                        this.drawDiffHalf(batch, GpuScreen.clip(dv.leftText.get(idx), leftChars), lk,
+                                          leftX, y, half - 6);
+                        this.drawDiffHalf(batch, GpuScreen.clip(dv.rightText.get(idx), rightChars), rk,
+                                          rightX, y, half - 10);
+                    }
+                    r = r + 1;
+                }
+                return;
+            }
+            // Truncate `s` to at most `maxChars` characters (so a long line stays inside its diff column).
+            private static method clip(String s, int maxChars) returns String {
+                if (maxChars < 1) {
+                    return "";
+                }
+                if (s.length() <= maxChars) {
+                    return s;
+                }
+                return s.substring(0, maxChars);
+            }
+            // One column of one side-by-side row: a tinted band for added/removed, dim for a gap, plus text.
+            private method drawDiffHalf(Batch2D* batch, String text, int kind, int x, int y, int w)
+                returns void {
+                int ch = this.font.lineHeight();
+                mutable float cr = this.theme.text.r;
+                mutable float cg = this.theme.text.g;
+                mutable float cb = this.theme.text.b;
+                if (kind == 1) {
+                    batch.rect(x - 4, y, w, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.10);
+                    cr = this.theme.added.r;
+                    cg = this.theme.added.g;
+                    cb = this.theme.added.b;
+                } else if (kind == 2) {
+                    batch.rect(x - 4, y, w, ch, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, 0.10);
+                    cr = this.theme.removed.r;
+                    cg = this.theme.removed.g;
+                    cb = this.theme.removed.b;
+                } else if (kind == 5) {
+                    batch.rect(x - 4, y, w, ch, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, 0.05);
+                    return;
+                }
+                this.font.drawText(batch, x, y, text, cr, cg, cb, 1.0);
                 return;
             }
 

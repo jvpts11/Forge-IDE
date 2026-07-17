@@ -14,6 +14,14 @@ public bundle forge {
             public mutable int scroll;                 // first visible line
             public mutable ArrayList<String>* lines;
             public mutable ArrayList<int>* kinds;
+            // Side-by-side model: the unified lines paired into (old | new) rows. Row r shows leftText with
+            // leftKind on the left column and rightText with rightKind on the right. A gap on one side (a
+            // pure add or delete) is kind 5. Built once by load(); `sideBySide` picks which layout draws.
+            public mutable boolean sideBySide;
+            public mutable ArrayList<String>* leftText;
+            public mutable ArrayList<int>* leftKind;
+            public mutable ArrayList<String>* rightText;
+            public mutable ArrayList<int>* rightKind;
 
             public constructor DiffView() {
                 this.active = false;
@@ -21,6 +29,24 @@ public bundle forge {
                 this.scroll = 0;
                 this.lines = new ArrayList<String>() on heap;
                 this.kinds = new ArrayList<int>() on heap;
+                this.sideBySide = true;
+                this.leftText = new ArrayList<String>() on heap;
+                this.leftKind = new ArrayList<int>() on heap;
+                this.rightText = new ArrayList<String>() on heap;
+                this.rightKind = new ArrayList<int>() on heap;
+            }
+            // Flip between side-by-side (old | new) and unified (one column) layout.
+            public method toggleLayout() returns void {
+                this.sideBySide = !this.sideBySide;
+                this.scroll = 0;
+                return;
+            }
+            // How many rows the current layout has.
+            public method rowCount() returns int {
+                if (this.sideBySide) {
+                    return this.leftText.size();
+                }
+                return this.lines.size();
             }
 
             public method clear() returns void {
@@ -31,8 +57,8 @@ public bundle forge {
             }
             public method scrollBy(int delta) returns void {
                 mutable int s = this.scroll + delta;
-                if (s >= this.lines.size()) {
-                    s = this.lines.size() - 1;
+                if (s >= this.rowCount()) {
+                    s = this.rowCount() - 1;
                 }
                 if (s < 0) {
                     s = 0;
@@ -63,7 +89,86 @@ public bundle forge {
                     this.lines.add("(no changes against HEAD)");
                     this.kinds.add(0);
                 }
+                this.buildPairs();
                 this.active = true;
+            }
+
+            // Turn the classified unified lines into paired (old | new) rows for the side-by-side layout.
+            // Context lines appear on both sides; a run of removed lines is paired row-for-row with the
+            // following run of added lines, and the shorter run is padded with gap rows (kind 5). Hunk and
+            // file headers span both columns. The leading +/-/space of a unified line is stripped for the
+            // columns, so each side reads like plain source.
+            private method buildPairs() returns void {
+                this.leftText = new ArrayList<String>() on heap;
+                this.leftKind = new ArrayList<int>() on heap;
+                this.rightText = new ArrayList<String>() on heap;
+                this.rightKind = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < this.lines.size()) {
+                    int k = this.kinds.get(i);
+                    if (k == 3 || k == 4) {                       // header: full width, same on both
+                        this.addPair(this.lines.get(i), k, this.lines.get(i), k);
+                        i = i + 1;
+                    } else if (k == 0) {                          // context: both sides
+                        String t = DiffView.body(this.lines.get(i));
+                        this.addPair(t, 0, t, 0);
+                        i = i + 1;
+                    } else {                                      // a change block: removed* then added*
+                        ArrayList<String>* rem = new ArrayList<String>() on heap;
+                        while (i < this.lines.size() && this.kinds.get(i) == 2) {
+                            rem.add(DiffView.body(this.lines.get(i)));
+                            i = i + 1;
+                        }
+                        ArrayList<String>* add = new ArrayList<String>() on heap;
+                        while (i < this.lines.size() && this.kinds.get(i) == 1) {
+                            add.add(DiffView.body(this.lines.get(i)));
+                            i = i + 1;
+                        }
+                        mutable int m = rem.size();
+                        if (add.size() > m) {
+                            m = add.size();
+                        }
+                        mutable int j = 0;
+                        while (j < m) {
+                            mutable String lt = "";
+                            mutable int lk = 5;
+                            if (j < rem.size()) {
+                                lt = rem.get(j);
+                                lk = 2;
+                            }
+                            mutable String rt = "";
+                            mutable int rk = 5;
+                            if (j < add.size()) {
+                                rt = add.get(j);
+                                rk = 1;
+                            }
+                            this.addPair(lt, lk, rt, rk);
+                            j = j + 1;
+                        }
+                        if (m == 0) {                             // neither removed nor added: avoid a stall
+                            i = i + 1;
+                        }
+                    }
+                }
+                return;
+            }
+            private method addPair(String lt, int lk, String rt, int rk) returns void {
+                this.leftText.add(lt);
+                this.leftKind.add(lk);
+                this.rightText.add(rt);
+                this.rightKind.add(rk);
+                return;
+            }
+            // The content of a unified-diff line without its leading +/-/space marker.
+            private static method body(String line) returns String {
+                if (line.length() == 0) {
+                    return line;
+                }
+                char c = line.charAt(0);
+                if (c == '+' || c == '-' || c == ' ') {
+                    return line.substring(1, line.length());
+                }
+                return line;
             }
 
             private static method classify(String line) returns int {

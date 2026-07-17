@@ -6,6 +6,7 @@ import gltext.GdiFont;
 import gltext.FontAtlas;
 import app.Workbench;
 import app.Diagnostic;
+import app.DiffView;
 import app.Debugger;
 import app.Terminal;
 import app.ContextMenu;
@@ -1337,6 +1338,23 @@ public bundle forge {
                         di = di + 1;
                     }
                     System.IO.Console.println("ok");
+                } else if (cmd.equals("diffpairs")) {
+                    // The side-by-side model: each row as "leftKind|leftText || rightKind|rightText".
+                    DiffView* dv = wb.diffView();
+                    mutable int di = 0;
+                    while (di < dv.leftText.size() && di < 40) {
+                        System.IO.Console.println("P" + dv.leftKind.get(di).toString() + "| " + dv.leftText.get(di)
+                            + "  ||  " + dv.rightKind.get(di).toString() + "| " + dv.rightText.get(di));
+                        di = di + 1;
+                    }
+                    System.IO.Console.println("ok " + dv.rowCount().toString() + " rows");
+                } else if (cmd.equals("difftoggle")) {
+                    wb.diffView().toggleLayout();
+                    mutable String mode = "unified";
+                    if (wb.diffView().sideBySide) {
+                        mode = "side-by-side";
+                    }
+                    System.IO.Console.println("ok " + mode);
                 } else if (cmd.equals("newfile")) {
                     wb.newFileOnDisk(arg);
                     System.IO.Console.println("ok " + wb.documents().active().document().path());
@@ -1628,6 +1646,8 @@ public bundle forge {
                         // consumed by the completion popup (Tab/Enter/Esc/Up/Down)
                     } else if (wb.diffView().isActive() && e.isKey() && e.vk == 27) {   // Esc closes the diff
                         wb.diffView().clear();
+                    } else if (wb.diffView().isActive() && e.isKey() && ctrl && shift && e.vk == 68) {
+                        wb.diffView().toggleLayout();   // Ctrl+Shift+D: side-by-side <-> unified
                     } else if (wb.diffView().isActive() && e.isKey() && e.vk == 40) {   // Down scrolls the diff
                         wb.diffView().scrollBy(1);
                     } else if (wb.diffView().isActive() && e.isKey() && e.vk == 38) {   // Up scrolls the diff
