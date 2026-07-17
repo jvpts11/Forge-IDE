@@ -388,6 +388,14 @@ public bundle forge {
                     wb.jumpToStackFrame(dbgFrame);   // click a call-stack frame -> open its source line
                     return;
                 }
+                // click the "Ln, Col" area of the status bar -> Go to Line (like VS Code). The right ~140px
+                // is the git branch, so the clickable zone stops short of it.
+                if (my >= win.height() - screen.statusH()) {
+                    if (mx > win.width() * 3 / 5 && mx < win.width() - 140) {
+                        ov.open(5);
+                    }
+                    return;
+                }
                 if (my < screen.menuH()) {
                     int tb = screen.toolButtonAt(mx, my, win.width());
                     if (tb == 1) {
