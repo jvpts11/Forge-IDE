@@ -1266,6 +1266,9 @@ public bundle forge {
                     }
                     System.IO.Console.println("ok " + ov.matches().size().toString() + " of "
                         + ov.items.size().toString() + " workspace symbols");
+                } else if (cmd.equals("bookmarks")) {
+                    GuiApp.openBookmarks(ov, wb);
+                    System.IO.Console.println("ok " + ov.items.size().toString() + " bookmarks");
                 } else if (cmd.equals("quickopen")) {
                     ov.openFiles(tree.allFiles());
                     mutable int i = 0;
@@ -1819,7 +1822,9 @@ public bundle forge {
                     } else if (e.isKey() && e.vk == 112) {                   // F1 -> standard library reference
                         GuiApp.openReference(wb, "stdlib.ldp3");
                     } else if (e.isKey() && e.vk == 113) {                   // F2 bookmarks
-                        if (ctrl) {
+                        if (ctrl && shift) {
+                            GuiApp.openBookmarks(ov, wb);   // Ctrl+Shift+F2 -> list all bookmarks
+                        } else if (ctrl) {
                             wb.active().toggleBookmark();
                         } else if (shift) {
                             wb.active().nextBookmark(false);
@@ -2122,6 +2127,32 @@ public bundle forge {
                     labels.add(syms.get(i).caption);
                     lines.add(syms.get(i).line);
                     i = i + 1;
+                }
+                ov.openSymbols(labels, lines);
+                return;
+            }
+
+            // List every bookmarked line in the active file (Ctrl+Shift+F2), in line order, each labelled
+            // with its number and text. Reuses the go-to-symbol overlay (mode 3), so filtering and
+            // Enter-to-jump come for free. Walking the lines in order gives a naturally sorted list without
+            // touching the bookmark set's internal order.
+            private static method openBookmarks(Overlay* ov, Workbench* wb) returns void {
+                Controller* c = wb.active();
+                ArrayList<String>* labels = new ArrayList<String>() on heap;
+                ArrayList<int>* lines = new ArrayList<int>() on heap;
+                int n = c.editor().document().lineCount();
+                mutable int i = 0;
+                while (i < n) {
+                    if (c.hasBookmark(i)) {
+                        String text = c.editor().document().line(i).trim();
+                        labels.add("Ln " + (i + 1).toString() + ":  " + text);
+                        lines.add(i + 1);   // 1-based target: runSymbolSelection does placeCaret(line - 1)
+                    }
+                    i = i + 1;
+                }
+                if (labels.size() == 0) {
+                    wb.output().banner("Bookmarks", "No bookmarks in this file. Ctrl+F2 toggles one on the current line.");
+                    return;
                 }
                 ov.openSymbols(labels, lines);
                 return;
