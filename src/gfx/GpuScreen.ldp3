@@ -2182,6 +2182,37 @@ public bundle forge {
                 else if (ov.mode == 7) {
                     this.drawPrompt(batch, ov, screenW);
                 }
+                else if (ov.mode == 8) {
+                    this.drawAbout(batch, screenW, screenH);
+                }
+            }
+
+            // The About card (mode 8): a small centered modal window over a dimmed backdrop -- the proper
+            // "little window about Forge", not a line in the output panel. Any key or a click dismisses it.
+            private method drawAbout(Batch2D* batch, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.45);   // dim the app behind the card
+                int bw = 460;
+                int bh = 220;
+                int bx = (screenW - bw) / 2;
+                int by = (screenH - bh) / 2;
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);      // Flamo accent top
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int ty = by + 28;
+                this.font.drawText(batch, bx + 32, ty, "F O R G E", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                ty = ty + ch + 18;
+                this.font.drawText(batch, bx + 32, ty, "The LDP3 IDE -- written in LDP3.", this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                ty = ty + ch + 8;
+                this.font.drawText(batch, bx + 32, ty, "Version 0.1", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                ty = ty + ch + 16;
+                this.font.drawText(batch, bx + 32, ty, "by Joao Victor Pereira Tavares", this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                ty = ty + ch + 4;
+                this.font.drawText(batch, bx + 32, ty, "creator of the LDP3 language", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                this.font.drawText(batch, bx + 32, by + bh - ch - 14, "Press Esc to close", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
             }
 
             // A generic single-line text prompt (mode 7): the label, the typed text, a caret. Enter runs the

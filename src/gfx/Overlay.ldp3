@@ -45,6 +45,14 @@ public bundle forge {
                 this.promptLabel = hint;
             }
 
+            // Open the About card (mode 8): a static, centered info panel. It takes no input -- any key or a
+            // click dismisses it -- so it just borrows the overlay's modal backdrop and focus capture.
+            public method openAbout() returns void {
+                this.mode = 8;
+                this.query = "";
+                this.sel = 0;
+            }
+
             public method isOpen() returns boolean {
                 return this.mode != 0;
             }

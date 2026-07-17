@@ -365,6 +365,10 @@ public bundle forge {
             private static method clickAt(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
                                           Overlay* ov, MenuBar* menu, OpenRequest* req, int mx, int my,
                                           boolean alt) returns void {
+                if (ov.isOpen() && ov.mode == 8) {   // click anywhere dismisses the About card
+                    ov.close();
+                    return;
+                }
                 if (menu.isOpen()) {
                     int item = screen.dropdownItemAt(menu, mx, my);
                     if (item >= 0) {
@@ -860,7 +864,7 @@ public bundle forge {
                     return;
                 }
                 if (id.equals("help.about")) {
-                    wb.output().banner("About Forge", "Forge -- the LDP3 IDE, written in LDP3.");
+                    ov.openAbout();
                     return;
                 }
                 wb.runCommand(id);
@@ -2027,6 +2031,10 @@ public bundle forge {
                         return;
                     }
                     // Esc
+                    if (ov.mode == 8) {   // the About card takes no input: any key dismisses it
+                        ov.close();
+                        return;
+                    }
                     if (ov.mode == 2) {
                         GuiApp.findKey(ov, wb, vk, ctrl, shift);
                         return;
