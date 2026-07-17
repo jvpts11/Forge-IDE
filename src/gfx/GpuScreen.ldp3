@@ -1376,12 +1376,15 @@ public bundle forge {
                         int sr = c.screenRowForDocLine(d.line - 1);
                         if (d.file.equals(base) && sr >= 0 && sr < visible) {
                             int y = oy + this.topPad + sr * ch;
-                            mutable float dr = 0.902;
-                            mutable float dg = 0.318;
-                            mutable float db = 0.263;
+                            // Severity colour from the theme (so it adapts to light/dark) -- error red reuses
+                            // the git-deleted red, warning the amber, matching the status-bar counts.
+                            mutable float dr = this.theme.removed.r;
+                            mutable float dg = this.theme.removed.g;
+                            mutable float db = this.theme.removed.b;
                             if (d.severity != 0) {
-                                dg = 0.706;
-                                db = 0.318;
+                                dr = this.theme.warning.r;
+                                dg = this.theme.warning.g;
+                                db = this.theme.warning.b;
                             }
                             batch.rect(ox + 3, y + ch / 2 - 3, 6, 6, dr, dg, db, 1.0);
                             String txt = c.editor().document().line(d.line - 1);
@@ -1763,12 +1766,13 @@ public bundle forge {
                     Diagnostic* d = ds.get(i);
                     if (d.file.equals(base)) {
                         int ty = oy + ((d.line - 1) * ph) / total;
-                        mutable float r = 0.902;
-                        mutable float g = 0.318;
-                        mutable float b = 0.263;
+                        mutable float r = this.theme.removed.r;
+                        mutable float g = this.theme.removed.g;
+                        mutable float b = this.theme.removed.b;
                         if (d.severity != 0) {
-                            g = 0.706;
-                            b = 0.318;
+                            r = this.theme.warning.r;
+                            g = this.theme.warning.g;
+                            b = this.theme.warning.b;
                         }
                         batch.rect(x, ty, rw, 2, r, g, b, 1.0);
                     }
