@@ -59,6 +59,7 @@ public bundle forge {
                 file.add("Open Folder...", "file.openFolder");
                 file.add("Save", "file.save");
                 file.add("Save As...", "file.saveAs");
+                file.add("Revert File", "file.revert");
                 file.add("Rename File...", "file.rename");
                 file.add("Delete File...", "file.delete");
                 file.sep();

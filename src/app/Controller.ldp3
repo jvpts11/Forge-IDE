@@ -593,6 +593,22 @@ public bundle forge {
                 this.folds.recompute(this.ed.document());
                 this.moved();
             }
+            // Re-read the file from disk (external-change reload / revert), keeping the caret line if it
+            // still exists so a reload does not jump you to the top. Refolds; clamps the caret in bounds.
+            public method reloadFromDisk() returns void {
+                int keepRow = this.ed.cursorRow();
+                this.doc.reloadFromDisk();
+                this.ed.clampCaret();
+                if (keepRow < this.ed.document().lineCount()) {
+                    this.ed.setCaret(keepRow, 0);
+                }
+                this.folds.recompute(this.ed.document());
+                this.moved();
+                return;
+            }
+            public method externallyChanged() returns boolean {
+                return this.doc.diskChanged();
+            }
             // Save to disk (a no-op for an untitled buffer -- a Save As prompt is the shell's job).
             public method save() returns void {
                 if (this.doc.path().length() > 0) {

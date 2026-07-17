@@ -470,6 +470,27 @@ public bundle forge {
                 return false;
             }
 
+            // Poll the active file for an external change (git checkout, another editor). Returns 0 = no
+            // change; 1 = changed and reloaded (the buffer had no unsaved edits); 2 = changed but the buffer
+            // is dirty, so it was NOT reloaded -- the shell warns and the user reverts explicitly. Called on
+            // a timer by the shell (not every frame) since it stats the file.
+            public method pollExternalChange() returns int {
+                Controller* c = this.active();
+                if (!c.externallyChanged()) {
+                    return 0;
+                }
+                if (c.document().isModified()) {
+                    return 2;
+                }
+                c.reloadFromDisk();
+                return 1;
+            }
+            // Explicitly re-read the active file from disk, discarding unsaved edits (Revert File).
+            public method revertActive() returns void {
+                this.active().reloadFromDisk();
+                return;
+            }
+
             // A palette/menu request to toggle the sidebar. The shell owns the screen, so it consumes this
             // each frame (Ctrl+B toggles the screen directly; the palette entry goes through here).
             public method renderWhitespace() returns boolean {
@@ -1544,6 +1565,10 @@ public bundle forge {
                 }
                 if (id.equals("view.whitespace")) {
                     this.toggleRenderWhitespace();
+                    return true;
+                }
+                if (id.equals("file.revert")) {
+                    this.revertActive();
                     return true;
                 }
                 if (id.equals("view.sidebar")) {

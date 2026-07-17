@@ -246,6 +246,17 @@ public bundle forge {
                     if (wb.takeSidebarToggle()) {
                         screen.toggleTree();
                     }
+                    // every ~1s, notice if the active file changed on disk (git checkout, another editor):
+                    // reload it when the buffer is clean, warn (keep edits) when it is not.
+                    if (frames % 60 == 0) {
+                        int ext = wb.pollExternalChange();
+                        if (ext == 1) {
+                            wb.output().banner("Reloaded", "The file changed on disk and was reloaded.");
+                        } else if (ext == 2) {
+                            wb.output().banner("Changed on disk",
+                                "This file changed on disk but has unsaved edits -- File > Revert to reload.");
+                        }
+                    }
                     // Live type-check: when typing has been still for ~half a second, the project is
                     // checked with the unsaved buffers and the squiggles update. It never blocks a frame --
                     // pumpCheck polls a subprocess and returns immediately.
@@ -1371,6 +1382,11 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("explain none");
                     }
+                } else if (cmd.equals("extpoll")) {
+                    System.IO.Console.println("extpoll " + wb.pollExternalChange().toString());
+                } else if (cmd.equals("revert")) {
+                    wb.revertActive();
+                    System.IO.Console.println("ok reverted");
                 } else if (cmd.equals("whitespace")) {
                     wb.toggleRenderWhitespace();
                     mutable String v = "off";

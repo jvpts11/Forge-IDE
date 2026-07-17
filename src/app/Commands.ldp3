@@ -28,6 +28,7 @@ public bundle forge {
                 this.register("file.open", "Open File");
                 this.register("file.save", "Save File");
                 this.register("file.saveAs", "Save File As");
+                this.register("file.revert", "Revert File (reload from disk)");
                 this.register("edit.undo", "Undo");
                 this.register("edit.redo", "Redo");
                 this.register("edit.find", "Find");

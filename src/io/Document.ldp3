@@ -1,4 +1,5 @@
 import System.IO.Files;
+import System.IO.File;
 import System.Collections.ArrayList;
 import System.Text.Strings;
 import editor.TextBuffer;
@@ -20,6 +21,7 @@ public bundle forge {
             // Bumped on every edit. A view compares it against what it last saw to notice that ANOTHER view
             // changed the text under it -- that is when it re-folds and pulls its caret back in bounds.
             private mutable int rev;
+            private mutable long diskSize;   // the file's byte size when last read/written (external-change poll)
 
             public constructor Document(TextBuffer* buffer) {
                 this.hist = new History() on heap;
@@ -27,6 +29,7 @@ public bundle forge {
                 this.buf = buffer;
                 this.path = "";
                 this.modified = false;
+                this.diskSize = cast<long>(0);
             }
 
             public method buffer() returns TextBuffer* {
@@ -55,17 +58,40 @@ public bundle forge {
                 this.buf.loadText(Strings.join(ls, "\n"));
                 this.path = p;
                 this.modified = false;
+                this.diskSize = File.size(p);
             }
 
             // Write the buffer's lines back to `path`.
             public method save() returns void {
                 Files.writeLines(this.path, Strings.split(this.buf.text(), "\n"));
                 this.modified = false;
+                this.diskSize = File.size(this.path);
             }
 
             public method saveAs(String p) returns void {
                 this.path = p;
                 this.save();
+            }
+
+            // Has the file changed on disk since we last read or wrote it (e.g. a git checkout, another
+            // editor)? Compared by byte size -- exact, so no false alarms; a same-size external edit is
+            // missed, which is the acceptable trade for a cheap poll. Untitled buffers never change on disk.
+            public method diskChanged() returns boolean {
+                if (this.path.length() == 0) {
+                    return false;
+                }
+                if (!File.exists(this.path)) {
+                    return false;
+                }
+                return File.size(this.path) != this.diskSize;
+            }
+            // Re-read the file from disk, discarding the in-editor buffer. The caller decides when this is
+            // safe (the buffer has no unsaved edits, or the user asked for it explicitly).
+            public method reloadFromDisk() returns void {
+                if (this.path.length() > 0) {
+                    this.openFile(this.path);
+                }
+                return;
             }
         }
     }
