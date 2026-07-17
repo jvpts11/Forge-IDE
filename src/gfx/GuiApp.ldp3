@@ -104,9 +104,21 @@ public bundle forge {
                 mutable int lastClickY = 0;
                 mutable int fontPx = 18;
                 mutable boolean prevZoom = false;
+                // Redraw only when something changed. The window re-rendered every frame at 60 fps, and every
+                // frame rebuilds throwaway strings (line numbers, the status bar, breadcrumbs), so an idle
+                // editor grew in memory just by sitting open. Now a frame is drawn only on input, mouse
+                // movement, a scroll/resize, or a change in background state (build/check output, diagnostics,
+                // git, the debugger). After a short idle the caret stops blinking and rendering stops entirely,
+                // so an untouched window holds steady. lastMx/lastMy track the mouse; lastSig the async state.
+                mutable int lastMx = 0 - 1000;
+                mutable int lastMy = 0 - 1000;
+                mutable long lastSig = 0 - 1;
+                mutable int idleFrames = 999;
+                mutable boolean caretShown = true;
                 while (win.isOpen()) {
                     frames = frames + 1;
                     win.pump();
+                    boolean hadEvents = win.hasEvent();   // keyboard/char/resize arrived this frame
                     if (!workspaceOpen) {
                         boolean wdown = win.keyDown(1);
                         if (wdown && !prevDown) {
@@ -319,24 +331,73 @@ public bundle forge {
                     // window resize -> re-fit the viewport
                     int w2 = win.width();
                     int h2 = win.height();
-                    if (w2 != lastW || h2 != lastH) {
+                    boolean resized = w2 != lastW || h2 != lastH;
+                    if (resized) {
                         wb.active().resizeViewport(screen.paneRowsFor(h2), screen.paneColsFor(w2));
                         lastW = w2;
                         lastH = h2;
                     }
-                    // the editing feel: an I-beam over the text region (arrow over the chrome) and a caret that
-                    // blinks about twice a second.
-                    win.setIBeam(GuiApp.overEditor(screen, win, ov, h2));
-                    blink = blink + 1;
-                    if (blink >= 60) {
-                        blink = 0;
+                    // Did anything change this frame? Input (keyboard events, a held mouse button, the wheel),
+                    // the mouse moving (hover highlights), a resize, or background state (build/check output,
+                    // diagnostics, git, the debugger). If not, the frame is identical -- skip the repaint so an
+                    // idle window neither burns the GPU nor rebuilds throwaway strings.
+                    int mx = win.cursorX();
+                    int my = win.cursorY();
+                    boolean mouseMoved = mx != lastMx || my != lastMy;
+                    lastMx = mx;
+                    lastMy = my;
+                    long sig = GuiApp.asyncSignature(wb);
+                    boolean sigChanged = sig != lastSig;
+                    lastSig = sig;
+                    boolean active = hadEvents || mouseMoved || resized || sigChanged || scroll != 0
+                        || win.keyDown(1) || win.keyDown(2) || win.keyDown(4);
+                    if (active) {
+                        idleFrames = 0;
+                    } else {
+                        idleFrames = idleFrames + 1;
                     }
-                    screen.setCaretOn(blink < 30);
-                    GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, ctx);
-                    win.swap();
+                    // the editing feel: an I-beam over the text region (arrow over the chrome) and a caret that
+                    // blinks about twice a second while active; once idle (~1.2s untouched) it goes solid and
+                    // the window stops repainting entirely, so memory holds steady.
+                    win.setIBeam(GuiApp.overEditor(screen, win, ov, h2));
+                    mutable boolean redraw = active;
+                    if (idleFrames > 150) {
+                        if (!caretShown) {
+                            caretShown = true;
+                            screen.setCaretOn(true);
+                            redraw = true;
+                        }
+                    } else {
+                        blink = blink + 1;
+                        if (blink >= 60) {
+                            blink = 0;
+                        }
+                        boolean want = blink < 30;
+                        if (want != caretShown) {
+                            caretShown = want;
+                            screen.setCaretOn(want);
+                            redraw = true;
+                        }
+                    }
+                    if (redraw) {
+                        GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, ctx);
+                        win.swap();
+                    }
                     win.sleep(8);
                 }
                 return;
+            }
+
+            // A cheap fingerprint of the BACKGROUND state that changes without direct input -- build/check/
+            // search output, the diagnostics from a live check, the git branch, the debugger's stopped line.
+            // The render loop redraws when this changes so async updates still appear; input-driven changes
+            // (caret, selection, scroll, edits) are caught by the event/mouse checks instead.
+            private static method asyncSignature(Workbench* wb) returns long {
+                mutable long s = cast<long>(wb.output().lineCount());
+                s = s * 1000003 + cast<long>(wb.diagnostics().size());
+                s = s * 1000003 + cast<long>(wb.currentBranch().length());
+                s = s * 1000003 + cast<long>(wb.debugger().stoppedAtLine());
+                return s;
             }
 
             // True when the mouse is over the editable text region (right of the tree, below the breadcrumb
