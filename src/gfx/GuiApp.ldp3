@@ -1442,6 +1442,20 @@ public bundle forge {
                     GuiApp.writePpm(arg, px, w, h);
                     win.swap();
                     System.IO.Console.println("shot " + arg);
+                } else if (cmd.equals("renderonly")) {
+                    // Diagnostic: draw N frames with no framebuffer read / PPM write, so an allocation
+                    // profiler sees only the render's own churn (the PPM serializer dwarfs everything else).
+                    mutable int reps = arg.toInt();
+                    if (reps <= 0) {
+                        reps = 1;
+                    }
+                    mutable int k = 0;
+                    while (k < reps) {
+                        GuiApp.drawFrame(win, batch, screen, wb, tree, ov, comp, menu, ctx);
+                        win.swap();
+                        k = k + 1;
+                    }
+                    System.IO.Console.println("renderonly " + reps.toString());
                 } else if (cmd.equals("run")) {
                     wb.runShell("Run", arg);
                     System.IO.Console.println("ok " + wb.output().lineCount().toString() + " lines");
