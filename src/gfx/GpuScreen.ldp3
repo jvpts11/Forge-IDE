@@ -43,6 +43,7 @@ public bundle forge {
             private mutable int gutterChars;
             private mutable int topPad;
             private mutable int treeW;
+            private mutable int treeWSaved;    // the tree width to restore when the sidebar is shown again
             private mutable boolean caretOn;   // caret visibility for blink (the live loop toggles it)
             private mutable Theme* theme;      // the whole colour palette; swap to re-skin the IDE
             private mutable Highlighter* hl;   // tokenises peek-popup lines (from files that aren't open)
@@ -52,6 +53,7 @@ public bundle forge {
                 this.gutterChars = 6;
                 this.topPad = 6;
                 this.treeW = 230;
+                this.treeWSaved = 230;
                 this.caretOn = true;
                 this.theme = Theme.makeDark();
                 this.hl = new Highlighter() on heap;
@@ -113,6 +115,21 @@ public bundle forge {
             }
             public method treeWidth() returns int {
                 return this.treeW;
+            }
+            // Hide or show the file-tree sidebar (Ctrl+B). treeWidth() is the single source every layout and
+            // hit-test reads, so setting it to 0 collapses the tree and the editor reclaims the width; the
+            // last width is remembered so showing it again restores the same size.
+            public method toggleTree() returns void {
+                if (this.treeW > 0) {
+                    this.treeWSaved = this.treeW;
+                    this.treeW = 0;
+                } else {
+                    this.treeW = this.treeWSaved;
+                }
+                return;
+            }
+            public method treeVisible() returns boolean {
+                return this.treeW > 0;
             }
             public method charW() returns int {
                 return this.font.advance();
@@ -191,7 +208,9 @@ public bundle forge {
                     panelH = this.outputPanelHeight(wb.output(), screenH);
                 }
                 int ow = this.outlineWidth(wb);
-                this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
+                if (this.treeVisible()) {
+                    this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
+                }
                 int editorW = screenW - tw - ow;
                 int editorH = screenH - etop - sh - panelH;
                 if (wb.isSplit()) {

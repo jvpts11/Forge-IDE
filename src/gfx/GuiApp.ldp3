@@ -242,6 +242,10 @@ public bundle forge {
                     if (wb.treeNeedsRefresh()) {
                         tree = new FileTree(tree.root().path) on heap;
                     }
+                    // a palette/menu "Toggle Sidebar" request (Ctrl+B toggles the screen directly)
+                    if (wb.takeSidebarToggle()) {
+                        screen.toggleTree();
+                    }
                     // Live type-check: when typing has been still for ~half a second, the project is
                     // checked with the unsaved buffers and the squiggles update. It never blocks a frame --
                     // pumpCheck polls a subprocess and returns immediately.
@@ -1367,6 +1371,13 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("explain none");
                     }
+                } else if (cmd.equals("toggletree")) {
+                    screen.toggleTree();
+                    mutable String v = "hidden";
+                    if (screen.treeVisible()) {
+                        v = "shown";
+                    }
+                    System.IO.Console.println("ok tree " + v + " treeW=" + screen.treeWidth().toString());
                 } else if (cmd.equals("closetab")) {
                     wb.closeActiveTab();
                     System.IO.Console.println("ok tabs=" + wb.documents().count().toString());
@@ -1756,6 +1767,8 @@ public bundle forge {
                         if (reopened.length() == 0) {
                             wb.output().banner("Reopen Tab", "No recently closed tab to reopen.");
                         }
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 66) {   // Ctrl+B -> toggle the sidebar
+                        wb.requestSidebarToggle();
                     } else if (e.isKey() && e.vk == 112) {                   // F1 -> standard library reference
                         GuiApp.openReference(wb, "stdlib.ldp3");
                     } else if (e.isKey() && e.vk == 113) {                   // F2 bookmarks
