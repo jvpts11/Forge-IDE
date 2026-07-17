@@ -1353,6 +1353,16 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("explain none");
                     }
+                } else if (cmd.equals("closetab")) {
+                    wb.closeActiveTab();
+                    System.IO.Console.println("ok tabs=" + wb.documents().count().toString());
+                } else if (cmd.equals("reopen")) {
+                    String rp = wb.reopenClosedTab();
+                    if (rp.length() > 0) {
+                        System.IO.Console.println("reopen " + rp);
+                    } else {
+                        System.IO.Console.println("reopen none");
+                    }
                 } else if (cmd.equals("quickfix")) {
                     // Apply the Alt+Enter quick fix on the caret line and report what happened.
                     String applied = wb.applyQuickFixAtCaret();
@@ -1725,8 +1735,13 @@ public bundle forge {
                         wb.documents().switchToPrevious();
                     } else if (e.isKey() && ctrl && !shift && e.vk == 74) {  // Ctrl+J -> join lines
                         wb.active().joinLines();
-                    } else if (e.isKey() && ctrl && e.vk == 87) {            // Ctrl+W -> close tab
+                    } else if (e.isKey() && ctrl && !shift && e.vk == 87) {  // Ctrl+W -> close tab
                         wb.closeActiveTab();
+                    } else if (e.isKey() && ctrl && shift && e.vk == 84) {   // Ctrl+Shift+T -> reopen closed tab
+                        String reopened = wb.reopenClosedTab();
+                        if (reopened.length() == 0) {
+                            wb.output().banner("Reopen Tab", "No recently closed tab to reopen.");
+                        }
                     } else if (e.isKey() && e.vk == 112) {                   // F1 -> standard library reference
                         GuiApp.openReference(wb, "stdlib.ldp3");
                     } else if (e.isKey() && e.vk == 113) {                   // F2 bookmarks

@@ -18,6 +18,9 @@ public bundle forge {
             private mutable int prevActive;   // most-recently-used previous tab, for Ctrl+Tab
             private mutable int rows;
             private mutable int cols;
+            // The paths of tabs the user closed, newest last -- so Ctrl+Shift+T reopens the last one, then
+            // the one before it, the way every editor does. Untitled buffers (no path) are not remembered.
+            private mutable ArrayList<String>* closed;
 
             public constructor DocumentManager(int rows, int cols) {
                 this.tabs = new ArrayList<Controller>() on heap;
@@ -25,6 +28,7 @@ public bundle forge {
                 this.prevActive = 0 - 1;
                 this.rows = rows;
                 this.cols = cols;
+                this.closed = new ArrayList<String>() on heap;
             }
 
             public method count() returns int {
@@ -114,6 +118,10 @@ public bundle forge {
                 if (i < 0 || i >= this.tabs.size()) {
                     return;
                 }
+                String path = this.tabs.get(i).document().path();
+                if (path.length() > 0) {
+                    this.closed.add(path);   // remember it so Ctrl+Shift+T can bring it back
+                }
                 this.tabs.removeAt(i);
                 if (this.tabs.size() == 0) {
                     this.active = 0 - 1;
@@ -125,6 +133,35 @@ public bundle forge {
                 else if (this.active > i) {
                     this.active = this.active - 1;
                 }
+            }
+
+            // The path of the most-recently-closed tab, removed from the history, or "" when there is none.
+            // openFile de-duplicates, so reopening a file that is somehow already open just focuses it.
+            public method popClosed() returns String {
+                mutable int n = this.closed.size();
+                // Skip any path that is already open again (closed, then reopened another way).
+                while (n > 0) {
+                    n = n - 1;
+                    String path = this.closed.get(n);
+                    this.closed.removeAt(n);
+                    if (!this.hasOpen(path)) {
+                        return path;
+                    }
+                }
+                return "";
+            }
+            public method hasClosed() returns boolean {
+                return this.closed.size() > 0;
+            }
+            private method hasOpen(String path) returns boolean {
+                mutable int i = 0;
+                while (i < this.tabs.size()) {
+                    if (this.tabs.get(i).document().path().equals(path)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
             }
 
             // Tab label: the file's basename (or "untitled"), with " *" when it has unsaved edits.

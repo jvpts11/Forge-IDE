@@ -465,6 +465,17 @@ public bundle forge {
                 return false;
             }
 
+            // Reopen the most-recently-closed tab (Ctrl+Shift+T), in the active pane. Returns the reopened
+            // path, or "" when there is nothing to reopen.
+            public method reopenClosedTab() returns String {
+                String path = this.documents().popClosed();
+                if (path.length() == 0) {
+                    return "";
+                }
+                this.openFile(path);
+                return path;
+            }
+
             // --- diagnostics: the compiler's errors/warnings, shown inline ---
             public method diagnostics() returns ArrayList<Diagnostic>* {
                 return this.diags;
@@ -1505,6 +1516,12 @@ public bundle forge {
                 }
                 if (id.equals("view.problems")) {
                     this.showProblems();
+                    return true;
+                }
+                if (id.equals("file.reopenClosed")) {
+                    if (this.reopenClosedTab().length() == 0) {
+                        this.out.banner("Reopen Tab", "No recently closed tab to reopen.");
+                    }
                     return true;
                 }
                 if (id.equals("diag.explain")) {
