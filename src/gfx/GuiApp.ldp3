@@ -226,13 +226,13 @@ public bundle forge {
                             wb.active().scrollToColumn(hc);
                             scrollDrag = 2;
                             dragging = false;
-                        } else if (dbl && cxNow >= screen.textOx() && GuiApp.overEditor(screen, win, ov, win.height())) {
+                        } else if (dbl && cxNow >= screen.textOx() && GuiApp.overEditor(screen, win, wb, ov)) {
                             GuiApp.selectWordAtMouse(screen, wb, win);       // double-click selects the word
                             dragging = false;
                         } else {
                             GuiApp.handleClick(win, screen, wb, tree, ov, menu, req, win.modAlt());
                             // start a drag-select only over the text (not the gutter, where a click folds)
-                            dragging = GuiApp.overEditor(screen, win, ov, win.height()) && !win.modAlt()
+                            dragging = GuiApp.overEditor(screen, win, wb, ov) && !win.modAlt()
                                 && cxNow >= screen.textOx();
                         }
                         lastClickFrame = frames;
@@ -368,7 +368,7 @@ public bundle forge {
                     // the editing feel: an I-beam over the text region (arrow over the chrome) and a caret that
                     // blinks about twice a second while active; once idle (~1.2s untouched) it goes solid and
                     // the window stops repainting entirely, so memory holds steady.
-                    win.setIBeam(GuiApp.overEditor(screen, win, ov, h2));
+                    win.setIBeam(GuiApp.overEditor(screen, win, wb, ov));
                     mutable boolean redraw = active;
                     if (idleFrames > 150) {
                         if (!caretShown) {
@@ -418,20 +418,15 @@ public bundle forge {
                 return s;
             }
 
-            // True when the mouse is over the actual editable TEXT -- right of the gutter (textOx, not just
-            // right of the tree, so the line-number gutter keeps the arrow: a click there folds, it does not
-            // place a caret), left of the scrollbar/overview-ruler strip on the far right, below the
-            // breadcrumb bar, above the status bar, and with no modal overlay open. That region gets the
-            // I-beam; everything else (chrome, gutter, scrollbars) keeps the arrow.
-            private static method overEditor(GpuScreen* screen, GlWindow* win, Overlay* ov, int screenH)
+            // True when the mouse is over the actual editable TEXT (so it gets the I-beam). All the geometry
+            // lives in GpuScreen.overText, which excludes the tree, gutter, minimap, scrollbars, ruler, and
+            // chrome -- everything else keeps the arrow. A modal overlay suppresses the I-beam entirely.
+            private static method overEditor(GpuScreen* screen, GlWindow* win, Workbench* wb, Overlay* ov)
                     returns boolean {
                 if (ov.isOpen()) {
                     return false;
                 }
-                int mx = win.cursorX();
-                int my = win.cursorY();
-                return mx >= screen.textOx() && mx < win.width() - 16
-                    && my >= screen.editorTop() && my < screenH - screen.statusH();
+                return screen.overText(wb, win.width(), win.height(), win.cursorX(), win.cursorY());
             }
 
             private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,

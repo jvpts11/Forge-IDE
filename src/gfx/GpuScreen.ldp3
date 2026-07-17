@@ -116,6 +116,21 @@ public bundle forge {
             public method treeWidth() returns int {
                 return this.treeW;
             }
+            // The single place that decides "is the mouse over editable TEXT" -- used for the I-beam cursor.
+            // It excludes everything that is NOT text: the tree, the line-number gutter (a click there folds),
+            // the minimap and the overview-ruler / vertical-scrollbar strip on the right, the horizontal
+            // scrollbar at the bottom, the breadcrumb bar above, and the status bar below. Everything it
+            // excludes keeps the arrow.
+            public method overText(Workbench* wb, int screenW, int screenH, int mx, int my) returns boolean {
+                int left = this.textOx();                       // right of tree + gutter
+                mutable int right = screenW - 12;               // overview ruler / vertical scrollbar strip
+                if (wb.minimapVisible()) {
+                    right = screenW - this.minimapW() - 14;     // the minimap sits just left of the ruler
+                }
+                int topY = this.editorTop();                    // below the breadcrumb bar
+                int botY = screenH - this.statusH() - this.hscrollH();   // above the status + h-scrollbar
+                return mx >= left && mx < right && my >= topY && my < botY;
+            }
             // Hide or show the file-tree sidebar (Ctrl+B). treeWidth() is the single source every layout and
             // hit-test reads, so setting it to 0 collapses the tree and the editor reclaims the width; the
             // last width is remembered so showing it again restores the same size.
@@ -1117,6 +1132,8 @@ public bundle forge {
             private method drawTree(Batch2D* batch, FileTree* tree, int top, int screenH, int mx, int my)
                     returns void {
                 int ch = this.font.lineHeight();
+                int cw = this.font.advance();
+                int maxCols = (this.treeW - 12) / cw;   // clip labels to the sidebar so long names don't bleed
                 ArrayList<FileNode*>* rows = tree.visible();
                 mutable int i = 0;
                 while (i < rows.size()) {
@@ -1137,7 +1154,11 @@ public bundle forge {
                         g = 0.706;
                         b = 0.392;
                     }
-                    this.font.drawText(batch, 8, y, tree.rowLabel(node), r, g, b, 1.0);
+                    mutable String rowLbl = tree.rowLabel(node);
+                    if (maxCols > 3 && rowLbl.length() > maxCols) {
+                        rowLbl = rowLbl.substring(0, maxCols - 3) + "...";   // a long name into the editor was the "3"
+                    }
+                    this.font.drawText(batch, 8, y, rowLbl, r, g, b, 1.0);
                     i = i + 1;
                 }
             }
