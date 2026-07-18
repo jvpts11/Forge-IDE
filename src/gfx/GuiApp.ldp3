@@ -2021,6 +2021,7 @@ public bundle forge {
                             GuiApp.refreshProjectSymbols(comp, tree);
                         }
                     }
+                    delete e;   // nextEvent() hands back a fresh owned InputEvent each iteration
                 }
                 return;
             }
