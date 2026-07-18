@@ -1102,6 +1102,12 @@ public bundle forge {
                     int tw = (title.length() + 4) * cw;
                     boolean active = i == docs.activeIndex();
                     boolean hover = my >= top && my < top + tabh && mx >= x && mx < x + tw;
+                    boolean modified = docs.at(i).document().isModified();
+                    // The dirty state is shown by a dot at the close control, not a trailing " *".
+                    mutable String lbl = title;
+                    if (lbl.endsWith(" *")) {
+                        lbl = lbl.substring(0, lbl.length() - 2);
+                    }
                     mutable float r = 0.502;
                     mutable float g = 0.588;
                     mutable float b = 0.584;
@@ -1113,19 +1119,28 @@ public bundle forge {
                         if (hover) {
                             batch.rect(x, top, tw, tabh, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.04);   // hover highlight
                             r = 0.702; g = 0.769; b = 0.761;
+                        } else if (modified) {
+                            r = 0.702; g = 0.769; b = 0.761;   // a dirty file's name stays legible even when idle
                         }
                     }
-                    this.font.drawText(batch, x + cw, ty, title, r, g, b, 1.0);
-                    // close control (x) at the right of the tab, brighter on the active tab
-                    mutable float xr = 0.376;
-                    mutable float xg = 0.478;
-                    mutable float xb = 0.475;
-                    if (active) {
-                        xr = 0.702;
-                        xg = 0.549;
-                        xb = 0.353;
+                    this.font.drawText(batch, x + cw, ty, lbl, r, g, b, 1.0);
+                    // A dirty tab shows a filled dot where the close x sits; hovering the tab swaps the dot
+                    // back to the x so you can still close it (VS Code behaviour). The close hit region is
+                    // unchanged -- only the glyph differs.
+                    if (modified && !hover) {
+                        batch.rect(x + tw - 2 * cw + 1, ty + this.font.lineHeight() / 2 - 3, 6, 6,
+                                   this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, 1.0);
+                    } else {
+                        mutable float xr = 0.376;
+                        mutable float xg = 0.478;
+                        mutable float xb = 0.475;
+                        if (active) {
+                            xr = 0.702;
+                            xg = 0.549;
+                            xb = 0.353;
+                        }
+                        this.font.drawText(batch, x + tw - 2 * cw, ty, "x", xr, xg, xb, 1.0);
                     }
-                    this.font.drawText(batch, x + tw - 2 * cw, ty, "x", xr, xg, xb, 1.0);
                     x = x + tw;
                     i = i + 1;
                 }
@@ -1287,9 +1302,13 @@ public bundle forge {
                     if (firstRow && c.hasBookmark(docLine)) {
                         batch.rect(ox + gpx - 5, y + ch / 2 - 3, 5, 6, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                     }
-                    // breakpoint marker: a red dot at the gutter's left edge (VS Code-style)
+                    // breakpoint marker: a red dot at the gutter's left edge (VS Code-style). When the mouse
+                    // hovers the breakpoint strip of a real line without one, show a faint preview square
+                    // where the breakpoint would land -- the standard cue that a click here sets one.
                     if (firstRow && dbg.hasBreakpoint(dbgPath, docLine + 1)) {
                         batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, this.theme.breakpoint.r, this.theme.breakpoint.g, this.theme.breakpoint.b, this.theme.breakpoint.a);
+                    } else if (firstRow && mx >= ox && mx < ox + 18 && my >= y && my < y + ch) {
+                        batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, this.theme.breakpoint.r, this.theme.breakpoint.g, this.theme.breakpoint.b, 0.32);
                     }
                     if (firstRow) {
                         String num = (docLine + 1).toString();

@@ -183,15 +183,24 @@ public bundle forge {
                         continue;
                     }
                     GuiApp.processInput(win, wb, ov, comp, menu, tree);
+                    // Mouse buttons are read with GetAsyncKeyState, which reports presses GLOBALLY -- even when
+                    // the click is aimed at another application. Gate all click handling on Forge being the
+                    // foreground window so a right/left click elsewhere never drives Forge (e.g. opening the
+                    // context menu when you right-click on the desktop).
+                    boolean focused = win.isForeground();
                     // right click -> the context menu for whatever is under the cursor (editor / tree / tab)
-                    boolean rdown = win.keyDown(2);   // VK_RBUTTON
+                    boolean rdown = focused && win.keyDown(2);   // VK_RBUTTON
                     if (rdown && !prevRight && !ov.isOpen()) {
-                        menu.close();
-                        GuiApp.rightClickAt(win, screen, wb, tree, ctx, win.cursorX(), win.cursorY());
+                        int rmx = win.cursorX();
+                        int rmy = win.cursorY();
+                        if (rmx >= 0 && rmy >= 0 && rmx < win.width() && rmy < win.height()) {
+                            menu.close();
+                            GuiApp.rightClickAt(win, screen, wb, tree, ctx, rmx, rmy);
+                        }
                     }
                     prevRight = rdown;
                     // left click -> context-menu item (when open), else menu bar / tab / tree / caret
-                    boolean down = win.keyDown(1);   // VK_LBUTTON
+                    boolean down = focused && win.keyDown(1);   // VK_LBUTTON
                     if (down && !prevDown && ctx.isActive()) {
                         int cxi = win.cursorX();
                         int cyi = win.cursorY();
@@ -368,7 +377,7 @@ public bundle forge {
                     // the editing feel: an I-beam over the text region (arrow over the chrome) and a caret that
                     // blinks about twice a second while active; once idle (~1.2s untouched) it goes solid and
                     // the window stops repainting entirely, so memory holds steady.
-                    win.setIBeam(GuiApp.overEditor(screen, win, wb, ov));
+                    win.setCursor(GuiApp.cursorRegion(screen, win, wb, ov, ctx));
                     mutable boolean redraw = active;
                     if (idleFrames > 150) {
                         if (!caretShown) {
@@ -427,6 +436,38 @@ public bundle forge {
                     return false;
                 }
                 return screen.overText(wb, win.width(), win.height(), win.cursorX(), win.cursorY());
+            }
+            // The cursor shape for the region under the mouse: 0 = arrow (chrome / open menu), 1 = I-beam
+            // (over the editable text), 2 = hand (over a clickable gutter target -- the breakpoint strip on
+            // a real line, or a fold chevron). Mirrors the gutter hit-test in processClick.
+            private static method cursorRegion(GpuScreen* screen, GlWindow* win, Workbench* wb, Overlay* ov,
+                                               ContextMenu* ctx) returns int {
+                if (ov.isOpen() || ctx.isActive()) {
+                    return 0;   // an open overlay or context menu: plain arrow everywhere
+                }
+                int mx = win.cursorX();
+                int my = win.cursorY();
+                int topY = screen.editorTop();
+                int botY = win.height() - screen.statusH() - screen.hscrollH();
+                if (my >= topY && my < botY && mx >= screen.treeWidth() && mx < screen.textOx()) {
+                    int screenRow = (my - screen.textOy()) / screen.lineH();
+                    if (screenRow >= 0) {
+                        Controller* c = wb.active();
+                        int docLine = c.lineNumberAt(screenRow);
+                        if (docLine >= 0 && docLine < c.lineCount()) {
+                            if (mx < screen.treeWidth() + 18) {
+                                return 2;   // breakpoint strip over a real line
+                            }
+                            if (c.isFoldable(docLine)) {
+                                return 2;   // fold chevron
+                            }
+                        }
+                    }
+                }
+                if (screen.overText(wb, win.width(), win.height(), mx, my)) {
+                    return 1;
+                }
+                return 0;
             }
 
             private static method handleClick(GlWindow* win, GpuScreen* screen, Workbench* wb, FileTree* tree,
