@@ -231,6 +231,9 @@ public bundle forge {
                         if (screen.onTreeDivider(cxNow, cyNow, win.height())) {
                             dividerDrag = 1;   // grab the tree/editor divider; drag resizes the sidebar
                             dragging = false;
+                        } else if (screen.onPanelDivider(wb, cxNow, cyNow, win.width(), win.height())) {
+                            dividerDrag = 2;   // grab the editor/panel divider; drag resizes the terminal/panel
+                            dragging = false;
                         } else if (vl >= 0) {
                             wb.active().scrollToLine(vl);
                             scrollDrag = 1;
@@ -257,6 +260,8 @@ public bundle forge {
                         wb.active().scrollToColumn(screen.hscrollColAtX(wb, win.width(), win.cursorX()));
                     } else if (down && prevDown && dividerDrag == 1) {
                         screen.setTreeWidth(win.cursorX(), win.width());      // resize the sidebar live
+                    } else if (down && prevDown && dividerDrag == 2) {
+                        screen.setPanelFrac(win.cursorY(), win.height());     // resize the terminal/panel live
                     } else if (down && prevDown && dragging && !ov.isOpen()) {
                         GuiApp.dragExtend(screen, wb, win);                   // extend the selection
                     }
@@ -455,7 +460,10 @@ public bundle forge {
                 int mx = win.cursorX();
                 int my = win.cursorY();
                 if (screen.onTreeDivider(mx, my, win.height())) {
-                    return 3;   // double-arrow over the resizable sidebar divider
+                    return 3;   // horizontal double-arrow over the resizable sidebar divider
+                }
+                if (screen.onPanelDivider(wb, mx, my, win.width(), win.height())) {
+                    return 4;   // vertical double-arrow over the resizable panel divider
                 }
                 int topY = screen.editorTop();
                 int botY = win.height() - screen.statusH() - screen.hscrollH();

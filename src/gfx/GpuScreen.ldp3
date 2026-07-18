@@ -44,6 +44,7 @@ public bundle forge {
             private mutable int topPad;
             private mutable int treeW;
             private mutable int treeWSaved;    // the tree width to restore when the sidebar is shown again
+            private mutable float panelFrac;   // terminal/output panel height as a fraction of the window
             private mutable boolean caretOn;   // caret visibility for blink (the live loop toggles it)
             private mutable Theme* theme;      // the whole colour palette; swap to re-skin the IDE
             private mutable Highlighter* hl;   // tokenises peek-popup lines (from files that aren't open)
@@ -54,6 +55,7 @@ public bundle forge {
                 this.topPad = 6;
                 this.treeW = 230;
                 this.treeWSaved = 230;
+                this.panelFrac = 0.4;
                 this.caretOn = true;
                 this.theme = Theme.makeDark();
                 this.hl = new Highlighter() on heap;
@@ -971,7 +973,47 @@ public bundle forge {
 
             // The integrated terminal panel occupies the bottom ~40% of the window.
             public method terminalPanelHeight(int screenH) returns int {
-                return screenH * 4 / 10;
+                mutable int h = cast<int>(cast<float>(screenH) * this.panelFrac);
+                if (h < 80) {
+                    h = 80;
+                }
+                int maxH = screenH - 160;
+                if (maxH > 80 && h > maxH) {
+                    h = maxH;
+                }
+                return h;
+            }
+            // The active bottom panel's height (terminal if open, else the output panel), 0 if none. The
+            // single source the editor↔panel divider drag and cursor read.
+            public method currentPanelHeight(Workbench* wb, int screenH) returns int {
+                if (wb.terminal().isOpen()) {
+                    return this.terminalPanelHeight(screenH);
+                }
+                return this.outputPanelHeight(wb.output(), screenH);
+            }
+            // Is the point on the draggable editor/panel divider (the panel's top edge, over the editor
+            // column)? Drives the resize-drag and the vertical double-arrow cursor.
+            public method onPanelDivider(Workbench* wb, int mx, int my, int screenW, int screenH) returns boolean {
+                int ph = this.currentPanelHeight(wb, screenH);
+                if (ph <= 0) {
+                    return false;
+                }
+                int top = screenH - this.statusH() - ph;
+                return mx >= this.treeW && mx < screenW && my >= top - 3 && my <= top + 3;
+            }
+            // Resize the bottom panel from a divider drag: `my` is the new panel top; store it as a fraction
+            // of the window so it tracks resizes, clamped so both the editor and the panel stay usable.
+            public method setPanelFrac(int my, int screenH) returns void {
+                int avail = screenH - this.statusH();
+                mutable float f = cast<float>(avail - my) / cast<float>(screenH);
+                if (f < 0.1) {
+                    f = 0.1;
+                }
+                if (f > 0.85) {
+                    f = 0.85;
+                }
+                this.panelFrac = f;
+                return;
             }
             // Draw the terminal: a header, the tail of the scrollback that fits, the in-progress output tail,
             // and the input line with a prompt + caret.
