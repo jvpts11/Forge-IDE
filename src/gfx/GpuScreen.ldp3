@@ -143,6 +143,30 @@ public bundle forge {
                 }
                 return;
             }
+            // Resize the sidebar to `w` (from a divider drag), clamped so it stays usable and always leaves
+            // room for the editor. `screenW` bounds the maximum so the editor keeps at least ~360px.
+            public method setTreeWidth(int w, int screenW) returns void {
+                mutable int nw = w;
+                if (nw < 140) {
+                    nw = 140;
+                }
+                int maxW = screenW - 360;
+                if (maxW > 140 && nw > maxW) {
+                    nw = maxW;
+                }
+                this.treeW = nw;
+                this.treeWSaved = nw;
+                return;
+            }
+            // Is the point on the draggable tree/editor divider (a few px around the sidebar's right edge,
+            // over the content area)? Drives both the resize-drag and the double-arrow cursor.
+            public method onTreeDivider(int mx, int my, int screenH) returns boolean {
+                if (this.treeW <= 0) {
+                    return false;
+                }
+                return my >= this.contentTop() && my < screenH - this.statusH()
+                    && mx >= this.treeW - 3 && mx <= this.treeW + 3;
+            }
             public method treeVisible() returns boolean {
                 return this.treeW > 0;
             }

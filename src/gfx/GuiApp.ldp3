@@ -95,6 +95,7 @@ public bundle forge {
                 mutable boolean prevMiddle = false;
                 mutable boolean dragging = false;
                 mutable int scrollDrag = 0;   // 0 none, 1 dragging the vertical scrollbar, 2 the horizontal
+                mutable int dividerDrag = 0;  // 0 none, 1 dragging the tree/editor divider, 2 the editor/panel divider
                 mutable int lastW = win.width();
                 mutable int lastH = win.height();
                 mutable int blink = 0;
@@ -227,7 +228,10 @@ public bundle forge {
                         int hc = screen.hscrollTargetCol(wb, win.width(), win.height(), cxNow, cyNow);
                         boolean dbl = frames - lastClickFrame < 22
                             && GuiApp.absDiff(cxNow, lastClickX) < 5 && GuiApp.absDiff(cyNow, lastClickY) < 5;
-                        if (vl >= 0) {
+                        if (screen.onTreeDivider(cxNow, cyNow, win.height())) {
+                            dividerDrag = 1;   // grab the tree/editor divider; drag resizes the sidebar
+                            dragging = false;
+                        } else if (vl >= 0) {
                             wb.active().scrollToLine(vl);
                             scrollDrag = 1;
                             dragging = false;
@@ -251,12 +255,15 @@ public bundle forge {
                         wb.active().scrollToLine(screen.vscrollLineAtY(wb, win.height(), win.cursorY()));
                     } else if (down && prevDown && scrollDrag == 2 && !ov.isOpen()) {
                         wb.active().scrollToColumn(screen.hscrollColAtX(wb, win.width(), win.cursorX()));
+                    } else if (down && prevDown && dividerDrag == 1) {
+                        screen.setTreeWidth(win.cursorX(), win.width());      // resize the sidebar live
                     } else if (down && prevDown && dragging && !ov.isOpen()) {
                         GuiApp.dragExtend(screen, wb, win);                   // extend the selection
                     }
                     if (!down) {
                         dragging = false;
                         scrollDrag = 0;
+                        dividerDrag = 0;
                     }
                     prevDown = down;
                     // a "File > Open Folder" click asked to switch projects: swap the tree live
@@ -447,6 +454,9 @@ public bundle forge {
                 }
                 int mx = win.cursorX();
                 int my = win.cursorY();
+                if (screen.onTreeDivider(mx, my, win.height())) {
+                    return 3;   // double-arrow over the resizable sidebar divider
+                }
                 int topY = screen.editorTop();
                 int botY = win.height() - screen.statusH() - screen.hscrollH();
                 if (my >= topY && my < botY && mx >= screen.treeWidth() && mx < screen.textOx()) {
