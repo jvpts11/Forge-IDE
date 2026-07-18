@@ -1396,6 +1396,7 @@ public bundle forge {
                         this.drawBracketCell(batch, c.screenRowForDocLine(cr), bcol, textX, oy, cw, ch, visible);
                     }
                 }
+                delete bm;   // matchingBracket() hands back a fresh owned Match each frame
 
                 int ccr = c.caretScreenRow();
                 if (ccr >= 0 && ccr < visible && this.caretOn) {

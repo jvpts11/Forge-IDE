@@ -224,6 +224,7 @@ public bundle forge {
                     return m;
                 }
                 if (this.col > 0) {
+                    delete m;   // the char at the caret was not a bracket; discard before trying col-1
                     return this.brackets.matchAt(this.row, this.col - 1);
                 }
                 return m;
@@ -540,6 +541,7 @@ public bundle forge {
                     this.row = m.row;
                     this.col = m.col;
                 }
+                delete m;   // owned fresh Match from matchingBracket
             }
             // Upper- or lower-case the selected text in place (positions unchanged, so the selection is kept),
             // as one undo step. A no-op without a selection.
