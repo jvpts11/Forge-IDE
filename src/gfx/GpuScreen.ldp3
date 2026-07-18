@@ -281,7 +281,7 @@ public bundle forge {
                     this.drawPeek(batch, wb, tw, etop, screenW - tw, screenH - etop - sh - panelH);
                 }
                 if (termOpen) {
-                    this.drawTerminal(batch, wb.terminal(), tw, screenH - sh - panelH, screenW - tw, panelH);
+                    this.drawTerminal(batch, wb, tw, screenH - sh - panelH, screenW - tw, panelH, mx, my);
                 } else if (panelH > 0) {
                     this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH, mx, my);
                 }
@@ -1015,16 +1015,81 @@ public bundle forge {
                 this.panelFrac = f;
                 return;
             }
-            // Draw the terminal: a header, the tail of the scrollback that fits, the in-progress output tail,
-            // and the input line with a prompt + caret.
-            private method drawTerminal(Batch2D* batch, Terminal* term, int ox, int oy, int pw, int ph)
-                    returns void {
+            // Which terminal-header control the point hits: -1 none, -2 the "+" (new terminal), -3 the "x"
+            // (close active), or a tab index >= 0. Only meaningful with the terminal open. The geometry
+            // mirrors drawTerminal's header exactly.
+            public method terminalHeaderHit(Workbench* wb, int screenW, int screenH, int mx, int my) returns int {
+                if (!wb.terminal().isOpen()) {
+                    return -1;
+                }
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
+                int ph = this.terminalPanelHeight(screenH);
+                int oy = screenH - this.statusH() - ph;
+                int headerH = ch + 6;
+                if (my < oy || my >= oy + headerH) {
+                    return -1;
+                }
+                int ox = this.treeW;
+                int pw = screenW - this.treeW;
+                int closeX = ox + pw - 3 * cw;
+                if (mx >= closeX && mx < ox + pw) {
+                    return -3;
+                }
+                int tabW = 3 * cw;
+                int count = wb.terminalCount();
+                int tabsEnd = ox + 6 + count * tabW;
+                if (mx >= ox + 6 && mx < tabsEnd) {
+                    return (mx - (ox + 6)) / tabW;
+                }
+                if (mx >= tabsEnd && mx < tabsEnd + tabW) {
+                    return -2;
+                }
+                return -1;
+            }
+            // Draw the terminal: a header, the tail of the scrollback that fits, the in-progress output tail,
+            // and the input line with a prompt + caret.
+            private method drawTerminal(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph,
+                                        int mx, int my) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                Terminal* term = wb.terminal();
                 batch.rect(ox, oy, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
                 batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
                 int headerH = ch + 6;
-                this.font.drawText(batch, ox + 10, oy + 4, "TERMINAL", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, this.theme.accent.a);
+                // Header: a tab per terminal ("1".."N"), a "+" to open another, and an "x" to close the
+                // active one. tabW / the button positions mirror terminalHeaderHit's hit-testing exactly.
+                int tabW = 3 * cw;
+                int count = wb.terminalCount();
+                int active = wb.activeTerminalIndex();
+                mutable int i = 0;
+                while (i < count) {
+                    int tx = ox + 6 + i * tabW;
+                    boolean sel = i == active;
+                    boolean hv = my >= oy && my < oy + headerH && mx >= tx && mx < tx + tabW;
+                    if (sel) {
+                        batch.rect(tx, oy + 1, tabW, headerH - 1, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, this.theme.bg.a);
+                        batch.rect(tx, oy + 1, tabW, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                    } else if (hv) {
+                        batch.rect(tx, oy + 1, tabW, headerH - 1, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.05);
+                    }
+                    mutable float tr = 0.502;
+                    mutable float tg = 0.588;
+                    mutable float tb = 0.584;
+                    if (sel) {
+                        tr = 0.702; tg = 0.549; tb = 0.353;
+                    }
+                    this.font.drawText(batch, tx + cw, oy + 4, (i + 1).toString(), tr, tg, tb, 1.0);
+                    i = i + 1;
+                }
+                int plusX = ox + 6 + count * tabW;
+                boolean plusHv = my >= oy && my < oy + headerH && mx >= plusX && mx < plusX + tabW;
+                this.font.drawText(batch, plusX + cw, oy + 4, "+", this.theme.accent.r, this.theme.accent.g,
+                                   this.theme.accent.b, plusHv ? 1.0 : 0.7);
+                int closeX = ox + pw - 3 * cw;
+                boolean closeHv = my >= oy && my < oy + headerH && mx >= closeX && mx < ox + pw;
+                this.font.drawText(batch, closeX + cw, oy + 4, "x", this.theme.textDim.r, this.theme.textDim.g,
+                                   this.theme.textDim.b, closeHv ? 1.0 : 0.7);
                 // Rows for output: everything below the header, leaving the last row for the input line.
                 int bodyTop = oy + headerH;
                 int rows = (ph - headerH) / ch;

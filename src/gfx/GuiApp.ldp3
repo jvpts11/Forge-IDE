@@ -234,6 +234,8 @@ public bundle forge {
                         } else if (screen.onPanelDivider(wb, cxNow, cyNow, win.width(), win.height())) {
                             dividerDrag = 2;   // grab the editor/panel divider; drag resizes the terminal/panel
                             dragging = false;
+                        } else if (GuiApp.handleTerminalHeader(screen, wb, win)) {
+                            dragging = false;  // switched / opened / closed a terminal via its header
                         } else if (vl >= 0) {
                             wb.active().scrollToLine(vl);
                             scrollDrag = 1;
@@ -448,6 +450,23 @@ public bundle forge {
                     return false;
                 }
                 return screen.overText(wb, win.width(), win.height(), win.cursorX(), win.cursorY());
+            }
+            // A click on the terminal-panel header: switch to a tab, open another (+), or close the active
+            // one (x). Returns true if it consumed the click so no caret is placed underneath.
+            private static method handleTerminalHeader(GpuScreen* screen, Workbench* wb, GlWindow* win)
+                    returns boolean {
+                int hit = screen.terminalHeaderHit(wb, win.width(), win.height(), win.cursorX(), win.cursorY());
+                if (hit == 0 - 1) {
+                    return false;
+                }
+                if (hit == 0 - 2) {
+                    wb.newTerminal();
+                } else if (hit == 0 - 3) {
+                    wb.closeActiveTerminal();
+                } else {
+                    wb.setActiveTerminal(hit);
+                }
+                return true;
             }
             // The cursor shape for the region under the mouse: 0 = arrow (chrome / open menu), 1 = I-beam
             // (over the editable text), 2 = hand (over a clickable gutter target -- the breakpoint strip on
@@ -2706,7 +2725,7 @@ public bundle forge {
                 // stopped line, call stack, variables and program output update in step with the UI.
                 wb.debugger().pump();
                 wb.drainDebugOutput();
-                wb.terminal().pump();       // stream the integrated terminal's output
+                wb.pumpTerminals();         // stream every terminal's output (active + background)
                 wb.trackNav();              // record far caret jumps for Alt+Left / Alt+Right
                 screen.applyThemeFor(wb);   // re-skin if the theme preference changed
                 int w = win.width();

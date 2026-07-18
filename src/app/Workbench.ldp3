@@ -52,7 +52,8 @@ public bundle forge {
             private mutable String renameOldName;   // the identifier a pending rename prompt is renaming
             private mutable int dbgOutConsumed;      // how many debug-output lines are already in the panel
             private mutable boolean lightTheme;      // UI theme preference (true = light); the shell applies it
-            private mutable Terminal* term;          // integrated terminal (a cmd.exe behind a Subprocess)
+            private mutable ArrayList<Terminal*>* terms;  // integrated terminals (each a cmd.exe behind a Subprocess)
+            private mutable int activeTerm;          // which terminal the panel shows / routes keystrokes to
             private mutable String branch;          // cached branch name (refreshed with the git status)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
@@ -91,7 +92,9 @@ public bundle forge {
                 this.renameOldName = "";
                 this.dbgOutConsumed = 0;
                 this.lightTheme = WorkspaceStore.loadTheme();
-                this.term = new Terminal() on heap;
+                this.terms = new ArrayList<Terminal*>() on heap;
+                this.terms.add(new Terminal() on heap);
+                this.activeTerm = 0;
                 this.branch = "";
                 this.treeDirty = false;
                 this.showMinimap = false;
@@ -265,12 +268,67 @@ public bundle forge {
 
             // The integrated terminal. The shell toggles/focuses it, pumps its output each frame, and routes
             // keystrokes to it while it is focused.
+            // The terminal the panel currently shows and routes keystrokes to.
             public method terminal() returns Terminal* {
-                return this.term;
+                return this.terms.get(this.activeTerm);
+            }
+            public method terminalCount() returns int {
+                return this.terms.size();
+            }
+            public method activeTerminalIndex() returns int {
+                return this.activeTerm;
             }
             public method toggleTerminal() returns void {
-                this.term.setCwd(this.projectDir);
-                this.term.toggle();
+                Terminal* t = this.terms.get(this.activeTerm);
+                t.setCwd(this.projectDir);
+                t.toggle();
+            }
+            // Switch the panel to terminal `i` (keeping the panel open on it).
+            public method setActiveTerminal(int i) returns void {
+                if (i < 0 || i >= this.terms.size()) {
+                    return;
+                }
+                this.activeTerm = i;
+                Terminal* t = this.terms.get(i);
+                t.setCwd(this.projectDir);
+                t.openPanel();
+                t.focus();
+            }
+            // Open a brand-new terminal and make it active (the "+" button / Ctrl+Shift+`).
+            public method newTerminal() returns void {
+                Terminal* t = new Terminal() on heap;
+                t.setCwd(this.projectDir);
+                this.terms.add(t);
+                this.activeTerm = this.terms.size() - 1;
+                t.openPanel();
+                t.focus();
+            }
+            // Close the active terminal. With more than one open, drop it and show a neighbour; with only
+            // one, just hide the panel (keeping the terminal so it reopens with its scrollback).
+            public method closeActiveTerminal() returns void {
+                if (this.terms.size() <= 1) {
+                    this.terms.get(0).close();
+                    return;
+                }
+                Terminal* t = this.terms.get(this.activeTerm);
+                this.terms.removeAt(this.activeTerm);
+                t.close();   // terminate the shell subprocess before freeing the terminal
+                delete t;
+                if (this.activeTerm >= this.terms.size()) {
+                    this.activeTerm = this.terms.size() - 1;
+                }
+                Terminal* n = this.terms.get(this.activeTerm);
+                n.setCwd(this.projectDir);
+                n.openPanel();
+                n.focus();
+            }
+            // Stream every terminal's output each frame so a background shell's pipe never stalls.
+            public method pumpTerminals() returns void {
+                mutable int i = 0;
+                while (i < this.terms.size()) {
+                    this.terms.get(i).pump();
+                    i = i + 1;
+                }
             }
             // Move any new output the debugged program produced into the Debug Console panel. Called each
             // frame right after pump(), so the program's stdout streams in live.
