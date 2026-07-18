@@ -1338,6 +1338,7 @@ public bundle forge {
                         }
                         si = si + 1;
                     }
+                    delete spans;   // renderSpans hands back a fresh owned list each frame; free it (no leak)
                     // render-whitespace (View toggle): a faint dot centred in each space cell of the row.
                     if (wb.renderWhitespace()) {
                         mutable int wi = 0;

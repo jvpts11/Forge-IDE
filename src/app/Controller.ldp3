@@ -837,6 +837,7 @@ public bundle forge {
                     }
                     out.add(new Span(a - from, b - from, sp.kind) on heap);
                 }
+                delete spans;   // wrap path returns `out`; the source list is done with (no leak)
                 return out;
             }
             // Bracket nesting depth at the very start of `docLine` -- the seed for bracket-pair colouring at the
