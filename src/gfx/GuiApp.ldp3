@@ -2314,7 +2314,8 @@ public bundle forge {
                     fi = fi + 1;
                     if (path.endsWith(".ldp3")) {
                         ArrayList<Symbol>* syms = new ArrayList<Symbol>() on heap;
-                        Symbols.scan(Files.readLines(path), syms);
+                        ArrayList<String> fileLines = Files.readLines(path);
+                        Symbols.scan(fileLines, syms);
                         mutable int si = 0;
                         while (si < syms.size()) {
                             String nm = GuiApp.symbolName(syms.get(si).caption);
@@ -2323,9 +2324,12 @@ public bundle forge {
                             }
                             si = si + 1;
                         }
+                        delete fileLines;   // the file's lines, done with after scanning
+                        delete syms;        // the per-file symbol list, done with after harvesting names
                     }
                 }
-                comp.setProjectSymbols(names);
+                comp.setProjectSymbols(names);   // ownership of `names` transfers to the completion index
+                delete files;                    // allFiles() returns a fresh list this method owns
                 return;
             }
             private static method symbolName(String caption) returns String {
@@ -2365,7 +2369,8 @@ public bundle forge {
                     String path = files.get(fi);
                     if (path.endsWith(".ldp3")) {
                         ArrayList<Symbol>* syms = new ArrayList<Symbol>() on heap;
-                        Symbols.scan(Files.readLines(path), syms);
+                        ArrayList<String> fileLines = Files.readLines(path);
+                        Symbols.scan(fileLines, syms);
                         String base = Paths.basename(path);
                         mutable int si = 0;
                         while (si < syms.size()) {
@@ -2374,10 +2379,13 @@ public bundle forge {
                             symFiles.add(path);
                             si = si + 1;
                         }
+                        delete fileLines;   // the file's lines, done with after scanning
+                        delete syms;        // the per-file symbol list, done with after labelling
                     }
                     fi = fi + 1;
                 }
-                ov.openWorkspaceSymbols(labels, lines, symFiles);
+                ov.openWorkspaceSymbols(labels, lines, symFiles);   // ov takes ownership of the three lists
+                delete files;                                        // allFiles() returns a fresh owned list
                 return;
             }
             // Open the selected file from the quick-open picker.
