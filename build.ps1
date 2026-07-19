@@ -92,10 +92,15 @@ try {
         }
     }
     if ($Ldp3Home) {
-        $spec = Join-Path $Ldp3Home "docs\LDP3_specification.md"
-        if (Test-Path $spec) { Copy-Item $spec (Join-Path $refDir "language-reference.md") -Force }
-        $kw = Join-Path $Ldp3Home "docs\LDP3_keywords.md"
-        if (Test-Path $kw) { Copy-Item $kw (Join-Path $refDir "keywords.md") -Force }
+        # Bundle the canonical English language reference (docs/reference/) for Help > Language
+        # Reference / Keyword Reference. The whole tree is copied so chapter links resolve; the
+        # index and the keyword chapter are also surfaced under the names Help opens directly.
+        $refSrc = Join-Path $Ldp3Home "docs\reference"
+        if (Test-Path $refSrc) {
+            Copy-Item $refSrc (Join-Path $refDir "language-reference") -Recurse -Force
+            Copy-Item (Join-Path $refSrc "README.md") (Join-Path $refDir "language-reference.md") -Force
+            Copy-Item (Join-Path $refSrc "guide\11-keyword-reference.md") (Join-Path $refDir "keywords.md") -Force
+        }
     }
 
     Write-Host "== self-test =="
