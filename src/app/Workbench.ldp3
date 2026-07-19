@@ -303,17 +303,28 @@ public bundle forge {
                 t.openPanel();
                 t.focus();
             }
-            // Close the active terminal. With more than one open, drop it and show a neighbour; with only
-            // one, just hide the panel (keeping the terminal so it reopens with its scrollback).
             public method closeActiveTerminal() returns void {
-                if (this.terms.size() <= 1) {
-                    this.terms.get(0).close();
+                this.closeTerminal(this.activeTerm);
+            }
+            // Close a SPECIFIC terminal by index. With more than one open, drop just that one and keep
+            // showing a neighbour; with only one, hide the panel (keeping the terminal so it reopens with
+            // its scrollback). Fixes "the x closed every terminal": only terminal `i` goes.
+            public method closeTerminal(int i) returns void {
+                if (i < 0 || i >= this.terms.size()) {
                     return;
                 }
-                Terminal* t = this.terms.get(this.activeTerm);
-                this.terms.removeAt(this.activeTerm);
+                if (this.terms.size() <= 1) {
+                    this.terms.get(0).close();   // last one: just hide the panel
+                    return;
+                }
+                Terminal* t = this.terms.get(i);
+                this.terms.removeAt(i);
                 t.close();   // terminate the shell subprocess before freeing the terminal
                 delete t;
+                // Keep the active index pointing at the same terminal it did before the removal.
+                if (this.activeTerm > i) {
+                    this.activeTerm = this.activeTerm - 1;
+                }
                 if (this.activeTerm >= this.terms.size()) {
                     this.activeTerm = this.terms.size() - 1;
                 }

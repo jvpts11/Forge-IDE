@@ -1031,21 +1031,24 @@ public bundle forge {
                     return -1;
                 }
                 int ox = this.treeW;
-                int pw = screenW - this.treeW;
-                int closeX = ox + pw - 3 * cw;
-                if (mx >= closeX && mx < ox + pw) {
-                    return -3;
-                }
-                int tabW = 3 * cw;
+                int tabW = 5 * cw;   // "N" + a per-tab "x" close zone
                 int count = wb.terminalCount();
-                int tabsEnd = ox + 6 + count * tabW;
-                if (mx >= ox + 6 && mx < tabsEnd) {
-                    return (mx - (ox + 6)) / tabW;
+                mutable int ti = 0;
+                while (ti < count) {
+                    int tx = ox + 6 + ti * tabW;
+                    if (mx >= tx && mx < tx + tabW) {
+                        if (mx >= tx + tabW - 2 * cw) {
+                            return 0 - (10 + ti);   // close THIS terminal (the tab's own x)
+                        }
+                        return ti;                  // switch to this terminal
+                    }
+                    ti = ti + 1;
                 }
-                if (mx >= tabsEnd && mx < tabsEnd + tabW) {
-                    return -2;
+                int plusX = ox + 6 + count * tabW;
+                if (mx >= plusX && mx < plusX + tabW) {
+                    return 0 - 2;   // "+" new terminal
                 }
-                return -1;
+                return 0 - 1;
             }
             // Draw the terminal: a header, the tail of the scrollback that fits, the in-progress output tail,
             // and the input line with a prompt + caret.
@@ -1057,9 +1060,9 @@ public bundle forge {
                 batch.rect(ox, oy, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
                 batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
                 int headerH = ch + 6;
-                // Header: a tab per terminal ("1".."N"), a "+" to open another, and an "x" to close the
-                // active one. tabW / the button positions mirror terminalHeaderHit's hit-testing exactly.
-                int tabW = 3 * cw;
+                // Header: one tab per terminal, each "N" + its own "x" (closes THAT terminal), then a "+"
+                // to open another. tabW / positions mirror terminalHeaderHit's hit-testing exactly.
+                int tabW = 5 * cw;
                 int count = wb.terminalCount();
                 int active = wb.activeTerminalIndex();
                 mutable int i = 0;
@@ -1080,16 +1083,17 @@ public bundle forge {
                         tr = 0.702; tg = 0.549; tb = 0.353;
                     }
                     this.font.drawText(batch, tx + cw, oy + 4, (i + 1).toString(), tr, tg, tb, 1.0);
+                    // per-tab close: the "x" in the tab's right zone (brighter when hovering that zone)
+                    boolean xHv = hv && mx >= tx + tabW - 2 * cw;
+                    this.font.drawText(batch, tx + tabW - 2 * cw + 1, oy + 4, "x",
+                                       this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
+                                       xHv ? 1.0 : 0.55);
                     i = i + 1;
                 }
                 int plusX = ox + 6 + count * tabW;
                 boolean plusHv = my >= oy && my < oy + headerH && mx >= plusX && mx < plusX + tabW;
                 this.font.drawText(batch, plusX + cw, oy + 4, "+", this.theme.accent.r, this.theme.accent.g,
                                    this.theme.accent.b, plusHv ? 1.0 : 0.7);
-                int closeX = ox + pw - 3 * cw;
-                boolean closeHv = my >= oy && my < oy + headerH && mx >= closeX && mx < ox + pw;
-                this.font.drawText(batch, closeX + cw, oy + 4, "x", this.theme.textDim.r, this.theme.textDim.g,
-                                   this.theme.textDim.b, closeHv ? 1.0 : 0.7);
                 // Rows for output: everything below the header, leaving the last row for the input line.
                 int bodyTop = oy + headerH;
                 int rows = (ph - headerH) / ch;
@@ -1098,9 +1102,10 @@ public bundle forge {
                 }
                 int outRows = rows - 1;
                 ArrayList<String>* sb = term.scrollback();
-                // Build the visible list = scrollback tail + the partial line, then show its last outRows.
+                // Build the visible list = scrollback tail + the partial line, then show a window of outRows
+                // ending scrollOffset() lines above the newest (0 = pinned to the live tail).
                 int total = sb.size() + 1;
-                mutable int start = total - outRows;
+                mutable int start = total - outRows - term.scrollOffset();
                 if (start < 0) {
                     start = 0;
                 }

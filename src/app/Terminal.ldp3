@@ -21,6 +21,7 @@ public bundle forge {
             private mutable String tail;              // the not-yet-newline-terminated tail of the output
             private mutable String input;                // the line the user is typing
             private mutable String cwd;                  // where the shell starts
+            private mutable int scrollOff;               // lines scrolled up from the bottom (0 = live tail)
 
             public constructor Terminal() {
                 this.started = false;
@@ -30,6 +31,25 @@ public bundle forge {
                 this.tail = "";
                 this.input = "";
                 this.cwd = ".";
+                this.scrollOff = 0;
+            }
+            // Scrollback view offset (0 = pinned to the newest output). The wheel moves it while the mouse
+            // is over the terminal; typing/enter snaps back to the bottom so you always see what you type.
+            public method scrollOffset() returns int {
+                return this.scrollOff;
+            }
+            public method scrollBy(int delta, int maxUp) returns void {
+                mutable int n = this.scrollOff + delta;
+                if (n < 0) {
+                    n = 0;
+                }
+                if (n > maxUp) {
+                    n = maxUp;
+                }
+                this.scrollOff = n;
+            }
+            public method scrollToBottom() returns void {
+                this.scrollOff = 0;
             }
 
             public method isOpen() returns boolean {
@@ -118,6 +138,7 @@ public bundle forge {
             // --- keyboard, while focused ---
             public method typeChar(char c) returns void {
                 this.input = this.input + Terminal.ch2s(c);
+                this.scrollOff = 0;   // typing snaps the view back to the live tail
             }
             public method backspace() returns void {
                 if (this.input.length() > 0) {

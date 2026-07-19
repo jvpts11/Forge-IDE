@@ -236,6 +236,8 @@ public bundle forge {
                             dragging = false;
                         } else if (GuiApp.handleTerminalHeader(screen, wb, win)) {
                             dragging = false;  // switched / opened / closed a terminal via its header
+                        } else if (GuiApp.clickInTerminalBody(screen, wb, win)) {
+                            dragging = false;  // clicking the terminal focuses it (keystrokes go to the shell)
                         } else if (vl >= 0) {
                             wb.active().scrollToLine(vl);
                             scrollDrag = 1;
@@ -339,7 +341,17 @@ public bundle forge {
                         } else if (win.modShift()) {
                             wb.active().scrollColumns(0 - (scroll / 120) * 6);   // Shift+wheel -> horizontal
                         } else {
-                            wb.active().scrollLines(0 - (scroll / 120) * 3);
+                            // Wheel over the terminal scrolls its scrollback (up = into history); elsewhere
+                            // it scrolls the editor.
+                            int wmy = win.cursorY();
+                            int wph = screen.currentPanelHeight(wb, win.height());
+                            if (wb.terminal().isOpen() && wph > 0
+                                    && wmy >= win.height() - screen.statusH() - wph
+                                    && wmy < win.height() - screen.statusH()) {
+                                wb.terminal().scrollBy((scroll / 120) * 3, wb.terminal().scrollback().size());
+                            } else {
+                                wb.active().scrollLines(0 - (scroll / 120) * 3);
+                            }
                         }
                     }
                     // Ctrl+= / Ctrl+- zoom the editor font in and out (reloads the glyph atlas at the new
@@ -461,12 +473,31 @@ public bundle forge {
                 }
                 if (hit == 0 - 2) {
                     wb.newTerminal();
-                } else if (hit == 0 - 3) {
-                    wb.closeActiveTerminal();
+                } else if (hit <= 0 - 10) {
+                    wb.closeTerminal(0 - 10 - hit);   // per-tab close: hit = -(10+i) -> terminal index i
                 } else {
                     wb.setActiveTerminal(hit);
                 }
                 return true;
+            }
+            // A click anywhere in the open terminal panel (header empty area or body) focuses the terminal
+            // so keystrokes route to the shell. Header controls are consumed earlier by handleTerminalHeader.
+            private static method clickInTerminalBody(GpuScreen* screen, Workbench* wb, GlWindow* win)
+                    returns boolean {
+                if (!wb.terminal().isOpen()) {
+                    return false;
+                }
+                int ph = screen.currentPanelHeight(wb, win.height());
+                if (ph <= 0) {
+                    return false;
+                }
+                int my = win.cursorY();
+                int top = win.height() - screen.statusH() - ph;
+                if (win.cursorX() >= screen.treeWidth() && my >= top && my < win.height() - screen.statusH()) {
+                    wb.terminal().focus();
+                    return true;
+                }
+                return false;
             }
             // The cursor shape for the region under the mouse: 0 = arrow (chrome / open menu), 1 = I-beam
             // (over the editable text), 2 = hand (over a clickable gutter target -- the breakpoint strip on
@@ -1941,7 +1972,9 @@ public bundle forge {
                     boolean ctrl = win.modCtrl();
                     boolean shift = win.modShift();
                     boolean alt = win.modAlt();
-                    if (e.isKey() && ctrl && e.vk == 192) {                  // Ctrl+` -> toggle terminal
+                    if (e.isKey() && ctrl && shift && e.vk == 192) {         // Ctrl+Shift+` -> new terminal
+                        wb.newTerminal();
+                    } else if (e.isKey() && ctrl && e.vk == 192) {           // Ctrl+` -> toggle terminal
                         wb.toggleTerminal();
                     } else if (wb.terminal().isFocused()) {
                         GuiApp.terminalKey(wb.terminal(), e, ctrl);
