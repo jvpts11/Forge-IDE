@@ -12,10 +12,21 @@ public bundle forge {
         // empty document is a single empty line, never zero lines.
         public class TextBuffer {
             private mutable ArrayList<String> lines;
+            private mutable boolean readOnly;   // a read-only view (e.g. the bundled stdlib) blocks every edit
 
             public constructor TextBuffer() {
                 this.lines = new ArrayList<String>() on heap;
                 this.lines.add("");
+                this.readOnly = false;
+            }
+
+            // Lock/unlock edits. loadText() and the constructor still populate content; only user edits are
+            // blocked, so a read-only document can still be opened and refreshed from disk.
+            public method setReadOnly(boolean ro) returns void {
+                this.readOnly = ro;
+            }
+            public method isReadOnly() returns boolean {
+                return this.readOnly;
             }
 
             public method lineCount() returns int {
@@ -27,12 +38,21 @@ public bundle forge {
 
             // Whole-line helpers for line operations (duplicate / delete / move / indent).
             public method setLine(int row, String text) returns void {
+                if (this.readOnly) {
+                    return;
+                }
                 this.lines.set(row, text);
             }
             public method insertLine(int row, String text) returns void {
+                if (this.readOnly) {
+                    return;
+                }
                 this.lines.insertAt(row, text);
             }
             public method removeLine(int row) returns void {
+                if (this.readOnly) {
+                    return;
+                }
                 this.lines.removeAt(row);
                 if (this.lines.size() == 0) {
                     this.lines.add("");
@@ -55,6 +75,9 @@ public bundle forge {
 
             // Insert character `c` at (row, col): everything from col on shifts right.
             public method insertChar(int row, int col, char c) returns void {
+                if (this.readOnly) {
+                    return;
+                }
                 String cur = this.lines.get(row);
                 StringBuilder sb = new StringBuilder() on heap;
                 sb.append(cur.substring(0, col));
@@ -65,6 +88,9 @@ public bundle forge {
 
             // Split the line at (row, col) -- the Enter key: the text at and after col becomes a new line.
             public method splitLine(int row, int col) returns void {
+                if (this.readOnly) {
+                    return;
+                }
                 String cur = this.lines.get(row);
                 this.lines.set(row, cur.substring(0, col));
                 this.lines.insertAt(row + 1, cur.substring(col, cur.length()));
@@ -90,6 +116,9 @@ public bundle forge {
 
             // Delete the range (r1,c1)..(r2,c2), ordered. The caret belongs at (r1,c1) afterward.
             public method deleteRange(int r1, int c1, int r2, int c2) returns void {
+                if (this.readOnly) {
+                    return;
+                }
                 if (r1 == r2) {
                     String cur = this.lines.get(r1);
                     this.lines.set(r1, cur.substring(0, c1) + cur.substring(c2, cur.length()));
@@ -108,6 +137,9 @@ public bundle forge {
             // single-line insert), so the caller can place the caret; its new column is the last inserted
             // segment's length (single-line: col + text.length()).
             public method insertText(int row, int col, String text) returns int {
+                if (this.readOnly) {
+                    return 0;
+                }
                 ArrayList<String> parts = Strings.split(text, "\n");
                 String cur = this.lines.get(row);
                 String tail = cur.substring(col, cur.length());
@@ -127,6 +159,9 @@ public bundle forge {
             // Backspace at (row, col): within a line (col > 0) delete the char to the left; at a line start
             // (col == 0, row > 0) join this line onto the previous one. Returns the caret's new column.
             public method backspace(int row, int col) returns int {
+                if (this.readOnly) {
+                    return col;
+                }
                 if (col > 0) {
                     String cur = this.lines.get(row);
                     StringBuilder sb = new StringBuilder() on heap;

@@ -1160,11 +1160,28 @@ public bundle forge {
                 String p = GuiApp.referencePath(name);
                 if (File.exists(p)) {
                     wb.openFile(p);
+                    wb.markActiveReadOnly();   // the bundled reference is read-only: view, don't edit
                 } else {
                     wb.output().banner("Reference not found",
                         "Could not find " + name + " next to Forge (looked in " + GuiApp.exeDir() + "/reference).");
                 }
                 return;
+            }
+            // Go-to-definition fallback for standard-library symbols: open the bundled stdlib reference
+            // (read-only) at the definition of `w`. Returns true if the symbol was found there.
+            private static method gotoStdlibDef(Workbench* wb, String w) returns boolean {
+                String p = GuiApp.referencePath("stdlib.ldp3");
+                if (!File.exists(p)) {
+                    return false;
+                }
+                int line = Symbols.definitionLineIn(Files.readLines(p), w);
+                if (line < 0) {
+                    return false;
+                }
+                wb.openFile(p);
+                wb.markActiveReadOnly();
+                wb.active().placeCaret(line, 0);
+                return true;
             }
 
             // Reopen the files that were open last time this project was closed, so Forge picks up where the
@@ -2428,7 +2445,8 @@ public bundle forge {
                         }
                     }
                 }
-                return false;
+                // Not in the project -- try the bundled stdlib reference (System.IO.Console, ArrayList, ...).
+                return GuiApp.gotoStdlibDef(wb, w);
             }
 
             // Rebuild the project-wide symbol index feeding autocomplete: every class/method/enum name across

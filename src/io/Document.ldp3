@@ -52,6 +52,15 @@ public bundle forge {
                 this.rev = this.rev + 1;   // every view of this document will notice
             }
 
+            // Read-only documents (the bundled stdlib opened by Go to Definition / Help) refuse edits and
+            // never write back to disk, so the reference source cannot be corrupted from the editor.
+            public method setReadOnly(boolean ro) returns void {
+                this.buf.setReadOnly(ro);
+            }
+            public method isReadOnly() returns boolean {
+                return this.buf.isReadOnly();
+            }
+
             // Read a file from disk into the buffer, replacing its contents.
             public method openFile(String p) returns void {
                 ArrayList<String> ls = Files.readLines(p);
@@ -63,6 +72,9 @@ public bundle forge {
 
             // Write the buffer's lines back to `path`.
             public method save() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;   // a read-only reference never writes back
+                }
                 Files.writeLines(this.path, Strings.split(this.buf.text(), "\n"));
                 this.modified = false;
                 this.diskSize = File.size(this.path);

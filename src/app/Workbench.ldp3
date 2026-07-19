@@ -878,6 +878,10 @@ public bundle forge {
             public method activeTabIndex() returns int {
                 return this.docs.activeIndex();
             }
+            // Mark the active document read-only (used when opening the bundled stdlib reference).
+            public method markActiveReadOnly() returns void {
+                this.docs.active().document().setReadOnly(true);
+            }
             // --- unsaved-changes guard on close (the shell drives the confirm prompt) ---
             // Whether the tab at index i (pane 0) has unsaved edits, so a close should be confirmed first.
             public method tabModified(int i) returns boolean {
