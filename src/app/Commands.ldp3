@@ -43,6 +43,9 @@ public bundle forge {
                 this.register("view.wrap", "Toggle Word Wrap");
                 this.register("git.branch", "Git: Branches");
                 this.register("view.todos", "Tasks (TODO / FIXME)");
+                this.register("view.regions", "LDP3: Regions");
+                this.register("view.bundles", "LDP3: Bundles");
+                this.register("view.persistents", "LDP3: Persistents");
                 this.register("edit.selectAll", "Select All");
                 this.register("edit.duplicateLine", "Duplicate Line");
                 this.register("edit.joinLines", "Join Lines");

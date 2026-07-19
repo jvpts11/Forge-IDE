@@ -1231,6 +1231,137 @@ public bundle forge {
             }
             // Every project .ldp3 file, by a fresh recursive walk of the project root (independent of the
             // visual tree's expand state) -- powers workspace refactors like cross-file rename.
+            // --- LDP3-native tool windows: navigable inventories of the program's regions, persistents,
+            // and bundles, scanned from the source (and the manifest for dependency bundles). These are the
+            // language's distinctive constructs; clicking a row jumps to the declaration. (Live arena/leak
+            // stats would come from runtime introspection -- a later enhancement on top of this inventory.)
+            private static method isIdentCh(char c) returns boolean {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_';
+            }
+            // True if `word` occurs in `line` as a whole word (not as part of a longer identifier).
+            private static method hasWord(String line, String word) returns boolean {
+                int n = line.length();
+                int m = word.length();
+                if (m == 0) {
+                    return false;
+                }
+                mutable int i = 0;
+                while (i + m <= n) {
+                    mutable boolean matched = true;
+                    mutable int j = 0;
+                    while (j < m) {
+                        if (line.charAt(i + j) != word.charAt(j)) {
+                            matched = false;
+                            j = m;
+                        } else {
+                            j = j + 1;
+                        }
+                    }
+                    if (matched) {
+                        boolean leftOk = i == 0 || !Workbench.isIdentCh(line.charAt(i - 1));
+                        boolean rightOk = i + m >= n || !Workbench.isIdentCh(line.charAt(i + m));
+                        if (leftOk && rightOk) {
+                            return true;
+                        }
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+            // Scan every project .ldp3 file for source lines mentioning `needle` (as a whole word, outside
+            // line comments) and show them as a navigable list under `caption`.
+            private method scanDecls(ArrayList<String>* files, String needle, String caption) returns void {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".ldp3")) {
+                        continue;
+                    }
+                    String base = Paths.basename(path);
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String t = lines.get(row).trim();
+                        if (!t.startsWith("//") && Workbench.hasWord(t, needle)) {
+                            body.add(base + ":" + (row + 1).toString() + "  " + t);
+                            navFiles.add(path);
+                            navLines.add(row);
+                        }
+                        row = row + 1;
+                    }
+                }
+                if (body.size() == 0) {
+                    body.add("(none found)");
+                    navFiles.add("");
+                    navLines.add(0 - 1);
+                }
+                this.out.showNavigable(caption, body, navFiles, navLines);
+                return;
+            }
+            public method showRegions(ArrayList<String>* files) returns void {
+                this.scanDecls(files, "region", "Regions");
+                return;
+            }
+            public method showPersistents(ArrayList<String>* files) returns void {
+                this.scanDecls(files, "persistent", "Persistents");
+                return;
+            }
+            // The program's bundles: dependency bundles from ldp3.toml first, then each `bundle` declaration.
+            public method showBundles(ArrayList<String>* files) returns void {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                String toml = Paths.join(this.projectDir, "ldp3.toml");
+                if (File.exists(toml)) {
+                    ArrayList<String> tl = Strings.split(File.readAll(toml), "\n");
+                    mutable boolean inDeps = false;
+                    mutable int i = 0;
+                    while (i < tl.size()) {
+                        String t = tl.get(i).trim();
+                        i = i + 1;
+                        if (t.startsWith("[")) {
+                            inDeps = t.equals("[dependencies]");
+                        } else if (inDeps && t.length() > 0 && !t.startsWith("#")) {
+                            body.add("dep: " + t);
+                            navFiles.add(toml);
+                            navLines.add(i - 1);
+                        }
+                    }
+                }
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".ldp3")) {
+                        continue;
+                    }
+                    String base = Paths.basename(path);
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String t = lines.get(row).trim();
+                        if (!t.startsWith("//") && Workbench.hasWord(t, "bundle")) {
+                            body.add(base + ":" + (row + 1).toString() + "  " + t);
+                            navFiles.add(path);
+                            navLines.add(row);
+                        }
+                        row = row + 1;
+                    }
+                }
+                if (body.size() == 0) {
+                    body.add("(no bundles found)");
+                    navFiles.add("");
+                    navLines.add(0 - 1);
+                }
+                this.out.showNavigable("Bundles", body, navFiles, navLines);
+                return;
+            }
+
             public method projectFiles() returns ArrayList<String>* {
                 ArrayList<String>* out = new ArrayList<String>() on heap;
                 this.walkProject(this.projectDir, out, 0);
@@ -1974,6 +2105,24 @@ public bundle forge {
                 }
                 if (id.equals("git.unstage")) {
                     this.gitUnstageActive();
+                    return true;
+                }
+                if (id.equals("view.regions")) {
+                    ArrayList<String>* rf = this.projectFiles();
+                    this.showRegions(rf);
+                    delete rf;
+                    return true;
+                }
+                if (id.equals("view.bundles")) {
+                    ArrayList<String>* bf = this.projectFiles();
+                    this.showBundles(bf);
+                    delete bf;
+                    return true;
+                }
+                if (id.equals("view.persistents")) {
+                    ArrayList<String>* pf = this.projectFiles();
+                    this.showPersistents(pf);
+                    delete pf;
                     return true;
                 }
                 if (id.equals("edit.format")) {
