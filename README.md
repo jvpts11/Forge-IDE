@@ -37,10 +37,10 @@ What works today (see [`docs/DESIGN.md`](docs/DESIGN.md) for the module map):
   side-by-side / unified diff view.
 - **Build / run / terminal** — build (diagnostics become a navigable Problems list), run,
   run-tests, and multiple **integrated terminals** (cmd or PowerShell, renamable tabs).
-- **Debugger** (experimental) — a Debug Adapter Protocol client with gutter breakpoints,
-  step over/in/out, call stack and variables. It drives `lldb-dap` and the compiler emits
-  DWARF (`ldp3 build --debug`), but source-line breakpoint binding against that DWARF is not
-  yet reliable, so treat the debugger as experimental for now.
+- **Debugger** — a Debug Adapter Protocol client with gutter breakpoints, step over/in/out,
+  call stack and variables. `ldp3 build --debug` emits DWARF and the client drives `lldb-dap`;
+  source-line breakpoints bind and locals are shown (verified end to end). It needs `lldb-dap`
+  present with its `python311` runtime, which the installer bundles.
 - **UI** — light/dark themes (persisted), split editor over a shared document, a minimap,
   resizable panels, font zoom, and context menus.
 
