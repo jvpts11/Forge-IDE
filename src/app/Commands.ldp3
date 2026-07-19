@@ -73,6 +73,7 @@ public bundle forge {
                 this.register("view.split", "Split Editor");
                 this.register("view.moveToOtherPane", "Move File to Other Pane");
                 this.register("view.theme", "Toggle Light/Dark Theme");
+                this.register("prefs.open", "Preferences: Settings");
                 this.register("view.terminal", "Toggle Terminal");
                 this.register("edit.format", "Format Document");
                 this.register("debug.start", "Debug: Start / Continue");

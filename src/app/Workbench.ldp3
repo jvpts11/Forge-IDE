@@ -4,6 +4,7 @@ import syntax.Span;
 import syntax.Tok;
 import app.Controller;
 import io.Document;
+import io.Settings;
 import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
@@ -44,6 +45,7 @@ public bundle forge {
             private mutable KeyMap* keymap;
             private mutable OutputPanel* out;
             private mutable ArrayList<Diagnostic>* diags;
+            private mutable Settings* settings;      // persisted user preferences (font, tab width, theme, toggles)
             private mutable boolean wrap;           // word wrap: a long line occupies several screen rows
             private mutable boolean outline;        // the structure panel: the file's declarations, at a glance
             private mutable String projectDir;      // where build/run commands execute (the project root)
@@ -86,9 +88,10 @@ public bundle forge {
                 this.keymap = new KeyMap() on heap;
                 this.out = new OutputPanel() on heap;
                 this.diags = new ArrayList<Diagnostic>() on heap;
+                this.settings = Settings.load();
                 this.projectDir = ".";
                 this.outline = false;
-                this.wrap = false;
+                this.wrap = this.settings.wordWrap;
                 this.projectName = "";
                 this.git = new GitStatus() on heap;
                 this.dbg = new Debugger() on heap;
@@ -97,15 +100,15 @@ public bundle forge {
                 this.sidebarToggle = false;
                 this.renameOldName = "";
                 this.dbgOutConsumed = 0;
-                this.lightTheme = WorkspaceStore.loadTheme();
+                this.lightTheme = this.settings.lightTheme;
                 this.termRegion = itself.allocate(16 kilobytes);
                 this.terms = new ArrayList<Terminal*>() on heap;
                 this.terms.add(new Terminal() in region this.termRegion);
                 this.activeTerm = 0;
                 this.branch = "";
                 this.treeDirty = false;
-                this.showMinimap = false;
-                this.renderWs = false;
+                this.showMinimap = this.settings.minimap;
+                this.renderWs = this.settings.whitespace;
                 this.navBack = new ArrayList<NavLoc>() on heap;
                 this.navFwd = new ArrayList<NavLoc>() on heap;
                 this.lastNavFile = "";
@@ -271,7 +274,12 @@ public bundle forge {
             }
             public method toggleTheme() returns void {
                 this.lightTheme = !this.lightTheme;
-                WorkspaceStore.saveTheme(this.lightTheme);
+                this.settings.lightTheme = this.lightTheme;
+                Settings.save(this.settings);
+            }
+            // The live user preferences (font, tab width, theme, view toggles); persisted on change.
+            public method settings() returns Settings* {
+                return this.settings;
             }
 
             // The integrated terminal. The shell toggles/focuses it, pumps its output each frame, and routes
@@ -411,6 +419,8 @@ public bundle forge {
             }
             public method toggleWrap() returns void {
                 this.wrap = !this.wrap;
+                this.settings.wordWrap = this.wrap;
+                Settings.save(this.settings);
                 return;
             }
             public method outlineOpen() returns boolean {
@@ -598,6 +608,8 @@ public bundle forge {
             }
             public method toggleRenderWhitespace() returns void {
                 this.renderWs = !this.renderWs;
+                this.settings.whitespace = this.renderWs;
+                Settings.save(this.settings);
                 return;
             }
             public method requestSidebarToggle() returns void {
@@ -884,6 +896,7 @@ public bundle forge {
                     while (i < other.count()) {
                         if (other.documentAt(i).path().equals(path)) {
                             Controller* v = this.documents().openView(other.documentAt(i));
+                            v.setTabWidth(this.settings.tabWidth);
                             this.refreshGit();
                             return v;
                         }
@@ -891,6 +904,7 @@ public bundle forge {
                     }
                 }
                 Controller* c = this.documents().openFile(path);
+                c.setTabWidth(this.settings.tabWidth);
                 this.refreshGit();
                 return c;
             }
@@ -1660,6 +1674,8 @@ public bundle forge {
             }
             public method toggleMinimap() returns void {
                 this.showMinimap = !this.showMinimap;
+                this.settings.minimap = this.showMinimap;
+                Settings.save(this.settings);
             }
             public method minimapVisible() returns boolean {
                 return this.showMinimap;

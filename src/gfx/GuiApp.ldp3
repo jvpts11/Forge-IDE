@@ -14,6 +14,7 @@ import app.Command;
 import io.FileTree;
 import io.FileNode;
 import io.WorkspaceStore;
+import io.Settings;
 import input.Key;
 import input.KeyCode;
 import System.Collections.ArrayList;
@@ -65,7 +66,7 @@ public bundle forge {
                 }
                 GuiApp.setWindowIcon(win);
                 win.setVSync(1);
-                Font* font = GuiApp.loadFont(win, 18);
+                Font* font = GuiApp.loadFont(win, 18, "Consolas");
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 // With no path argument, reopen the last project the user had open.
@@ -106,7 +107,12 @@ public bundle forge {
                 mutable int lastClickFrame = 0 - 100;
                 mutable int lastClickX = 0;
                 mutable int lastClickY = 0;
-                mutable int fontPx = 18;
+                mutable int fontPx = wb.settings().fontSize;
+                if (fontPx != 18 || !wb.settings().fontFamily.equals("Consolas")) {
+                    screen.setFont(GuiApp.loadFont(win, fontPx, wb.settings().fontFamily));
+                    wb.active().resizeViewport(screen.paneRowsFor(win.height()),
+                                               screen.paneColsFor(win.width()));
+                }
                 mutable boolean prevZoom = false;
                 // Redraw only when something changed. The window re-rendered every frame at 60 fps, and every
                 // frame rebuilds throwaway strings (line numbers, the status bar, breadcrumbs), so an idle
@@ -355,9 +361,11 @@ public bundle forge {
                             int want = fontPx + delta;
                             if (want >= 10 && want <= 32) {
                                 fontPx = want;
-                                screen.setFont(GuiApp.loadFont(win, fontPx));
+                                screen.setFont(GuiApp.loadFont(win, fontPx, wb.settings().fontFamily));
                                 wb.active().resizeViewport(screen.paneRowsFor(win.height()),
                                                            screen.paneColsFor(win.width()));
+                                wb.settings().fontSize = fontPx;
+                                Settings.save(wb.settings());
                             }
                         } else if (win.modShift()) {
                             wb.active().scrollColumns(0 - (scroll / 120) * 6);   // Shift+wheel -> horizontal
@@ -388,9 +396,11 @@ public bundle forge {
                         } else if (zminus && fontPx > 10) {
                             fontPx = fontPx - 2;
                         }
-                        screen.setFont(GuiApp.loadFont(win, fontPx));
+                        screen.setFont(GuiApp.loadFont(win, fontPx, wb.settings().fontFamily));
                         wb.active().resizeViewport(screen.paneRowsFor(win.height()),
                                                    screen.paneColsFor(win.width()));
+                        wb.settings().fontSize = fontPx;
+                        Settings.save(wb.settings());
                     }
                     prevZoom = zplus || zminus || zreset;
                     // window resize -> re-fit the viewport
@@ -1223,7 +1233,7 @@ public bundle forge {
                     System.IO.Console.println("err: no GL window");
                     return;
                 }
-                Font* font = GuiApp.loadFont(win, 18);
+                Font* font = GuiApp.loadFont(win, 18, "Consolas");
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
@@ -1954,7 +1964,7 @@ public bundle forge {
                     System.IO.Console.printf("Forge: could not open a GL 4.6 window\n");
                     return;
                 }
-                Font* font = GuiApp.loadFont(win, 18);
+                Font* font = GuiApp.loadFont(win, 18, "Consolas");
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
@@ -2390,7 +2400,23 @@ public bundle forge {
                     GuiApp.openFind(ov, wb);
                     return true;
                 }
+                if (id.equals("prefs.open")) {
+                    GuiApp.openSettingsFile(wb);
+                    return true;
+                }
                 return false;
+            }
+
+            // Open the user preferences file (~/.forge/settings.txt) in the editor, creating it with the
+            // current values first if it does not exist yet. Edits take effect on the next launch; the live
+            // toggles (theme, font zoom, view options) keep the file in sync as you use the IDE.
+            private static method openSettingsFile(Workbench* wb) returns void {
+                String path = Settings.settingsFile();
+                if (!File.exists(path)) {
+                    Settings.save(wb.settings());
+                }
+                wb.openFile(path);
+                return;
             }
 
             // Keys while the find/replace bar is open: Tab switches field, Backspace edits it, Enter finds the
@@ -2819,7 +2845,7 @@ public bundle forge {
                     System.IO.Console.printf("Forge: could not open a GL 4.6 window\n");
                     return;
                 }
-                Font* font = GuiApp.loadFont(win, 18);
+                Font* font = GuiApp.loadFont(win, 18, "Consolas");
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;
                 Workbench* wb = GuiApp.buildWorkbench(screen, win.width(), win.height(),
@@ -2842,8 +2868,8 @@ public bundle forge {
                 return;
             }
 
-            private static method loadFont(GlWindow* win, int px) returns Font* {
-                FontAtlas atlas = GdiFont.rasterizeAscii("Consolas", px);
+            private static method loadFont(GlWindow* win, int px, String family) returns Font* {
+                FontAtlas atlas = GdiFont.rasterizeAscii(family, px);
                 int tex = win.gl.uploadRGBA(atlas.pixels, atlas.atlasW, atlas.atlasH);
                 return new Font(atlas, tex) on heap;
             }

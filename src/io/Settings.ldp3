@@ -1,0 +1,175 @@
+import System.IO.File;
+import System.OS.Env;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // User preferences that persist across sessions, stored in ~/.forge/settings.txt as `key = value`
+        // lines. Everything the UI can change at runtime -- font, tab width, theme, and the view toggles --
+        // is remembered here so the next launch looks the way you left it. Missing keys fall back to the
+        // defaults set in the constructor and unknown keys are ignored, so an older or hand-edited file never
+        // breaks startup. The file is human-editable; "Preferences: Settings" opens it in the editor.
+        public class Settings {
+            public mutable String fontFamily;
+            public mutable int fontSize;
+            public mutable int tabWidth;
+            public mutable boolean lightTheme;
+            public mutable boolean minimap;
+            public mutable boolean whitespace;
+            public mutable boolean wordWrap;
+
+            public constructor Settings() {
+                this.fontFamily = "Consolas";
+                this.fontSize = 18;
+                this.tabWidth = 4;
+                this.lightTheme = false;
+                this.minimap = true;
+                this.whitespace = false;
+                this.wordWrap = false;
+            }
+
+            private static method configDir() returns String {
+                return Env.get("USERPROFILE") + "/.forge";
+            }
+            private static method ensureConfigDir() returns void {
+                String d = Settings.configDir();
+                if (!File.isDir(d)) {
+                    File.mkdir(d);
+                }
+                return;
+            }
+            public static method settingsFile() returns String {
+                return Settings.configDir() + "/settings.txt";
+            }
+
+            // The text after the first '=' on a line, trimmed (or "" if there is none). Avoids relying on a
+            // String.indexOf the stdlib may not expose.
+            private static method afterEq(String ln) returns String {
+                mutable int i = 0;
+                while (i < ln.length()) {
+                    if (ln.charAt(i) == '=') {
+                        return ln.substring(i + 1, ln.length()).trim();
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+            private static method beforeEq(String ln) returns String {
+                mutable int i = 0;
+                while (i < ln.length()) {
+                    if (ln.charAt(i) == '=') {
+                        return ln.substring(0, i).trim();
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+            // Parse an all-digits string to int, or return `fallback` for anything malformed -- the file is
+            // hand-editable, so a typo must not crash the launch.
+            private static method toIntOr(String v, int fallback) returns int {
+                if (v.length() == 0) {
+                    return fallback;
+                }
+                mutable int i = 0;
+                while (i < v.length()) {
+                    char c = v.charAt(i);
+                    if (c < '0' || c > '9') {
+                        return fallback;
+                    }
+                    i = i + 1;
+                }
+                return v.toInt();
+            }
+            // Font size is clamped to the same range as the interactive zoom (Ctrl+wheel / Ctrl+=/-).
+            private static method clampFont(int px) returns int {
+                if (px < 10) {
+                    return 10;
+                }
+                if (px > 32) {
+                    return 32;
+                }
+                return px;
+            }
+            private static method boolStr(boolean b) returns String {
+                if (b) {
+                    return "true";
+                }
+                return "false";
+            }
+
+            // Load preferences, falling back to defaults for anything missing or malformed. The legacy
+            // theme.txt written by earlier builds seeds the theme so upgrading keeps it; a `theme` key in
+            // settings.txt then wins.
+            public static method load() returns Settings* {
+                Settings* s = new Settings() on heap;
+                s.lightTheme = WorkspaceStore.loadTheme();
+                String path = Settings.settingsFile();
+                if (!File.exists(path)) {
+                    return s;
+                }
+                ArrayList<String> lines = Strings.split(File.readAll(path), "\n");
+                mutable int i = 0;
+                while (i < lines.size()) {
+                    String ln = lines.get(i).trim();
+                    if (ln.length() > 0 && ln.charAt(0) != '#') {
+                        String k = Settings.beforeEq(ln);
+                        String v = Settings.afterEq(ln);
+                        if (k.equals("fontFamily")) {
+                            if (v.length() > 0) {
+                                s.fontFamily = v;
+                            }
+                        }
+                        else if (k.equals("fontSize")) {
+                            s.fontSize = Settings.clampFont(Settings.toIntOr(v, s.fontSize));
+                        }
+                        else if (k.equals("tabWidth")) {
+                            s.tabWidth = Settings.toIntOr(v, s.tabWidth);
+                        }
+                        else if (k.equals("theme")) {
+                            s.lightTheme = v.equals("light");
+                        }
+                        else if (k.equals("minimap")) {
+                            s.minimap = v.equals("true");
+                        }
+                        else if (k.equals("whitespace")) {
+                            s.whitespace = v.equals("true");
+                        }
+                        else if (k.equals("wordWrap")) {
+                            s.wordWrap = v.equals("true");
+                        }
+                    }
+                    i = i + 1;
+                }
+                return s;
+            }
+
+            // Persist every preference (and keep the legacy theme.txt in sync so older code paths still read
+            // the right theme).
+            public static method save(Settings* s) returns void {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append("# Forge settings -- edit and save; Forge re-reads this file on save.\n");
+                sb.append("fontFamily = " + s.fontFamily + "\n");
+                sb.append("fontSize = " + s.fontSize.toString() + "\n");
+                sb.append("tabWidth = " + s.tabWidth.toString() + "\n");
+                if (s.lightTheme) {
+                    sb.append("theme = light\n");
+                } else {
+                    sb.append("theme = dark\n");
+                }
+                sb.append("minimap = " + Settings.boolStr(s.minimap) + "\n");
+                sb.append("whitespace = " + Settings.boolStr(s.whitespace) + "\n");
+                sb.append("wordWrap = " + Settings.boolStr(s.wordWrap) + "\n");
+                Settings.ensureConfigDir();
+                File.writeAll(Settings.settingsFile(), sb.toString());
+                WorkspaceStore.saveTheme(s.lightTheme);
+                delete sb;
+                return;
+            }
+        }
+    }
+}
