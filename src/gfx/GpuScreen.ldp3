@@ -236,11 +236,14 @@ public bundle forge {
                 int ctop = mh + tabh;
                 int etop = ctop + this.crumbH();
                 int tw = this.treeW;
+                int sh = this.statusH();
                 // chrome panel backgrounds
                 batch.rect(0, mh, screenW, tabh, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);             // tab bar
                 batch.rect(0, ctop, tw, screenH - ctop, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);      // tree panel
                 batch.rect(tw, ctop, 1, screenH - ctop, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // tree/editor divider
-                int sh = this.statusH();
+                if (this.treeVisible() && mx >= tw - 3 && mx <= tw + 3 && my >= ctop && my < screenH - sh) {
+                    batch.rect(tw - 1, ctop, 3, screenH - ctop - sh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);   // draggable-divider hint
+                }
                 boolean termOpen = wb.terminal().isOpen();
                 mutable int panelH = 0;
                 if (termOpen) {
@@ -250,7 +253,7 @@ public bundle forge {
                 }
                 int ow = this.outlineWidth(wb);
                 if (this.treeVisible()) {
-                    this.drawTree(batch, tree, ctop, screenH - sh, mx, my);
+                    this.drawTree(batch, wb, tree, ctop, screenH - sh, mx, my);
                 }
                 int editorW = screenW - tw - ow;
                 int editorH = screenH - etop - sh - panelH;
@@ -612,17 +615,19 @@ public bundle forge {
                 int bbx = this.buildButtonX(screenW);
                 boolean overBuild = my >= 0 && my < mh && mx >= bbx && mx < bbx + this.toolBtnW();
                 boolean overRun = my >= 0 && my < mh && mx >= rbx && mx < rbx + this.toolBtnW();
-                mutable float bb = 0.063;
+                mutable float bb = 0.10;
                 if (overBuild) {
-                    bb = 0.118;
+                    bb = 0.18;
                 }
-                batch.rect(bbx, 4, this.toolBtnW(), mh - 8, bb, 0.106, 0.114, 1.0);
+                batch.rect(bbx, 4, this.toolBtnW(), mh - 8, bb, 0.13, 0.14, 1.0);
+                this.drawBorder(batch, bbx, 4, this.toolBtnW(), mh - 8, 0.38, 0.43, 0.43, overBuild ? 0.9 : 0.55);
                 this.font.drawText(batch, bbx + cw, ty, "Build", this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
-                mutable float rb = 0.063;
+                mutable float rb = 0.10;
                 if (overRun) {
-                    rb = 0.118;
+                    rb = 0.18;
                 }
-                batch.rect(rbx, 4, this.toolBtnW(), mh - 8, rb, 0.106, 0.114, 1.0);
+                batch.rect(rbx, 4, this.toolBtnW(), mh - 8, rb, 0.13, 0.14, 1.0);
+                this.drawBorder(batch, rbx, 4, this.toolBtnW(), mh - 8, 0.38, 0.43, 0.43, overRun ? 0.9 : 0.55);
                 // a small green play triangle
                 int triX = rbx + cw;
                 int triY = mh / 2;
@@ -1050,6 +1055,14 @@ public bundle forge {
                 }
                 return 0 - 1;
             }
+            // A 1px rectangular outline, so buttons/chips read as bounded controls.
+            private method drawBorder(Batch2D* batch, int x, int y, int w, int h,
+                                      float r, float g, float b, float a) returns void {
+                batch.rect(x, y, w, 1, r, g, b, a);
+                batch.rect(x, y + h - 1, w, 1, r, g, b, a);
+                batch.rect(x, y, 1, h, r, g, b, a);
+                batch.rect(x + w - 1, y, 1, h, r, g, b, a);
+            }
             // Draw the terminal: a header, the tail of the scrollback that fits, the in-progress output tail,
             // and the input line with a prompt + caret.
             private method drawTerminal(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph,
@@ -1059,6 +1072,9 @@ public bundle forge {
                 Terminal* term = wb.terminal();
                 batch.rect(ox, oy, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
                 batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
+                if (my >= oy - 3 && my <= oy + 3 && mx >= ox) {
+                    batch.rect(ox, oy - 1, pw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);   // draggable editor/panel divider hint
+                }
                 int headerH = ch + 6;
                 // Header: one tab per terminal, each "N" + its own "x" (closes THAT terminal), then a "+"
                 // to open another. tabW / positions mirror terminalHeaderHit's hit-testing exactly.
@@ -1282,7 +1298,7 @@ public bundle forge {
                 }
             }
 
-            private method drawTree(Batch2D* batch, FileTree* tree, int top, int screenH, int mx, int my)
+            private method drawTree(Batch2D* batch, Workbench* wb, FileTree* tree, int top, int screenH, int mx, int my)
                     returns void {
                 int ch = this.font.lineHeight();
                 int cw = this.font.advance();
@@ -1308,11 +1324,23 @@ public bundle forge {
                         g = 0.706;
                         b = 0.392;
                     }
+                    boolean dirty = !node.isDir && wb.isPathModified(node.path);
+                    if (dirty) {
+                        // Modified open files read brighter, matching the dot on their editor tab.
+                        r = this.theme.text.r;
+                        g = this.theme.text.g;
+                        b = this.theme.text.b;
+                    }
                     mutable String rowLbl = tree.rowLabel(node);
                     if (maxCols > 3 && rowLbl.length() > maxCols) {
                         rowLbl = rowLbl.substring(0, maxCols - 3) + "...";   // a long name into the editor was the "3"
                     }
                     this.font.drawText(batch, 8, y, rowLbl, r, g, b, 1.0);
+                    if (dirty) {
+                        int dy = y + (ch - 6) / 2;
+                        batch.rect(this.treeW - 12, dy, 6, 6, this.theme.accent.r, this.theme.accent.g,
+                                   this.theme.accent.b, 0.9);
+                    }
                     i = i + 1;
                 }
                 delete rows;
@@ -1647,9 +1675,9 @@ public bundle forge {
                     this.drawMinimap(batch, c, ox + pw - this.minimapW() - 14, oy, ph, firstLine, visible);
                 }
                 // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
-                this.drawOverviewRuler(batch, wb, ox + pw, oy, ph);
+                this.drawOverviewRuler(batch, wb, ox + pw, oy, ph, mx, my);
                 // the horizontal scrollbar at the bottom, shown only when a line runs past the view
-                this.drawHScrollbar(batch, c, ox, oy + ph, pw);
+                this.drawHScrollbar(batch, c, ox, oy + ph, pw, mx, my);
 
                 // hover tooltip: a diagnostic message when the mouse is over a line the build flagged (that's
                 // what you want to read there), otherwise the declaration of the identifier under the mouse.
@@ -1965,8 +1993,8 @@ public bundle forge {
                 return;
             }
 
-            private method drawOverviewRuler(Batch2D* batch, Workbench* wb, int rightX, int oy, int ph)
-                    returns void {
+            private method drawOverviewRuler(Batch2D* batch, Workbench* wb, int rightX, int oy, int ph,
+                                             int mx, int my) returns void {
                 int rw = 12;
                 int x = rightX - rw;
                 batch.rect(x, oy, rw, ph, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);      // track
@@ -1982,7 +2010,11 @@ public bundle forge {
                 if (thumbH < 24) {
                     thumbH = 24;
                 }
-                batch.rect(x + 2, thumbY, rw - 4, thumbH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.28);   // amber thumb
+                mutable float thumbA = 0.28;
+                if (mx >= x && mx <= x + rw && my >= thumbY && my <= thumbY + thumbH) {
+                    thumbA = 0.55;   // brighten under the cursor so the thumb reads as grabbable
+                }
+                batch.rect(x + 2, thumbY, rw - 4, thumbH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, thumbA);   // amber thumb
                 String base = Paths.basename(c.document().path());
                 if (base.length() == 0) {
                     return;
@@ -2013,8 +2045,8 @@ public bundle forge {
             }
             // The horizontal scrollbar at the bottom of the editor, drawn only when the widest line runs
             // past the visible columns. The thumb's width and offset track firstColumn over maxColumn.
-            private method drawHScrollbar(Batch2D* batch, Controller* c, int ox, int bottomY, int pw)
-                    returns void {
+            private method drawHScrollbar(Batch2D* batch, Controller* c, int ox, int bottomY, int pw,
+                                          int mx, int my) returns void {
                 int maxCol = c.maxColumn();
                 int cols = c.viewCols();
                 if (maxCol <= cols) {
@@ -2030,8 +2062,12 @@ public bundle forge {
                     thumbW = 24;
                 }
                 int thumbX = ox + c.firstColumn() * (trackW - thumbW) / (maxCol - cols);
+                mutable float thumbA = 0.28;
+                if (my >= y && my <= y + bh && mx >= thumbX && mx <= thumbX + thumbW) {
+                    thumbA = 0.55;   // brighten under the cursor so the thumb reads as grabbable
+                }
                 batch.rect(thumbX, y + 1, thumbW, bh - 2, this.theme.accent.r, this.theme.accent.g,
-                           this.theme.accent.b, 0.28);
+                           this.theme.accent.b, thumbA);
                 return;
             }
 

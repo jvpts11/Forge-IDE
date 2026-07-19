@@ -777,6 +777,28 @@ public bundle forge {
             public method isSplit() returns boolean {
                 return this.split;
             }
+            // Is a file at this path open in any pane with unsaved edits? The file tree uses this to mark
+            // modified files (a dirty dot), matching the dot on the editor tab.
+            public method isPathModified(String path) returns boolean {
+                if (this.pathModifiedIn(this.docs, path)) {
+                    return true;
+                }
+                if (this.split && this.pathModifiedIn(this.docs2, path)) {
+                    return true;
+                }
+                return false;
+            }
+            private method pathModifiedIn(DocumentManager* dm, String path) returns boolean {
+                mutable int i = 0;
+                while (i < dm.count()) {
+                    Document* d = dm.at(i).document();
+                    if (d.isModified() && d.path().equals(path)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
             public method activePane() returns int {
                 return this.pane;
             }
