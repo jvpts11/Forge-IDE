@@ -1006,37 +1006,7 @@ public bundle forge {
                     GuiApp.runSaveAs(win, wb);
                     return;
                 }
-                if (id.equals("edit.find")) {
-                    GuiApp.openFind(ov, wb);
-                    return;
-                }
-                if (id.equals("edit.rename")) {
-                    GuiApp.beginRenameSymbol(wb, ov);
-                    return;
-                }
-                if (id.equals("refactor.extractVariable")) {
-                    if (wb.active().editor().hasSelection()) {
-                        ov.openPrompt("extractVar", "extract to variable named: ");
-                    }
-                    return;
-                }
-                if (id.equals("git.commit")) {
-                    ov.openPrompt("commit", "commit message: ");
-                    return;
-                }
-                if (id.equals("file.newDisk")) {
-                    ov.openPrompt("newfile", "new file (path): ");
-                    return;
-                }
-                if (id.equals("file.rename")) {
-                    ov.openPrompt("rename", "rename to: ");
-                    return;
-                }
-                if (id.equals("file.delete")) {
-                    String base = Paths.basename(wb.activePath());
-                    if (base.length() > 0) {
-                        ov.openPrompt("delete", "delete '" + base + "'? type y to confirm: ");
-                    }
+                if (GuiApp.runShellPrompt(ov, wb, id)) {
                     return;
                 }
                 if (id.equals("git.status")) {
@@ -2374,9 +2344,53 @@ public bundle forge {
             private static method runPaletteSelection(Overlay* ov, Workbench* wb) returns void {
                 ArrayList<Command>* results = wb.registry().filter(ov.query);
                 if (ov.sel >= 0 && ov.sel < results.size()) {
-                    wb.runCommand(results.get(ov.sel).id);
+                    String id = results.get(ov.sel).id;
+                    if (!GuiApp.runShellPrompt(ov, wb, id)) {
+                        wb.runCommand(id);
+                    }
                 }
                 return;
+            }
+
+            // Commands that open an overlay/prompt instead of running straight through Workbench.runCommand.
+            // Shared by the command palette and the menu so both behave identically; returns true if it
+            // handled `id`. Only ids needing just ov+wb live here -- window/open-request-bound ones
+            // (file.openFolder, file.saveAs, app.quit, ...) stay inline in runMenuCommand.
+            private static method runShellPrompt(Overlay* ov, Workbench* wb, String id) returns boolean {
+                if (id.equals("git.commit")) {
+                    ov.openPrompt("commit", "commit message: ");
+                    return true;
+                }
+                if (id.equals("file.newDisk")) {
+                    ov.openPrompt("newfile", "new file (path): ");
+                    return true;
+                }
+                if (id.equals("file.rename")) {
+                    ov.openPrompt("rename", "rename to: ");
+                    return true;
+                }
+                if (id.equals("file.delete")) {
+                    String base = Paths.basename(wb.activePath());
+                    if (base.length() > 0) {
+                        ov.openPrompt("delete", "delete '" + base + "'? type y to confirm: ");
+                    }
+                    return true;
+                }
+                if (id.equals("refactor.extractVariable")) {
+                    if (wb.active().editor().hasSelection()) {
+                        ov.openPrompt("extractVar", "extract to variable named: ");
+                    }
+                    return true;
+                }
+                if (id.equals("edit.rename")) {
+                    GuiApp.beginRenameSymbol(wb, ov);
+                    return true;
+                }
+                if (id.equals("edit.find")) {
+                    GuiApp.openFind(ov, wb);
+                    return true;
+                }
+                return false;
             }
 
             // Keys while the find/replace bar is open: Tab switches field, Backspace edits it, Enter finds the
