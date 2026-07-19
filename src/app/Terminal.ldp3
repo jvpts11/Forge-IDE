@@ -48,7 +48,7 @@ public bundle forge {
             public method setLabel(String n) returns void {
                 this.tabName = n;
             }
-            public method label() returns String {
+            public method name() returns String {
                 return this.tabName;
             }
             // Scrollback view offset (0 = pinned to the newest output). The wheel moves it while the mouse

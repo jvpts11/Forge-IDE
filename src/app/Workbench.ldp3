@@ -328,7 +328,7 @@ public bundle forge {
                 if (i < 0 || i >= this.terms.size()) {
                     return "";
                 }
-                String custom = this.terms.get(i).label();
+                String custom = this.terms.get(i).name();
                 if (custom.length() > 0) {
                     return custom;
                 }
