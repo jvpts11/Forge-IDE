@@ -31,6 +31,8 @@ public bundle forge {
             public mutable Color* bg;         // editor background
             public mutable Color* chrome;     // menu bar / tab bar / status bar
             public mutable Color* panel;      // tree / output / debug panels
+            public mutable Color* termBg;     // integrated terminal body (always dark, like a real shell)
+            public mutable Color* termText;   // integrated terminal text (light, reads on termBg)
             public mutable Color* gutter;     // the line-number gutter band
             public mutable Color* divider;    // hairlines between panels
             public mutable Color* caretLine;  // the current line's subtle highlight (usually white-on-alpha)
@@ -96,8 +98,10 @@ public bundle forge {
                 t.bg = new Color(0.110, 0.118, 0.137, 1.0) on heap;
                 t.chrome = new Color(0.086, 0.090, 0.106, 1.0) on heap;
                 t.panel = new Color(0.125, 0.133, 0.157, 1.0) on heap;
+                t.termBg = new Color(0.043, 0.047, 0.055, 1.0) on heap;    // near-black shell body
+                t.termText = new Color(0.859, 0.871, 0.882, 1.0) on heap;
                 t.gutter = new Color(0.098, 0.106, 0.125, 1.0) on heap;
-                t.divider = new Color(0.055, 0.059, 0.071, 1.0) on heap;
+                t.divider = new Color(0.267, 0.278, 0.318, 1.0) on heap;   // visible boundary between panels
                 t.caretLine = new Color(1.0, 1.0, 1.0, 0.035) on heap;
                 t.selection = new Color(0.286, 0.400, 0.573, 0.40) on heap;
                 t.hover = new Color(1.0, 1.0, 1.0, 0.055) on heap;
@@ -137,6 +141,8 @@ public bundle forge {
                 t.bg = new Color(0.988, 0.988, 0.984, 1.0) on heap;
                 t.chrome = new Color(0.937, 0.937, 0.929, 1.0) on heap;
                 t.panel = new Color(0.957, 0.957, 0.949, 1.0) on heap;
+                t.termBg = new Color(0.137, 0.145, 0.165, 1.0) on heap;    // dark shell body even in light mode
+                t.termText = new Color(0.882, 0.890, 0.902, 1.0) on heap;
                 t.gutter = new Color(0.965, 0.965, 0.957, 1.0) on heap;
                 t.divider = new Color(0.851, 0.851, 0.835, 1.0) on heap;
                 t.caretLine = new Color(0.0, 0.0, 0.0, 0.045) on heap;

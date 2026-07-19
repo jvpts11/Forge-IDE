@@ -302,14 +302,37 @@ public bundle forge {
                 t.openPanel();
                 t.focus();
             }
-            // Open a brand-new terminal and make it active (the "+" button / Ctrl+Shift+`).
-            public method newTerminal() returns void {
+            // Open a brand-new terminal running `shell` ("cmd.exe" / "powershell.exe") and make it active.
+            public method newShell(String shell) returns void {
                 Terminal* t = new Terminal() in region this.termRegion;
+                t.setShell(shell);
                 t.setCwd(this.projectDir);
                 this.terms.add(t);
                 this.activeTerm = this.terms.size() - 1;
                 t.openPanel();
                 t.focus();
+            }
+            // The default new-terminal (Ctrl+Shift+`): a cmd shell.
+            public method newTerminal() returns void {
+                this.newShell("cmd.exe");
+            }
+            // Rename an open terminal (its tab label). Empty resets to the default "Terminal N".
+            public method renameTerminal(int i, String name) returns void {
+                if (i < 0 || i >= this.terms.size()) {
+                    return;
+                }
+                this.terms.get(i).setLabel(name);
+            }
+            // The tab label for terminal `i`: the user's name if set, else "Terminal <N>".
+            public method terminalLabel(int i) returns String {
+                if (i < 0 || i >= this.terms.size()) {
+                    return "";
+                }
+                String custom = this.terms.get(i).label();
+                if (custom.length() > 0) {
+                    return custom;
+                }
+                return "Terminal " + (i + 1).toString();
             }
             public method closeActiveTerminal() returns void {
                 this.closeTerminal(this.activeTerm);

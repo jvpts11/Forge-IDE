@@ -242,8 +242,8 @@ public bundle forge {
                         } else if (screen.onPanelDivider(wb, cxNow, cyNow, win.width(), win.height())) {
                             dividerDrag = 2;   // grab the editor/panel divider; drag resizes the terminal/panel
                             dragging = false;
-                        } else if (GuiApp.handleTerminalHeader(screen, wb, win)) {
-                            dragging = false;  // switched / opened / closed a terminal via its header
+                        } else if (GuiApp.handleTerminalHeader(screen, wb, win, dbl, ov)) {
+                            dragging = false;  // switched / opened / closed / renamed a terminal via its header
                         } else if (GuiApp.clickInTerminalBody(screen, wb, win)) {
                             dragging = false;  // clicking the terminal focuses it (keystrokes go to the shell)
                         } else if (vl >= 0) {
@@ -483,18 +483,24 @@ public bundle forge {
             }
             // A click on the terminal-panel header: switch to a tab, open another (+), or close the active
             // one (x). Returns true if it consumed the click so no caret is placed underneath.
-            private static method handleTerminalHeader(GpuScreen* screen, Workbench* wb, GlWindow* win)
+            private static method handleTerminalHeader(GpuScreen* screen, Workbench* wb, GlWindow* win,
+                                                       boolean dbl, Overlay* ov)
                     returns boolean {
                 int hit = screen.terminalHeaderHit(wb, win.width(), win.height(), win.cursorX(), win.cursorY());
                 if (hit == 0 - 1) {
                     return false;
                 }
                 if (hit == 0 - 2) {
-                    wb.newTerminal();
+                    wb.newShell("cmd.exe");
+                } else if (hit == 0 - 3) {
+                    wb.newShell("powershell.exe");
                 } else if (hit <= 0 - 10) {
                     wb.closeTerminal(0 - 10 - hit);   // per-tab close: hit = -(10+i) -> terminal index i
                 } else {
                     wb.setActiveTerminal(hit);
+                    if (dbl) {
+                        ov.openPrompt("renameTerminal", "rename terminal: ");   // double-click a tab to rename
+                    }
                 }
                 return true;
             }
@@ -2594,6 +2600,8 @@ public bundle forge {
                     wb.newFileOnDisk(ov.query);
                 } else if (ov.promptKind.equals("rename")) {
                     wb.renameActiveFile(ov.query);
+                } else if (ov.promptKind.equals("renameTerminal")) {
+                    wb.renameTerminal(wb.activeTerminalIndex(), ov.query);   // empty resets to "Terminal N"
                 } else if (ov.promptKind.equals("delete")) {
                     if (ov.query.equals("y") || ov.query.equals("yes")) {
                         wb.deleteActiveFile();

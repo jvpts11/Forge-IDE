@@ -1048,9 +1048,9 @@ public bundle forge {
                 this.panelFrac = f;
                 return;
             }
-            // Which terminal-header control the point hits: -1 none, -2 the "+" (new terminal), -3 the "x"
-            // (close active), or a tab index >= 0. Only meaningful with the terminal open. The geometry
-            // mirrors drawTerminal's header exactly.
+            // Which terminal-header control the point hits: -1 none, -2 "+ cmd", -3 "+ PowerShell",
+            // -(10+i) the close "x" of tab i, or a tab index >= 0 (switch/double-click to rename). Only
+            // meaningful with the terminal open. The geometry mirrors drawTerminal's header exactly.
             public method terminalHeaderHit(Workbench* wb, int screenW, int screenH, int mx, int my) returns int {
                 if (!wb.terminal().isOpen()) {
                     return -1;
@@ -1064,7 +1064,7 @@ public bundle forge {
                     return -1;
                 }
                 int ox = this.treeW;
-                int tabW = 5 * cw;   // "N" + a per-tab "x" close zone
+                int tabW = 14 * cw;   // "Terminal N" + a per-tab "x" close zone
                 int count = wb.terminalCount();
                 mutable int ti = 0;
                 while (ti < count) {
@@ -1077,9 +1077,16 @@ public bundle forge {
                     }
                     ti = ti + 1;
                 }
-                int plusX = ox + 6 + count * tabW;
-                if (mx >= plusX && mx < plusX + tabW) {
-                    return 0 - 2;   // "+" new terminal
+                // Two new-shell buttons after the tabs: "+ PowerShell" then "+ cmd".
+                int psX = ox + 6 + count * tabW + cw;
+                int psW = 14 * cw;
+                int cmdX = psX + psW + cw;
+                int cmdW = 7 * cw;
+                if (mx >= psX && mx < psX + psW) {
+                    return 0 - 3;   // + PowerShell
+                }
+                if (mx >= cmdX && mx < cmdX + cmdW) {
+                    return 0 - 2;   // + cmd
                 }
                 return 0 - 1;
             }
@@ -1098,15 +1105,17 @@ public bundle forge {
                 int cw = this.font.advance();
                 int ch = this.font.lineHeight();
                 Terminal* term = wb.terminal();
-                batch.rect(ox, oy, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
-                batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
+                int headerH = ch + 6;
+                // The terminal is a dark shell body, distinct from the editor: fill the whole panel with
+                // termBg, and mark the editor/terminal boundary with a clearly visible divider on top.
+                batch.rect(ox, oy, pw, ph, this.theme.termBg.r, this.theme.termBg.g, this.theme.termBg.b, 1.0);
+                batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, 1.0);   // visible editor/terminal divider
                 if (my >= oy - 3 && my <= oy + 3 && mx >= ox) {
                     batch.rect(ox, oy - 1, pw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);   // draggable editor/panel divider hint
                 }
-                int headerH = ch + 6;
-                // Header: one tab per terminal, each "N" + its own "x" (closes THAT terminal), then a "+"
-                // to open another. tabW / positions mirror terminalHeaderHit's hit-testing exactly.
-                int tabW = 5 * cw;
+                // Header: one tab per terminal ("Terminal N" + its own "x"), then two new-shell buttons.
+                // tabW / positions mirror terminalHeaderHit's hit-testing exactly.
+                int tabW = 14 * cw;
                 int count = wb.terminalCount();
                 int active = wb.activeTerminalIndex();
                 mutable int i = 0;
@@ -1115,29 +1124,30 @@ public bundle forge {
                     boolean sel = i == active;
                     boolean hv = my >= oy && my < oy + headerH && mx >= tx && mx < tx + tabW;
                     if (sel) {
-                        batch.rect(tx, oy + 1, tabW, headerH - 1, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, this.theme.bg.a);
+                        batch.rect(tx, oy + 1, tabW, headerH, 1.0, 1.0, 1.0, 0.05);       // lift the active tab
                         batch.rect(tx, oy + 1, tabW, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
                     } else if (hv) {
-                        batch.rect(tx, oy + 1, tabW, headerH - 1, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.05);
+                        batch.rect(tx, oy + 1, tabW, headerH - 1, 1.0, 1.0, 1.0, 0.04);
                     }
-                    mutable float tr = 0.502;
-                    mutable float tg = 0.588;
-                    mutable float tb = 0.584;
-                    if (sel) {
-                        tr = 0.702; tg = 0.549; tb = 0.353;
-                    }
-                    this.font.drawText(batch, tx + cw, oy + 4, (i + 1).toString(), tr, tg, tb, 1.0);
+                    this.font.drawText(batch, tx + cw, oy + 4, wb.terminalLabel(i),
+                                       this.theme.termText.r, this.theme.termText.g, this.theme.termText.b,
+                                       sel ? 1.0 : 0.60);
                     // per-tab close: the "x" in the tab's right zone (brighter when hovering that zone)
                     boolean xHv = hv && mx >= tx + tabW - 2 * cw;
                     this.font.drawText(batch, tx + tabW - 2 * cw + 1, oy + 4, "x",
-                                       this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
-                                       xHv ? 1.0 : 0.55);
+                                       this.theme.termText.r, this.theme.termText.g, this.theme.termText.b,
+                                       xHv ? 1.0 : 0.45);
                     i = i + 1;
                 }
-                int plusX = ox + 6 + count * tabW;
-                boolean plusHv = my >= oy && my < oy + headerH && mx >= plusX && mx < plusX + tabW;
-                this.font.drawText(batch, plusX + cw, oy + 4, "+", this.theme.accent.r, this.theme.accent.g,
-                                   this.theme.accent.b, plusHv ? 1.0 : 0.7);
+                // Two new-shell buttons: "+ PowerShell" then "+ cmd" (open a terminal running that shell).
+                int psX = ox + 6 + count * tabW + cw;
+                boolean psHv = my >= oy && my < oy + headerH && mx >= psX && mx < psX + 14 * cw;
+                this.font.drawText(batch, psX, oy + 4, "+ PowerShell", this.theme.accent.r, this.theme.accent.g,
+                                   this.theme.accent.b, psHv ? 1.0 : 0.72);
+                int cmdX = psX + 14 * cw + cw;
+                boolean cmdHv = my >= oy && my < oy + headerH && mx >= cmdX && mx < cmdX + 7 * cw;
+                this.font.drawText(batch, cmdX, oy + 4, "+ cmd", this.theme.accent.r, this.theme.accent.g,
+                                   this.theme.accent.b, cmdHv ? 1.0 : 0.72);
                 // Rows for output: everything below the header, leaving the last row for the input line.
                 int bodyTop = oy + headerH;
                 int rows = (ph - headerH) / ch;
@@ -1162,7 +1172,7 @@ public bundle forge {
                     } else {
                         text = term.partialLine();
                     }
-                    this.font.drawText(batch, ox + 10, bodyTop + r * ch, text, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    this.font.drawText(batch, ox + 10, bodyTop + r * ch, text, this.theme.termText.r, this.theme.termText.g, this.theme.termText.b, 1.0);
                     r = r + 1;
                     idx = idx + 1;
                 }
@@ -1170,7 +1180,7 @@ public bundle forge {
                 int iy = bodyTop + outRows * ch;
                 this.font.drawText(batch, ox + 10, iy, "$ ", this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
                 String inp = term.inputLine();
-                this.font.drawText(batch, ox + 10 + 2 * cw, iy, inp, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                this.font.drawText(batch, ox + 10 + 2 * cw, iy, inp, this.theme.termText.r, this.theme.termText.g, this.theme.termText.b, 1.0);
                 if (term.isFocused() && this.caretOn) {
                     int cx = ox + 10 + (2 + inp.length()) * cw;
                     batch.rect(cx, iy, cw, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.7);

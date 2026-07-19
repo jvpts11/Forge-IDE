@@ -22,6 +22,8 @@ public bundle forge {
             private mutable String input;                // the line the user is typing
             private mutable String cwd;                  // where the shell starts
             private mutable int scrollOff;               // lines scrolled up from the bottom (0 = live tail)
+            private mutable String shell;                // the shell command: "cmd.exe" or "powershell.exe"
+            private mutable String tabName;              // user-facing name (empty = default "Terminal N")
 
             public constructor Terminal() {
                 this.started = false;
@@ -32,6 +34,22 @@ public bundle forge {
                 this.input = "";
                 this.cwd = ".";
                 this.scrollOff = 0;
+                this.shell = "cmd.exe";
+                this.tabName = "";
+            }
+            // The shell to spawn (default cmd.exe). Set BEFORE the first openPanel; ignored once started.
+            public method setShell(String s) returns void {
+                this.shell = s;
+            }
+            public method isPowerShell() returns boolean {
+                return this.shell.equals("powershell.exe");
+            }
+            // The user-facing name; empty means the panel shows the default "Terminal N".
+            public method setLabel(String n) returns void {
+                this.tabName = n;
+            }
+            public method label() returns String {
+                return this.tabName;
             }
             // Scrollback view offset (0 = pinned to the newest output). The wheel moves it while the mouse
             // is over the terminal; typing/enter snaps back to the bottom so you always see what you type.
@@ -76,10 +94,14 @@ public bundle forge {
                 this.open = true;
                 this.focused = true;
                 if (!this.started) {
-                    this.proc = Subprocess.start("cmd.exe");
+                    this.proc = Subprocess.start(this.shell);
                     this.started = this.proc.isValid();
                     if (this.started && this.cwd.length() > 0) {
-                        this.proc.write("cd /d \"" + this.cwd + "\"\r\n");
+                        if (this.isPowerShell()) {
+                            this.proc.write("Set-Location \"" + this.cwd + "\"\r\n");
+                        } else {
+                            this.proc.write("cd /d \"" + this.cwd + "\"\r\n");
+                        }
                     }
                 }
             }
