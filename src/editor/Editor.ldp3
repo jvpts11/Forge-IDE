@@ -111,6 +111,9 @@ public bundle forge {
             // typing a closer that already sits under the caret just steps over it. With a selection, typing a
             // bracket/quote SURROUNDS the selection (keeping it selected); any other char replaces it.
             public method typeWithPairs(char c) returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.hasSelection()) {
                     if (this.trySurround(c)) {
                         return;
@@ -267,6 +270,9 @@ public bundle forge {
             // Replace every occurrence of `needle` with `replacement`. Returns how many were replaced. One
             // undo step covers the whole sweep. Applied bottom-up so earlier match columns stay valid.
             public method replaceAll(String needle, String replacement) returns int {
+                if (this.buf.isReadOnly()) {
+                    return 0;
+                }
                 if (needle.length() == 0) {
                     return 0;
                 }
@@ -309,6 +315,9 @@ public bundle forge {
             // identifiers are left alone (so renaming `x` never touches `xs` or `max`), and matches inside
             // strings/chars/comments are skipped via the highlighter. Returns the number of occurrences changed.
             public method renameWord(String oldName, String newName, Highlighter* hl) returns int {
+                if (this.buf.isReadOnly()) {
+                    return 0;
+                }
                 if (oldName.length() == 0) {
                     return 0;
                 }
@@ -344,6 +353,9 @@ public bundle forge {
             // if the word is not on that line, which happens when the buffer changed since the diagnostic
             // that asked for the fix was produced (the caller then just does nothing). Powers Alt+Enter.
             public method replaceWordOn(int row, int col, String oldName, String newName) returns boolean {
+                if (this.buf.isReadOnly()) {
+                    return false;
+                }
                 if (row < 0 || row >= this.buf.lineCount() || oldName.length() == 0) {
                     return false;
                 }
@@ -396,6 +408,9 @@ public bundle forge {
                 }
             }
             public method cut() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (!this.hasSelection()) {
                     return;
                 }
@@ -404,6 +419,9 @@ public bundle forge {
                 this.deleteSelection();
             }
             public method paste() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 String text = this.clip.get();
                 if (text.length() == 0) {
                     return;
@@ -427,11 +445,17 @@ public bundle forge {
 
             // --- line operations (duplicate / delete / move up-down / indent-dedent), on the caret's line ---
             public method duplicateLine() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 this.buf.insertLine(this.row + 1, this.buf.line(this.row));
                 this.row = this.row + 1;
             }
             public method deleteLine() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 this.clearSelection();
                 this.buf.removeLine(this.row);
@@ -441,6 +465,9 @@ public bundle forge {
                 this.clampCol();
             }
             public method moveLineUp() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.row == 0) {
                     return;
                 }
@@ -451,6 +478,9 @@ public bundle forge {
                 this.row = this.row - 1;
             }
             public method moveLineDown() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.row >= this.buf.lineCount() - 1) {
                     return;
                 }
@@ -461,11 +491,17 @@ public bundle forge {
                 this.row = this.row + 1;
             }
             public method indent() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 this.buf.setLine(this.row, this.indentUnit() + this.buf.line(this.row));
                 this.col = this.col + this.tabWidth;
             }
             public method dedent() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 String cur = this.buf.line(this.row);
                 mutable int remove = 0;
                 while (remove < this.tabWidth && remove < cur.length() && cur.charAt(remove) == ' ') {
@@ -500,6 +536,9 @@ public bundle forge {
             // Ctrl+J: join the selected lines (or the current line with the next) into one, collapsing each
             // break plus the joined line's leading whitespace to a single space. The caret lands at the join.
             public method joinLines() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 mutable int a = this.selMinRow();
                 mutable int b = this.selMaxRow();
                 if (a == b) {
@@ -546,6 +585,9 @@ public bundle forge {
             // Upper- or lower-case the selected text in place (positions unchanged, so the selection is kept),
             // as one undo step. A no-op without a selection.
             public method transformCase(boolean upper) returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (!this.hasSelection()) {
                     return;
                 }
@@ -605,6 +647,9 @@ public bundle forge {
             // line above (at the same indent), replacing the selection with `<name>`. One undo step; the caret
             // lands on the new usage. Returns false unless there's a non-empty single-line selection.
             public method extractVariable(String name) returns boolean {
+                if (this.buf.isReadOnly()) {
+                    return false;
+                }
                 if (!this.hasSelection() || name.length() == 0) {
                     return false;
                 }
@@ -644,6 +689,9 @@ public bundle forge {
             // Sort the selected lines in ascending (byte) order, in place, as one undo step. A no-op unless the
             // selection spans at least two lines.
             public method sortSelectedLines() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 int a = this.selMinRow();
                 int b = this.selMaxRow();
                 if (a >= b) {
@@ -690,6 +738,9 @@ public bundle forge {
             }
 
             public method indentSelection() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 int a = this.selMinRow();
                 int b = this.selMaxRow();
@@ -700,6 +751,9 @@ public bundle forge {
                 this.col = this.col + this.tabWidth;
             }
             public method dedentSelection() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 int a = this.selMinRow();
                 int b = this.selMaxRow();
@@ -783,6 +837,9 @@ public bundle forge {
             }
 
             public method deleteWordLeft() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.hasSelection()) {
                     this.saveUndo();
                     this.deleteSelection();
@@ -799,6 +856,9 @@ public bundle forge {
                 this.col = target;
             }
             public method deleteWordRight() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.hasSelection()) {
                     this.saveUndo();
                     this.deleteSelection();
@@ -870,6 +930,9 @@ public bundle forge {
                 this.buf.setLine(row, s.substring(0, at) + s.substring(rm, s.length()));
             }
             public method toggleComment() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 mutable int a = this.row;
                 mutable int b = this.row;
@@ -932,6 +995,9 @@ public bundle forge {
             }
             // Delete the selection and put the caret at its start. Does NOT snapshot undo -- callers wrap it.
             public method deleteSelection() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (!this.hasSelection()) {
                     this.hasSel = false;
                     return;
@@ -1391,6 +1457,9 @@ public bundle forge {
 
             // Type / backspace / newline that route through every caret when there are secondaries.
             public method typeMulti(char c) returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.extraRows.size() == 0) {
                     this.typeWithPairs(c);
                     return;
@@ -1398,6 +1467,9 @@ public bundle forge {
                 this.applyMulti(0, c);
             }
             public method backspaceMulti() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.extraRows.size() == 0) {
                     this.backspace();
                     return;
@@ -1405,6 +1477,9 @@ public bundle forge {
                 this.applyMulti(1, ' ');
             }
             public method enterMulti() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.extraRows.size() == 0) {
                     this.enter();
                     return;
@@ -1523,6 +1598,9 @@ public bundle forge {
             }
 
             public method type(char c) returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 if (this.hasSelection()) {
                     this.deleteSelection();
@@ -1544,6 +1622,9 @@ public bundle forge {
             // Enter with auto-indent: the new line inherits the current line's leading whitespace, plus one
             // level (four spaces) when the caret follows an opening brace.
             public method enter() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 if (this.hasSelection()) {
                     this.deleteSelection();
@@ -1567,6 +1648,9 @@ public bundle forge {
             // Insert `text` (possibly multi-line) verbatim at the caret -- no auto-indent, unlike enter().
             // This is the path for pasting and bulk loading, so pre-formatted code lands exactly as given.
             public method insertText(String text) returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 this.saveUndo();
                 if (this.hasSelection()) {
                     this.deleteSelection();
@@ -1582,6 +1666,9 @@ public bundle forge {
             }
 
             public method backspace() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.hasSelection()) {
                     this.saveUndo();
                     this.deleteSelection();
@@ -1836,6 +1923,9 @@ public bundle forge {
             // Takes one undo snapshot only if something changed, then clamps the caret if it sat in the trimmed
             // tail. Returns whether any line changed.
             public method trimTrailingWhitespace() returns boolean {
+                if (this.buf.isReadOnly()) {
+                    return false;
+                }
                 mutable boolean any = false;
                 mutable int r = 0;
                 while (r < this.buf.lineCount()) {
@@ -1872,6 +1962,9 @@ public bundle forge {
             // Delete the character to the right of the caret (the Delete key); at a line end, pull the next
             // line up. With a selection, delete that instead.
             public method deleteForward() returns void {
+                if (this.buf.isReadOnly()) {
+                    return;
+                }
                 if (this.hasSelection()) {
                     this.saveUndo();
                     this.deleteSelection();

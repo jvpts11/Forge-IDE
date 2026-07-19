@@ -108,6 +108,27 @@ public bundle forge {
                 a.eqStr(ed2.document().line(0), "ho", "ur.new-edit");
                 a.eqBool(ed2.redo(), false, "ur.redo-cleared");
 
+                // --- read-only buffer: every edit is refused, the caret never moves, undo stays empty ---
+                Editor ro = new Editor(new TextBuffer() on heap) on heap;
+                ro.type('a');
+                ro.type('b');
+                ro.type('c');
+                ro.document().setReadOnly(true);
+                ro.type('X');
+                ro.enter();
+                ro.backspace();
+                ro.deleteForward();
+                ro.paste();
+                ro.duplicateLine();
+                ro.indent();
+                a.eqInt(ro.document().lineCount(), 1, "ro.lineCount");
+                a.eqStr(ro.document().line(0), "abc", "ro.unchanged");
+                a.eqInt(ro.cursorRow(), 0, "ro.row-frozen");
+                a.eqInt(ro.cursorCol(), 3, "ro.col-frozen");
+                ro.document().setReadOnly(false);   // unlocking restores normal editing
+                ro.type('d');
+                a.eqStr(ro.document().line(0), "abcd", "ro.editable-again");
+
                 // --- file I/O (Document) ---
                 Document doc = new Document(new TextBuffer() on heap) on heap;
                 doc.buffer().loadText("line1\nline2\nline3");
