@@ -1581,6 +1581,82 @@ public bundle forge {
             public method gitDiff() returns void {
                 this.openDiff();
             }
+            // Pull from the tracked upstream; the tree may change, so mark it dirty and refresh the gutter.
+            public method gitPull() returns void {
+                this.runShell("Pull", "git pull");
+                this.refreshGit();
+                this.treeDirty = true;
+                return;
+            }
+            public method gitFetch() returns void {
+                this.runShell("Fetch", "git fetch --all");
+                this.refreshGit();
+                return;
+            }
+            // The recent history (last 50 commits, one line each) in the output panel.
+            public method gitLog() returns void {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" --no-pager log --oneline -50 2>&1");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String ln = raw.get(i);
+                    if (ln.trim().length() > 0) {
+                        body.add(ln);
+                    }
+                    i = i + 1;
+                }
+                if (body.size() == 0) {
+                    body.add("(no history)");
+                }
+                this.out.showLines("Git Log", body);
+                return;
+            }
+            // Line-by-line authorship of the active file (git blame) in the output panel.
+            public method gitBlame() returns void {
+                String path = this.activePath();
+                if (path.length() == 0) {
+                    this.out.banner("Blame", "Open a file first.");
+                    return;
+                }
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" --no-pager blame \"" + path + "\" 2>&1");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String ln = raw.get(i);
+                    if (ln.length() > 0) {
+                        body.add(ln);
+                    }
+                    i = i + 1;
+                }
+                if (body.size() == 0) {
+                    body.add("(no blame -- is the file tracked?)");
+                }
+                this.out.showLines("Blame: " + Paths.basename(path), body);
+                return;
+            }
+            // Stage / unstage just the active file (per-file, unlike the commit-all flow).
+            public method gitStageActive() returns void {
+                String path = this.activePath();
+                if (path.length() == 0) {
+                    return;
+                }
+                this.runShell("Stage", "git add \"" + path + "\"");
+                this.refreshGit();
+                return;
+            }
+            public method gitUnstageActive() returns void {
+                String path = this.activePath();
+                if (path.length() == 0) {
+                    return;
+                }
+                this.runShell("Unstage", "git reset HEAD \"" + path + "\"");
+                this.refreshGit();
+                return;
+            }
             // --- file operations (the shell rebuilds the tree when treeDirty is set) ---
             // Create an empty file at `rel` (relative to the project) and open it.
             public method newFileOnDisk(String rel) returns void {
@@ -1874,6 +1950,30 @@ public bundle forge {
                 }
                 if (id.equals("git.diff")) {
                     this.gitDiff();
+                    return true;
+                }
+                if (id.equals("git.pull")) {
+                    this.gitPull();
+                    return true;
+                }
+                if (id.equals("git.fetch")) {
+                    this.gitFetch();
+                    return true;
+                }
+                if (id.equals("git.log")) {
+                    this.gitLog();
+                    return true;
+                }
+                if (id.equals("git.blame")) {
+                    this.gitBlame();
+                    return true;
+                }
+                if (id.equals("git.stage")) {
+                    this.gitStageActive();
+                    return true;
+                }
+                if (id.equals("git.unstage")) {
+                    this.gitUnstageActive();
                     return true;
                 }
                 if (id.equals("edit.format")) {

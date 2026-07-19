@@ -765,12 +765,12 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 58, "cmd.count");
-                a.eqInt(cr.filter("").size(), 58, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 64, "cmd.count");
+                a.eqInt(cr.filter("").size(), 64, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 1, "cmd.filter-undo-count");
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
-                a.eqInt(cr.filter("file").size(), 8, "cmd.filter-file");   // + "Revert File (reload from disk)"
+                a.eqInt(cr.filter("file").size(), 11, "cmd.filter-file");   // incl. git blame/stage/unstage "... File"
                 a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
                 a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
                 a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");

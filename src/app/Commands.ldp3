@@ -68,6 +68,12 @@ public bundle forge {
                 this.register("git.commit", "Git: Commit All");
                 this.register("git.push", "Git: Push");
                 this.register("git.diff", "Git: Diff (current)");
+                this.register("git.pull", "Git: Pull");
+                this.register("git.fetch", "Git: Fetch");
+                this.register("git.log", "Git: Log (history)");
+                this.register("git.blame", "Git: Blame (current file)");
+                this.register("git.stage", "Git: Stage Current File");
+                this.register("git.unstage", "Git: Unstage Current File");
                 this.register("view.output", "Toggle Output Panel");
                 this.register("view.minimap", "Toggle Minimap");
                 this.register("view.split", "Split Editor");
