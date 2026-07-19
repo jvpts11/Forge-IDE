@@ -341,7 +341,12 @@ public bundle forge {
                     if (GpuScreen.outlineIsMember(caption)) {
                         indent = 16;
                     }
-                    this.font.drawText(batch, ox + 10 + indent, y, caption, this.theme.text.r,
+                    // A colored kind swatch before the name (types amber, methods blue, enums green, ...),
+                    // so the structure reads by color at a glance -- the way an IDE outline should.
+                    Color* kc = this.outlineKindColor(caption);
+                    int sw = ch - 8;
+                    batch.rect(ox + 10 + indent, y + 4, sw, sw, kc.r, kc.g, kc.b, 0.9);
+                    this.font.drawText(batch, ox + 10 + indent + sw + 6, y, caption, this.theme.text.r,
                                        this.theme.text.g, this.theme.text.b, this.theme.text.a);
                     y = y + ch;
                     i = i + 1;
@@ -353,6 +358,29 @@ public bundle forge {
             private static method outlineIsMember(String caption) returns boolean {
                 return caption.startsWith("method") || caption.startsWith("constructor")
                        || caption.startsWith("destructor");
+            }
+            // The swatch color for an outline row, keyed on its leading kind word. Reuses the syntax palette
+            // so the outline and the code agree on what a type/function/constant looks like.
+            private method outlineKindColor(String caption) returns Color* {
+                if (caption.startsWith("method") || caption.startsWith("constructor")
+                        || caption.startsWith("destructor")) {
+                    return this.theme.tFunc;
+                }
+                if (caption.startsWith("enum")) {
+                    return this.theme.tConstant;
+                }
+                if (caption.startsWith("interface")) {
+                    return this.theme.tType;
+                }
+                if (caption.startsWith("namespace") || caption.startsWith("bundle")
+                        || caption.startsWith("program")) {
+                    return this.theme.textDim;
+                }
+                if (caption.startsWith("field") || caption.startsWith("property")) {
+                    return this.theme.tSelf;
+                }
+                // class / record / struct / union and anything else: a type name.
+                return this.theme.tTypeName;
             }
 
             // Layout of the debug side panel, shared by drawing and click hit-testing.
@@ -1672,7 +1700,7 @@ public bundle forge {
 
                 // the code minimap (right of the text, left of the overview ruler), when enabled
                 if (wb.minimapVisible()) {
-                    this.drawMinimap(batch, c, ox + pw - this.minimapW() - 14, oy, ph, firstLine, visible);
+                    this.drawMinimap(batch, c, ox + pw - this.minimapW() - 14, oy, ph, firstLine, visible, mx, my);
                 }
                 // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
                 this.drawOverviewRuler(batch, wb, ox + pw, oy, ph, mx, my);
@@ -1740,8 +1768,33 @@ public bundle forge {
             public method minimapW() returns int {
                 return 92;
             }
+            // Is (mx, my) over the minimap strip? Used to start a drag-to-scroll (VS Code-style).
+            public method overMinimap(Workbench* wb, int screenW, int mx, int my) returns boolean {
+                if (!wb.minimapVisible()) {
+                    return false;
+                }
+                int mmW = this.minimapW();
+                int mmX = screenW - mmW - 14;
+                return mx >= mmX && mx < mmX + mmW && my >= this.editorTop();
+            }
+            // The first visible line so the minimap position under cursor y sits at the CENTER of the viewport
+            // (dragging the slider scrolls the file, like VS Code -- the caret does not move).
+            public method minimapFirstLineAtY(Workbench* wb, int screenH, int my) returns int {
+                int total = wb.active().lineCount();
+                int span = screenH - this.editorTop() - this.statusH();
+                if (span <= 0 || total <= 0) {
+                    return 0;
+                }
+                int line = (my - this.editorTop()) * total / span;
+                int vis = wb.active().visibleRows();
+                mutable int first = line - vis / 2;
+                if (first < 0) {
+                    first = 0;
+                }
+                return first;
+            }
             private method drawMinimap(Batch2D* batch, Controller* c, int mmX, int oy, int ph, int firstLine,
-                                       int visible) returns void {
+                                       int visible, int mx, int my) returns void {
                 int mmW = this.minimapW();
                 batch.rect(mmX, oy, mmW, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
                 batch.rect(mmX, oy, 1, ph, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
@@ -1774,9 +1827,16 @@ public bundle forge {
                 if (vyH < 6) {
                     vyH = 6;
                 }
-                batch.rect(mmX, vy0, mmW, vyH, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.07);
-                batch.rect(mmX, vy0, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);
-                batch.rect(mmX, vy0 + vyH - 1, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);
+                // The viewport slider: a translucent block over the visible range, brighter while the cursor
+                // is over the minimap -- VS Code's grabbable slider. Accent hairlines mark its top and bottom.
+                boolean overMap = mx >= mmX && mx < mmX + mmW && my >= oy && my < oy + ph;
+                mutable float slideA = 0.12;
+                if (overMap) {
+                    slideA = 0.22;
+                }
+                batch.rect(mmX, vy0, mmW, vyH, this.theme.text.r, this.theme.text.g, this.theme.text.b, slideA);
+                batch.rect(mmX, vy0, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
+                batch.rect(mmX, vy0 + vyH - 1, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
             }
             private method leadingSpaces(String s) returns int {
                 mutable int i = 0;

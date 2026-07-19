@@ -254,6 +254,10 @@ public bundle forge {
                             wb.active().scrollToColumn(hc);
                             scrollDrag = 2;
                             dragging = false;
+                        } else if (screen.overMinimap(wb, win.width(), cxNow, cyNow)) {
+                            wb.active().scrollToLine(screen.minimapFirstLineAtY(wb, win.height(), cyNow));
+                            scrollDrag = 3;      // grab the minimap slider; drag scrolls the file
+                            dragging = false;
                         } else if (dbl && cxNow >= screen.textOx() && GuiApp.overEditor(screen, win, wb, ov)) {
                             GuiApp.selectWordAtMouse(screen, wb, win);       // double-click selects the word
                             dragging = false;
@@ -270,6 +274,8 @@ public bundle forge {
                         wb.active().scrollToLine(screen.vscrollLineAtY(wb, win.height(), win.cursorY()));
                     } else if (down && prevDown && scrollDrag == 2 && !ov.isOpen()) {
                         wb.active().scrollToColumn(screen.hscrollColAtX(wb, win.width(), win.cursorX()));
+                    } else if (down && prevDown && scrollDrag == 3 && !ov.isOpen()) {
+                        wb.active().scrollToLine(screen.minimapFirstLineAtY(wb, win.height(), win.cursorY()));
                     } else if (down && prevDown && dividerDrag == 1) {
                         screen.setTreeWidth(win.cursorX(), win.width());      // resize the sidebar live
                     } else if (down && prevDown && dividerDrag == 2) {
@@ -703,18 +709,11 @@ public bundle forge {
                     delete syms;
                     return;
                 }
-                // a click on the minimap scrolls the editor to the corresponding line
-                if (wb.minimapVisible()) {
-                    int mmW = screen.minimapW();
-                    int mmX = win.width() - mmW - 14;
-                    if (mx >= mmX && mx < mmX + mmW && my >= screen.editorTop()) {
-                        int total = wb.active().lineCount();
-                        int span = win.height() - screen.editorTop() - screen.statusH();
-                        if (span > 0 && total > 0) {
-                            wb.active().placeCaret((my - screen.editorTop()) * total / span, 0);
-                        }
-                        return;
-                    }
+                // a click on the minimap scrolls the editor (viewport-centered, VS Code-style: the caret
+                // does not move). Interactive drag is wired in the main loop via scrollDrag == 3.
+                if (screen.overMinimap(wb, win.width(), mx, my)) {
+                    wb.active().scrollToLine(screen.minimapFirstLineAtY(wb, win.height(), my));
+                    return;
                 }
                 // A click on a scrollbar scrolls the editor; it must never fall through to caret placement
                 // (the reason clicking near the right edge used to drop the caret there).
