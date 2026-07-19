@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Forge app icon: a hammer striking an anvil on the dark brand ground, in the LDP3 amber. The forge
+       (blacksmith) metaphor names the IDE; the spark ties it to Flamo's warmth. -->
+  <defs>
+    <radialGradient id="heat" cx="46%" cy="58%" r="55%">
+      <stop offset="0%" stop-color="#eab464" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#eab464" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="anvil" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0c079"/>
+      <stop offset="100%" stop-color="#d99a44"/>
+    </linearGradient>
+    <linearGradient id="head" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffe1b0"/>
+      <stop offset="100%" stop-color="#e7ad63"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="#101c1f"/>
+  <circle cx="118" cy="150" r="96" fill="url(#heat)"/>
+
+  <!-- Anvil: top face with a horn on the left, over a narrow-waisted flared base. -->
+  <g fill="url(#anvil)">
+    <path d="M34 150 L64 132 L206 132 L206 160 L64 160 Z"/>
+    <path d="M86 160 L184 160 L150 186 L190 205 L190 214 L70 214 L70 205 L110 186 Z"/>
+  </g>
+
+  <!-- Hammer, angled to strike the anvil's top face; a lighter amber so it reads apart from the anvil. -->
+  <g transform="rotate(-20 120 104)">
+    <rect x="150" y="98" width="92" height="13" rx="6" fill="#c98b3f"/>
+    <rect x="86" y="82" width="70" height="44" rx="11" fill="url(#head)"/>
+    <rect x="86" y="82" width="15" height="44" rx="7" fill="#d99a44"/>
+  </g>
+
+  <!-- Spark where the hammer meets the anvil. -->
+  <g fill="#ffe8c4">
+    <path d="M104 120 l5 -13 l5 13 l13 5 l-13 5 l-5 13 l-5 -13 l-13 -5 z" opacity="0.95"/>
+    <circle cx="132" cy="112" r="3.2"/>
+    <circle cx="92" cy="128" r="2.6"/>
+  </g>
+</svg>
