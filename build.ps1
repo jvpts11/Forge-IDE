@@ -3,10 +3,41 @@
 # Requires a built `ldp3` driver (in the LDP3 repo build). `ldp3 build` reads ldp3.toml, compiles every
 # .ldp3 under src/ as one program, and links Forge.exe into build-output/.
 param(
-    [string]$Ldp3 = "C:\Users\jvpts\Documents\GitHub\LDP3\build\bin\Debug\ldp3.exe"
+    # The LDP3 driver. Default: the sibling ..\LDP3 repo's dev build, else `ldp3` on PATH.
+    [string]$Ldp3,
+    # The LDP3 repo root (to bundle the stdlib prelude + spec next to the exe). Default:
+    # $env:LDP3_HOME, else the sibling ..\LDP3, else inferred from the driver's location.
+    [string]$Ldp3Home
 )
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
+
+# Locate the LDP3 toolchain + repo without hard-coding any machine-specific path, so this builds on any
+# checkout: prefer what's on PATH / the sibling repo / an env override before failing with guidance.
+if (-not $Ldp3) {
+    # Prefer the sibling repo's dev build (what you get when hacking on both), then whatever is on PATH
+    # (an installed toolchain, for anyone building Forge without the LDP3 source checked out).
+    $sib = Join-Path $here "..\LDP3\build\bin\Debug\ldp3.exe"
+    if (Test-Path $sib) {
+        $Ldp3 = (Resolve-Path $sib).Path
+    } else {
+        $Ldp3 = (Get-Command ldp3 -ErrorAction SilentlyContinue).Source
+    }
+}
+if (-not $Ldp3 -or -not (Test-Path $Ldp3)) {
+    throw "could not find the ldp3 driver -- put ldp3 on PATH, pass -Ldp3 <path>, or build the sibling LDP3 repo."
+}
+if (-not $Ldp3Home) {
+    if ($env:LDP3_HOME -and (Test-Path $env:LDP3_HOME)) {
+        $Ldp3Home = (Resolve-Path $env:LDP3_HOME).Path
+    } elseif (Test-Path (Join-Path $here "..\LDP3")) {
+        $Ldp3Home = (Resolve-Path (Join-Path $here "..\LDP3")).Path
+    } else {
+        # Infer from the driver layout: <root>\build\bin\<cfg>\ldp3.exe -> <root>
+        $cand = Resolve-Path (Join-Path (Split-Path $Ldp3 -Parent) "..\..\..") -ErrorAction SilentlyContinue
+        if ($cand) { $Ldp3Home = $cand.Path }
+    }
+}
 Push-Location $here
 try {
     Write-Host "== ldp3 build =="
@@ -21,7 +52,7 @@ try {
     $refDir = Join-Path $here "build-output\reference"
     New-Item -ItemType Directory -Force $refDir | Out-Null
     $mainCpp = Join-Path (Split-Path $Ldp3 -Parent) "..\..\..\src\cli\main.cpp"
-    if (-not (Test-Path $mainCpp)) { $mainCpp = "C:\Users\jvpts\Documents\GitHub\LDP3\src\cli\main.cpp" }
+    if (-not (Test-Path $mainCpp) -and $Ldp3Home) { $mainCpp = Join-Path $Ldp3Home "src\cli\main.cpp" }
     if (Test-Path $mainCpp) {
         $src = [System.IO.File]::ReadAllText($mainCpp)
         $start = $src.IndexOf("kPreludeSource")
@@ -60,10 +91,12 @@ try {
             Write-Host ("wrote reference/imports.txt ({0} names)" -f $uniq.Count)
         }
     }
-    $spec = "C:\Users\jvpts\Documents\GitHub\LDP3\docs\LDP3_specification.md"
-    if (Test-Path $spec) { Copy-Item $spec (Join-Path $refDir "language-reference.md") -Force }
-    $kw = "C:\Users\jvpts\Documents\GitHub\LDP3\docs\LDP3_keywords.md"
-    if (Test-Path $kw) { Copy-Item $kw (Join-Path $refDir "keywords.md") -Force }
+    if ($Ldp3Home) {
+        $spec = Join-Path $Ldp3Home "docs\LDP3_specification.md"
+        if (Test-Path $spec) { Copy-Item $spec (Join-Path $refDir "language-reference.md") -Force }
+        $kw = Join-Path $Ldp3Home "docs\LDP3_keywords.md"
+        if (Test-Path $kw) { Copy-Item $kw (Join-Path $refDir "keywords.md") -Force }
+    }
 
     Write-Host "== self-test =="
     & (Join-Path $here "build-output\Forge.exe") test
