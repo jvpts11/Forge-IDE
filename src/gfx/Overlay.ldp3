@@ -21,6 +21,9 @@ public bundle forge {
             public mutable boolean focusReplace;   // in mode 2, whether typing edits the replace field
             public mutable String promptKind;      // mode 7: what Enter does (e.g. "commit")
             public mutable String promptLabel;     // mode 7: the prompt shown before the input
+            public mutable boolean matchCase;      // mode 2: case-sensitive find (sticky across opens)
+            public mutable boolean wholeWord;      // mode 2: match whole words only
+            public mutable boolean useRegex;       // mode 2: treat the query as a regex
 
             public constructor Overlay() {
                 this.mode = 0;
@@ -33,6 +36,20 @@ public bundle forge {
                 this.focusReplace = false;
                 this.promptKind = "";
                 this.promptLabel = "";
+                this.matchCase = true;
+                this.wholeWord = false;
+                this.useRegex = false;
+            }
+
+            // Find-bar option toggles (mode 2). Sticky, so a chosen mode holds across find sessions.
+            public method toggleCase() returns void {
+                this.matchCase = !this.matchCase;
+            }
+            public method toggleWholeWord() returns void {
+                this.wholeWord = !this.wholeWord;
+            }
+            public method toggleRegex() returns void {
+                this.useRegex = !this.useRegex;
             }
 
             // Open a single-line text prompt (mode 7). `kind` names the action Enter triggers; `label` is the

@@ -1773,7 +1773,7 @@ public bundle forge {
                         ov.close();
                     }
                     else if (ov.mode == 2) {
-                        GuiApp.findKey(ov, wb, vk, ctrl, shift);
+                        GuiApp.findKey(ov, wb, vk, ctrl, shift, alt);
                     }
                     else if (vk == 8) {
                         ov.backspace();
@@ -2298,7 +2298,7 @@ public bundle forge {
                         return;
                     }
                     if (ov.mode == 2) {
-                        GuiApp.findKey(ov, wb, vk, ctrl, shift);
+                        GuiApp.findKey(ov, wb, vk, ctrl, shift, alt);
                         return;
                     }
                     if (vk == 8) {
@@ -2434,8 +2434,23 @@ public bundle forge {
 
             // Keys while the find/replace bar is open: Tab switches field, Backspace edits it, Enter finds the
             // next match (Shift+Enter the previous), Ctrl+Enter replaces every match with the replace text.
-            private static method findKey(Overlay* ov, Workbench* wb, int vk, boolean ctrl, boolean shift)
-                    returns void {
+            private static method findKey(Overlay* ov, Workbench* wb, int vk, boolean ctrl, boolean shift,
+                                          boolean alt) returns void {
+                if (alt && vk == 67) {                           // Alt+C: toggle case sensitivity
+                    ov.toggleCase();
+                    GuiApp.applyFindOptions(ov, wb);
+                    return;
+                }
+                if (alt && vk == 87) {                           // Alt+W: toggle whole-word
+                    ov.toggleWholeWord();
+                    GuiApp.applyFindOptions(ov, wb);
+                    return;
+                }
+                if (alt && vk == 82) {                           // Alt+R: toggle regex
+                    ov.toggleRegex();
+                    GuiApp.applyFindOptions(ov, wb);
+                    return;
+                }
                 if (vk == 8) {
                     ov.backspace();
                     return;
@@ -2447,6 +2462,7 @@ public bundle forge {
                 }
                 // Tab
                 if (vk == 13) {                                  // Enter
+                    GuiApp.applyFindOptions(ov, wb);
                     if (ctrl) {
                         wb.active().replaceAll(ov.query, ov.replace);
                         return;
@@ -2457,6 +2473,14 @@ public bundle forge {
                         wb.active().find(ov.query);
                     }
                 }
+                return;
+            }
+            // Push the find bar's option toggles (case / whole-word / regex) onto the active document's
+            // search just before a find or replace runs.
+            private static method applyFindOptions(Overlay* ov, Workbench* wb) returns void {
+                wb.active().setSearchCase(ov.matchCase);
+                wb.active().setSearchWholeWord(ov.wholeWord);
+                wb.active().setSearchRegex(ov.useRegex);
                 return;
             }
 

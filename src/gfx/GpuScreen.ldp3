@@ -2730,11 +2730,18 @@ public bundle forge {
                 // replace row
                 int ry = by + 6 + rowH;
                 this.drawField(batch, bx, ry, cw, ch, "repl", ov.replace, ov.focusReplace);
-                // hint
-                String hint = "Enter next  Shift+Enter prev  Tab field  ^A all";
+                // find options (Alt+C/W/R toggles) + a compact hint
+                String hint = "Aa:" + GpuScreen.onOff(ov.matchCase) + " W:" + GpuScreen.onOff(ov.wholeWord)
+                    + " .*:" + GpuScreen.onOff(ov.useRegex) + "  Alt+C/W/R";
                 if (bw - 24 > hint.length() * cw) {
                     this.font.drawText(batch, bx + bw - (hint.length() + 1) * cw, ry, hint, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
                 }
+            }
+            private static method onOff(boolean b) returns String {
+                if (b) {
+                    return "on";
+                }
+                return "off";
             }
             // One labelled input row of the find panel; draws the caret when it is the focused field.
             private method drawField(Batch2D* batch, int bx, int y, int cw, int ch, String caption, String text,

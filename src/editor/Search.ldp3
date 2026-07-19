@@ -29,16 +29,50 @@ public bundle forge {
         public class Search {
             private mutable TextBuffer* buf;
             private mutable boolean caseSensitive;
+            private mutable boolean wholeWord;    // a hit must be delimited by non-word characters
+            private mutable boolean useRegex;     // treat the needle as a regex (. * + ? [ ] ^ $)
 
             public constructor Search(TextBuffer* buf) {
                 this.buf = buf;
                 this.caseSensitive = true;
+                this.wholeWord = false;
+                this.useRegex = false;
             }
             public method setCaseSensitive(boolean enabled) returns void {
                 this.caseSensitive = enabled;
             }
             public method isCaseSensitive() returns boolean {
                 return this.caseSensitive;
+            }
+            public method setWholeWord(boolean enabled) returns void {
+                this.wholeWord = enabled;
+            }
+            public method isWholeWord() returns boolean {
+                return this.wholeWord;
+            }
+            public method setUseRegex(boolean enabled) returns void {
+                this.useRegex = enabled;
+            }
+            public method isUseRegex() returns boolean {
+                return this.useRegex;
+            }
+            private method isWordChar(char c) returns boolean {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_';
+            }
+            // A hit of `len` at `start` in `hay` is a whole word when the characters bracketing it are not
+            // word characters (or it sits at a line edge).
+            private method isWordBoundary(String hay, int start, int len) returns boolean {
+                mutable boolean leftOk = true;
+                if (start > 0) {
+                    leftOk = !this.isWordChar(hay.charAt(start - 1));
+                }
+                mutable boolean rightOk = true;
+                int after = start + len;
+                if (after < hay.length()) {
+                    rightOk = !this.isWordChar(hay.charAt(after));
+                }
+                return leftOk && rightOk;
             }
 
             // First index of `needle` in `hay` at or after `from`, by a plain forward scan. -1 if none.
@@ -70,11 +104,15 @@ public bundle forge {
                 return s.toLower();
             }
 
-            // Every match, top-to-bottom then left-to-right. Empty needle yields an empty list.
+            // Every match, top-to-bottom then left-to-right. Empty needle yields an empty list. Honours the
+            // whole-word and regex modes.
             public method findAll(String needle) returns ArrayList<Match>* {
                 ArrayList<Match>* out = new ArrayList<Match>() on heap;
                 if (needle.length() == 0) {
                     return out;
+                }
+                if (this.useRegex) {
+                    return this.findAllRegex(needle);
                 }
                 String pat = this.fold(needle);
                 int len = needle.length();
@@ -82,8 +120,165 @@ public bundle forge {
                     String hay = this.fold(this.buf.line(r));
                     mutable int hit = this.indexIn(hay, pat, 0);
                     while (hit >= 0) {
-                        out.add(new Match(r, hit, len) on heap);
+                        if (!this.wholeWord || this.isWordBoundary(hay, hit, len)) {
+                            out.add(new Match(r, hit, len) on heap);
+                        }
                         hit = this.indexIn(hay, pat, hit + len);
+                    }
+                }
+                return out;
+            }
+
+            // --- regex matching (subset: . * + ? [ ] with ranges and ^ negation, plus ^ and $ anchors) ---
+            // A backtracking matcher adapted to return the end index of a match (so the highlighted span has
+            // a real length), rather than a yes/no. Case folding is applied to both sides by the caller.
+
+            // The index just past the atom starting at pi: one char, or the whole [...] class.
+            private method reAtomEnd(String pat, int pi) returns int {
+                if (pat.charAt(pi) == '[') {
+                    mutable int j = pi + 1;
+                    if (j < pat.length() && pat.charAt(j) == '^') {
+                        j = j + 1;
+                    }
+                    if (j < pat.length() && pat.charAt(j) == ']') {
+                        j = j + 1;
+                    }
+                    while (j < pat.length() && pat.charAt(j) != ']') {
+                        j = j + 1;
+                    }
+                    return j + 1;
+                }
+                return pi + 1;
+            }
+            // Whether ch is in the class spelled between [ and ] (indices [start, end)); a leading ^ negates.
+            private method reMatchClass(String pat, int start, int end, char ch) returns boolean {
+                mutable int i = start;
+                mutable boolean negate = false;
+                if (i < end && pat.charAt(i) == '^') {
+                    negate = true;
+                    i = i + 1;
+                }
+                mutable boolean found = false;
+                while (i < end) {
+                    if (i + 2 < end && pat.charAt(i + 1) == '-') {
+                        if (ch >= pat.charAt(i) && ch <= pat.charAt(i + 2)) {
+                            found = true;
+                        }
+                        i = i + 3;
+                    } else {
+                        if (pat.charAt(i) == ch) {
+                            found = true;
+                        }
+                        i = i + 1;
+                    }
+                }
+                if (negate) {
+                    return !found;
+                }
+                return found;
+            }
+            // Whether the single atom at [pi, atomEnd) matches one character ch.
+            private method reMatchAtom(String pat, int pi, int atomEnd, char ch) returns boolean {
+                char p = pat.charAt(pi);
+                if (p == '.') {
+                    return true;
+                }
+                if (p == '[') {
+                    return this.reMatchClass(pat, pi + 1, atomEnd - 1, ch);
+                }
+                return p == ch;
+            }
+            // Matches at least `min` repetitions of the atom then the rest, backtracking from the longest run.
+            // Returns the end index in text, or -1.
+            private method reMatchStar(int min, String pat, int pi, int atomEnd, String text, int ti)
+                    returns int {
+                mutable int count = 0;
+                while (ti + count < text.length()
+                       && this.reMatchAtom(pat, pi, atomEnd, text.charAt(ti + count))) {
+                    count = count + 1;
+                }
+                mutable int k = count;
+                while (k >= min) {
+                    int r = this.reMatchHere(pat, atomEnd + 1, text, ti + k);
+                    if (r >= 0) {
+                        return r;
+                    }
+                    k = k - 1;
+                }
+                return -1;
+            }
+            // The end index in text if pat[pi:] matches text starting at ti (greedy), or -1.
+            private method reMatchHere(String pat, int pi, String text, int ti) returns int {
+                if (pi >= pat.length()) {
+                    return ti;
+                }
+                if (pat.charAt(pi) == '$' && pi + 1 == pat.length()) {
+                    if (ti == text.length()) {
+                        return ti;
+                    }
+                    return -1;
+                }
+                int ae = this.reAtomEnd(pat, pi);
+                mutable char quant = ' ';
+                if (ae < pat.length()) {
+                    char q = pat.charAt(ae);
+                    if (q == '*' || q == '+' || q == '?') {
+                        quant = q;
+                    }
+                }
+                if (quant == '*') {
+                    return this.reMatchStar(0, pat, pi, ae, text, ti);
+                }
+                if (quant == '+') {
+                    return this.reMatchStar(1, pat, pi, ae, text, ti);
+                }
+                if (quant == '?') {
+                    if (ti < text.length() && this.reMatchAtom(pat, pi, ae, text.charAt(ti))) {
+                        int r = this.reMatchHere(pat, ae + 1, text, ti + 1);
+                        if (r >= 0) {
+                            return r;
+                        }
+                    }
+                    return this.reMatchHere(pat, ae + 1, text, ti);
+                }
+                if (ti < text.length() && this.reMatchAtom(pat, pi, ae, text.charAt(ti))) {
+                    return this.reMatchHere(pat, ae, text, ti + 1);
+                }
+                return -1;
+            }
+            // Every regex match, line by line. A `^` anchors to the line start; empty matches advance by one
+            // so the scan always terminates.
+            private method findAllRegex(String needle) returns ArrayList<Match>* {
+                ArrayList<Match>* out = new ArrayList<Match>() on heap;
+                String pat = this.fold(needle);
+                mutable boolean anchored = false;
+                mutable int startPi = 0;
+                if (pat.length() > 0 && pat.charAt(0) == '^') {
+                    anchored = true;
+                    startPi = 1;
+                }
+                for (mutable int r = 0; r < this.buf.lineCount(); r++) {
+                    String hay = this.fold(this.buf.line(r));
+                    mutable int ti = 0;
+                    mutable boolean go = true;
+                    while (go && ti <= hay.length()) {
+                        int end = this.reMatchHere(pat, startPi, hay, ti);
+                        if (end >= 0) {
+                            int mlen = end - ti;
+                            if (!this.wholeWord || this.isWordBoundary(hay, ti, mlen)) {
+                                out.add(new Match(r, ti, mlen) on heap);
+                            }
+                            mutable int adv = mlen;
+                            if (adv < 1) {
+                                adv = 1;
+                            }
+                            ti = ti + adv;
+                        } else {
+                            ti = ti + 1;
+                        }
+                        if (anchored) {
+                            go = false;
+                        }
                     }
                 }
                 return out;

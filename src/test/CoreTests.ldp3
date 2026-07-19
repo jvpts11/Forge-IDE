@@ -438,6 +438,22 @@ public bundle forge {
                 a.eqInt(eci.replaceAll("foo", "x"), 3, "replace.ci-count");
                 a.eqStr(eci.document().line(0), "x x x", "replace.ci-result");
 
+                // --- find modes: whole-word + regex ---
+                Editor efm = new Editor(new TextBuffer() on heap) on heap;
+                efm.document().loadText("foo food foobar\nafoo foo");
+                a.eqInt(efm.matchCount("foo"), 5, "find.plain-count");
+                efm.setSearchWholeWord(true);
+                a.eqInt(efm.matchCount("foo"), 2, "find.whole-word");
+                efm.setSearchWholeWord(false);
+                efm.setSearchRegex(true);
+                a.eqInt(efm.matchCount("fo+"), 5, "find.regex-plus");
+                a.eqInt(efm.matchCount("f.o"), 5, "find.regex-dot");
+                a.eqInt(efm.matchCount("[a-z]oo"), 5, "find.regex-class");
+                a.eqInt(efm.matchCount("^foo"), 1, "find.regex-anchor");
+                a.eqInt(efm.matchCount("bar$"), 1, "find.regex-anchor-end");
+                efm.setSearchWholeWord(true);
+                a.eqInt(efm.matchCount("fo+"), 2, "find.regex-plus-whole-word");
+
                 // --- word-wise motion / deletion / selection ---
                 Editor ew = new Editor(new TextBuffer() on heap) on heap;
                 ew.document().loadText("foo bar baz");

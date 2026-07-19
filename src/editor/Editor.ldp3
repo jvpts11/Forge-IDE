@@ -233,9 +233,15 @@ public bundle forge {
                 return m;
             }
 
-            // --- find / replace (plain text, case-sensitivity via setSearchCase) ---
+            // --- find / replace (case-sensitivity, whole-word, and regex modes on the shared Search) ---
             public method setSearchCase(boolean caseSensitive) returns void {
                 this.search.setCaseSensitive(caseSensitive);
+            }
+            public method setSearchWholeWord(boolean enabled) returns void {
+                this.search.setWholeWord(enabled);
+            }
+            public method setSearchRegex(boolean enabled) returns void {
+                this.search.setUseRegex(enabled);
             }
             public method matchCount(String needle) returns int {
                 return this.search.count(needle);

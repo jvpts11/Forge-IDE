@@ -571,6 +571,15 @@ public bundle forge {
             public method replaceAll(String needle, String replacement) returns int {
                 int n = this.ed.replaceAll(needle, replacement); this.edited(); return n;
             }
+            public method setSearchCase(boolean caseSensitive) returns void {
+                this.ed.setSearchCase(caseSensitive);
+            }
+            public method setSearchWholeWord(boolean enabled) returns void {
+                this.ed.setSearchWholeWord(enabled);
+            }
+            public method setSearchRegex(boolean enabled) returns void {
+                this.ed.setSearchRegex(enabled);
+            }
             public method renameSymbol(String oldName, String newName) returns int {
                 int n = this.ed.renameWord(oldName, newName, this.hl); this.edited(); return n;
             }
