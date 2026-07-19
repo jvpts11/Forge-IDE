@@ -53,7 +53,7 @@ Claude Code / Claude Desktop (`claude_desktop_config.json` or `.mcp.json`):
   "mcpServers": {
     "forge": {
       "command": "python",
-      "args": ["C:/Users/jvpts/Documents/GitHub/Forge-IDE/mcp/forge_mcp.py"]
+      "args": ["C:/path/to/Forge-IDE/mcp/forge_mcp.py"]
     }
   }
 }
