@@ -2408,6 +2408,18 @@ public bundle forge {
                     GuiApp.openKeybindingsFile(wb);
                     return true;
                 }
+                if (id.equals("debug.watch")) {
+                    ov.openPrompt("watch", "watch expression: ");
+                    return true;
+                }
+                if (id.equals("debug.eval")) {
+                    ov.openPrompt("dbgeval", "evaluate (debug console): ");
+                    return true;
+                }
+                if (id.equals("debug.condition")) {
+                    ov.openPrompt("bpcond", "breakpoint condition on this line (blank clears): ");
+                    return true;
+                }
                 return false;
             }
 
@@ -2743,6 +2755,19 @@ public bundle forge {
                         // any other answer (incl. empty) cancels: the tab stays open
                     }
                     wb.setPendingClose(0 - 1);
+                } else if (ov.promptKind.equals("watch")) {
+                    wb.debugger().addWatch(ov.query);
+                } else if (ov.promptKind.equals("dbgeval")) {
+                    wb.debugger().evalConsole(ov.query);
+                } else if (ov.promptKind.equals("bpcond")) {
+                    String f = wb.activePath();
+                    int ln = wb.active().editor().cursorRow() + 1;   // 1-based (DAP/DWARF)
+                    if (wb.debugger().setBreakpointCondition(f, ln, ov.query)) {
+                        wb.output().banner("Breakpoint", "Condition set on line " + ln.toString() + ".");
+                    } else {
+                        wb.output().banner("Breakpoint",
+                            "No breakpoint on line " + ln.toString() + " -- toggle one first (F9).");
+                    }
                 }
                 return;
             }

@@ -15,9 +15,11 @@ public bundle forge {
         public class BreakpointFile {
             public mutable String path;
             public mutable ArrayList<int>* lines;
+            public mutable ArrayList<String>* conditions;   // parallel to lines; "" = unconditional
             public constructor BreakpointFile(String path) {
                 this.path = path;
                 this.lines = new ArrayList<int>() on heap;
+                this.conditions = new ArrayList<String>() on heap;
             }
         }
 
@@ -65,6 +67,11 @@ public bundle forge {
             private mutable ArrayList<DebugVar*>* variables;
             private mutable ArrayList<String>* output;
             private mutable String status;
+            private mutable ArrayList<String>* watches;       // watch expressions
+            private mutable ArrayList<String>* watchValues;   // their last-evaluated values (parallel)
+            private mutable ArrayList<int>* pendingEval;      // FIFO of eval targets: a watch index, or -1 (console)
+            private mutable int currentFrameId;               // top frame, the context for evaluate
+            private mutable String lastEval;                  // the debug console's last result
 
             public constructor Debugger() {
                 this.client = new DapClient() on heap;
@@ -79,6 +86,11 @@ public bundle forge {
                 this.variables = new ArrayList<DebugVar*>() on heap;
                 this.output = new ArrayList<String>() on heap;
                 this.status = "idle";
+                this.watches = new ArrayList<String>() on heap;
+                this.watchValues = new ArrayList<String>() on heap;
+                this.pendingEval = new ArrayList<int>() on heap;
+                this.currentFrameId = 0;
+                this.lastEval = "";
             }
 
             // ---- Breakpoints (persist across sessions; re-sent on the next launch) ----
@@ -111,14 +123,36 @@ public bundle forge {
                 mutable boolean nowSet = false;
                 if (found >= 0) {
                     lines.removeAt(found);
+                    entry.conditions.removeAt(found);
                 } else {
                     lines.add(line);
+                    entry.conditions.add("");
                     nowSet = true;
                 }
                 if (this.active) {
-                    this.client.setBreakpoints(file, lines);
+                    this.client.setBreakpoints(file, lines, entry.conditions);
                 }
                 return nowSet;
+            }
+
+            // Set (or clear, with "") the condition on the breakpoint at (file, line). Returns false if there
+            // is no breakpoint there yet. Re-sends the file's breakpoints so a live session picks it up.
+            public method setBreakpointCondition(String file, int line, String cond) returns boolean {
+                nullable BreakpointFile entry = this.entryFor(file);
+                if (entry == null) {
+                    return false;
+                }
+                ArrayList<int>* lines = entry.lines;
+                for (mutable int i = 0; i < lines.size(); i++) {
+                    if (lines.get(i) == line) {
+                        entry.conditions.set(i, cond);
+                        if (this.active) {
+                            this.client.setBreakpoints(file, lines, entry.conditions);
+                        }
+                        return true;
+                    }
+                }
+                return false;
             }
 
             public method breakpointsFor(String file) returns ArrayList<int>* {
@@ -330,6 +364,10 @@ public bundle forge {
                     } else {
                         if (command.equals("variables")) {
                             this.parseVariables(body);
+                        } else {
+                            if (command.equals("evaluate")) {
+                                this.parseEvaluate(body);
+                            }
                         }
                     }
                 }
@@ -338,8 +376,55 @@ public bundle forge {
             private method sendAllBreakpoints() returns void {
                 for (mutable int i = 0; i < this.breakpoints.size(); i++) {
                     BreakpointFile* bf = this.breakpoints.get(i);
-                    this.client.setBreakpoints(bf.path, bf.lines);
+                    this.client.setBreakpoints(bf.path, bf.lines, bf.conditions);
                 }
+            }
+
+            // ---- Watch expressions + the debug console (DAP evaluate) ----
+
+            // Add a watch expression; evaluate it now if we are paused so its value shows immediately.
+            public method addWatch(String expr) returns void {
+                if (expr.length() == 0) {
+                    return;
+                }
+                this.watches.add(expr);
+                this.watchValues.add("...");
+                if (this.stopped) {
+                    this.pendingEval.add(this.watches.size() - 1);
+                    this.client.evaluate(expr, this.currentFrameId, "watch");
+                }
+                return;
+            }
+            public method clearWatches() returns void {
+                this.watches = new ArrayList<String>() on heap;
+                this.watchValues = new ArrayList<String>() on heap;
+                return;
+            }
+            public method watchesView() returns ArrayList<String>* {
+                return this.watches;
+            }
+            public method watchValuesView() returns ArrayList<String>* {
+                return this.watchValues;
+            }
+            public method lastEvalResult() returns String {
+                return this.lastEval;
+            }
+            // Evaluate `expr` in the debug console (repl context); the result lands in lastEvalResult().
+            public method evalConsole(String expr) returns void {
+                if (expr.length() == 0 || !this.stopped) {
+                    return;
+                }
+                this.pendingEval.add(0 - 1);
+                this.client.evaluate(expr, this.currentFrameId, "repl");
+                return;
+            }
+            // Re-evaluate every watch (called when execution stops at a new location).
+            private method refreshWatches() returns void {
+                for (mutable int i = 0; i < this.watches.size(); i++) {
+                    this.pendingEval.add(i);
+                    this.client.evaluate(this.watches.get(i), this.currentFrameId, "watch");
+                }
+                return;
             }
 
             private method parseStackTrace(nullable Json body) returns void {
@@ -361,8 +446,26 @@ public bundle forge {
                     DebugFrame* top = this.callStack.get(0);
                     this.stoppedFile = top.path;
                     this.stoppedLine = top.line;
+                    this.currentFrameId = top.id;
+                    this.pendingEval = new ArrayList<int>() on heap;  // drop stale eval correlations
                     this.client.scopes(top.id);   // fetch locals for the top frame
+                    this.refreshWatches();
                 }
+            }
+            private method parseEvaluate(nullable Json body) returns void {
+                String result = body.field("result").asStr();
+                if (this.pendingEval.size() == 0) {
+                    this.lastEval = result;
+                    return;
+                }
+                int idx = this.pendingEval.get(0);
+                this.pendingEval.removeAt(0);
+                if (idx >= 0 && idx < this.watchValues.size()) {
+                    this.watchValues.set(idx, result);
+                } else {
+                    this.lastEval = result;
+                }
+                return;
             }
 
             private method parseScopes(nullable Json body) returns void {

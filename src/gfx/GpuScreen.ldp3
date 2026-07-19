@@ -448,6 +448,31 @@ public bundle forge {
                     y = y + ch;
                     j = j + 1;
                 }
+                // WATCH expressions (Debug: Add Watch) and the debug console's last result (Debug: Evaluate)
+                ArrayList<String>* watches = dbg.watchesView();
+                if (watches.size() > 0 || dbg.lastEvalResult().length() > 0) {
+                    y = y + 10;
+                    this.font.drawText(batch, px + 10, y, "WATCH", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                    y = y + ch + 2;
+                    ArrayList<String>* wvals = dbg.watchValuesView();
+                    mutable int w = 0;
+                    while (w < watches.size() && y < py + ph - ch) {
+                        String wexpr = watches.get(w);
+                        mutable String wval = "";
+                        if (w < wvals.size()) {
+                            wval = wvals.get(w);
+                        }
+                        this.font.drawText(batch, px + 16, y, wexpr, this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, this.theme.modified.a);
+                        this.font.drawText(batch, px + 16 + (wexpr.length() + 1) * cw, y, "= " + wval, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                        y = y + ch;
+                        w = w + 1;
+                    }
+                    String le = dbg.lastEvalResult();
+                    if (le.length() > 0 && y < py + ph - ch) {
+                        y = y + 6;
+                        this.font.drawText(batch, px + 10, y, "> " + le, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                    }
+                }
             }
 
             // The breadcrumb bar above the editor: the caret's scope trail (bundle > namespace > class >

@@ -88,6 +88,9 @@ public bundle forge {
                 this.register("debug.stepInto", "Debug: Step Into");
                 this.register("debug.stepOut", "Debug: Step Out");
                 this.register("debug.stop", "Debug: Stop");
+                this.register("debug.watch", "Debug: Add Watch");
+                this.register("debug.eval", "Debug: Evaluate (console)");
+                this.register("debug.condition", "Debug: Set Breakpoint Condition");
             }
 
             public method register(String id, String title) returns void {

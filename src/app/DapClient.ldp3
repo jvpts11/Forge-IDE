@@ -89,8 +89,11 @@ public bundle forge {
                 this.sendFrame(req);
             }
 
-            // setBreakpoints: replace the breakpoints for one source file with the given 1-based lines.
-            public method setBreakpoints(String sourcePath, ArrayList<int>* lines) returns void {
+            // setBreakpoints: replace the breakpoints for one source file with the given 1-based lines. A
+            // non-empty conditions[i] makes line i a conditional breakpoint (the adapter only stops when the
+            // expression is true). `conditions` is parallel to `lines`; a shorter list means "no condition".
+            public method setBreakpoints(String sourcePath, ArrayList<int>* lines,
+                                         ArrayList<String>* conditions) returns void {
                 Json req = this.newRequest("setBreakpoints");
                 Json args = Json.object();
                 Json src = Json.object();
@@ -100,9 +103,24 @@ public bundle forge {
                 for (mutable int i = 0; i < lines.size(); i++) {
                     Json bp = Json.object();
                     bp.put("line", Json.ofNum(cast<long>(lines.get(i))));
+                    if (i < conditions.size() && conditions.get(i).length() > 0) {
+                        bp.put("condition", Json.ofStr(conditions.get(i)));
+                    }
                     arr.add(bp);
                 }
                 args.put("breakpoints", arr);
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            // evaluate: compute `expr` in the context of frame `frameId`. `context` is "watch", "repl"
+            // (the debug console), or "hover". The result comes back as an evaluate response.
+            public method evaluate(String expr, int frameId, String context) returns void {
+                Json req = this.newRequest("evaluate");
+                Json args = Json.object();
+                args.put("expression", Json.ofStr(expr));
+                args.put("frameId", Json.ofNum(cast<long>(frameId)));
+                args.put("context", Json.ofStr(context));
                 req.put("arguments", args);
                 this.sendFrame(req);
             }
