@@ -442,6 +442,11 @@ public bundle forge {
             public method clipboardText() returns String {
                 return this.clip.get();
             }
+            // Inject text into the in-app buffer -- the GUI uses this to seed a paste from the OS clipboard
+            // just before calling paste(), keeping the engine itself free of any FFI.
+            public method setClipboard(String s) returns void {
+                this.clip.set(s);
+            }
 
             // --- line operations (duplicate / delete / move up-down / indent-dedent), on the caret's line ---
             public method duplicateLine() returns void {

@@ -1,0 +1,89 @@
+import System.Memory;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Win32 clipboard entry points (user32) plus the global-memory helpers (kernel32) needed to hand a
+        // text buffer to the system clipboard. Declared here so the editor engine stays free of FFI.
+        public class ClipWin32 {
+            public extern stdcall static method OpenClipboard(long hwnd) returns int;
+            public extern stdcall static method CloseClipboard() returns int;
+            public extern stdcall static method EmptyClipboard() returns int;
+            public extern stdcall static method SetClipboardData(int format, long hMem) returns long;
+            public extern stdcall static method GetClipboardData(int format) returns long;
+            public extern stdcall static method IsClipboardFormatAvailable(int format) returns int;
+            public extern stdcall static method GlobalAlloc(int flags, long bytes) returns long;
+            public extern stdcall static method GlobalLock(long h) returns long;
+            public extern stdcall static method GlobalUnlock(long h) returns int;
+            public extern stdcall static method GlobalSize(long h) returns long;
+        }
+
+        // The real OS clipboard, so copy/cut/paste cross tabs, panes, and other applications. Text is moved
+        // as CF_TEXT (ANSI); Windows synthesizes CF_UNICODETEXT for consumers that want it, and vice-versa on
+        // paste, so this interoperates with editors/browsers without hand-marshalling UTF-16. The editor
+        // engine keeps its own in-app Clipboard for headless tests; the GUI syncs through this at the key/
+        // menu boundary, so the self-test never touches the machine's real clipboard.
+        public class OsClipboard {
+            // CF_TEXT = 1 ; GMEM_MOVEABLE = 0x0002 (SetClipboardData requires a movable global block).
+            // Copy `text` to the clipboard. Ownership of the allocated block transfers to the system on a
+            // successful SetClipboardData, so it must not be freed here.
+            public static method setText(long hwnd, String text) returns void {
+                int n = text.length();
+                long h = ClipWin32.GlobalAlloc(0x0002, cast<long>(n + 1));
+                if (h == 0) {
+                    return;
+                }
+                long p = ClipWin32.GlobalLock(h);
+                if (p == 0) {
+                    return;
+                }
+                address a = cast<address>(p);
+                mutable int i = 0;
+                while (i < n) {
+                    Memory.write<byte>(a + cast<address>(i), cast<byte>(cast<int>(text.charAt(i))));
+                    i = i + 1;
+                }
+                Memory.write<byte>(a + cast<address>(n), cast<byte>(0));
+                ClipWin32.GlobalUnlock(h);
+                if (ClipWin32.OpenClipboard(hwnd) != 0) {
+                    ClipWin32.EmptyClipboard();
+                    ClipWin32.SetClipboardData(1, h);
+                    ClipWin32.CloseClipboard();
+                }
+            }
+
+            // Read the clipboard's text (CF_TEXT), or "" when it holds no text. The handle from
+            // GetClipboardData is owned by the clipboard -- lock/unlock it, never free it.
+            public static method getText(long hwnd) returns String {
+                if (ClipWin32.IsClipboardFormatAvailable(1) == 0) {
+                    return "";
+                }
+                mutable String result = "";
+                if (ClipWin32.OpenClipboard(hwnd) != 0) {
+                    long h = ClipWin32.GetClipboardData(1);
+                    if (h != 0) {
+                        long p = ClipWin32.GlobalLock(h);
+                        if (p != 0) {
+                            address a = cast<address>(p);
+                            // Bound the scan by the block size so a buffer missing its null cannot run away.
+                            mutable int cap = cast<int>(ClipWin32.GlobalSize(h));
+                            if (cap < 0) {
+                                cap = 0;
+                            }
+                            mutable int len = 0;
+                            while (len < cap && Memory.read<byte>(a + cast<address>(len)) != cast<byte>(0)) {
+                                len = len + 1;
+                            }
+                            result = Memory.readString(a, len);
+                            ClipWin32.GlobalUnlock(h);
+                        }
+                    }
+                    ClipWin32.CloseClipboard();
+                }
+                return result;
+            }
+        }
+    }
+}

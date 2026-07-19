@@ -872,15 +872,15 @@ public bundle forge {
                     return;
                 }
                 if (id.equals("ctx.cut")) {
-                    wb.active().cut();
+                    GuiApp.editorCut(win, wb.active());
                     return;
                 }
                 if (id.equals("ctx.copy")) {
-                    wb.active().copy();
+                    GuiApp.editorCopy(win, wb.active());
                     return;
                 }
                 if (id.equals("ctx.paste")) {
-                    wb.active().paste();
+                    GuiApp.editorPaste(win, wb.active());
                     return;
                 }
                 if (id.equals("ctx.comment")) {
@@ -2157,6 +2157,14 @@ public bundle forge {
                         wb.output().hide();
                     } else if (e.isKey() && GuiApp.caretHotkey(wb, e.vk, ctrl, shift, alt)) {
                         // consumed by a multi-cursor hotkey (Ctrl+Alt+Up/Down add a caret; Esc collapses)
+                    } else if (e.isKey() && ctrl && !alt && e.vk == 67) {    // Ctrl+C -> copy to the OS clipboard
+                        GuiApp.editorCopy(win, wb.active());
+                    } else if (e.isKey() && ctrl && !alt && e.vk == 88) {    // Ctrl+X -> cut to the OS clipboard
+                        GuiApp.editorCut(win, wb.active());
+                        comp.dismiss();
+                    } else if (e.isKey() && ctrl && !alt && e.vk == 86) {    // Ctrl+V -> paste from the OS clipboard
+                        GuiApp.editorPaste(win, wb.active());
+                        comp.dismiss();
                     } else if (e.isChar()) {
                         // Accept a printable character. Reject it only for a real Ctrl shortcut (Ctrl without
                         // Alt); AltGr, which Windows reports as Ctrl+Alt, produces printable chars like { } [ ]
@@ -2680,6 +2688,32 @@ public bundle forge {
             }
 
             // Map a Win32 virtual-key to a Key and dispatch it, carrying the modifier state.
+            // Editor clipboard actions synced with the OS clipboard, so copy/cut/paste cross tabs, panes and
+            // other applications. The engine keeps its in-app buffer (used by the headless self-test); the OS
+            // round-trip lives here at the GUI boundary. Copy/cut with no selection are no-ops, so they must
+            // not overwrite the system clipboard with a stale buffer.
+            private static method editorCopy(GlWindow* win, Controller* c) returns void {
+                if (!c.editor().hasSelection()) {
+                    return;
+                }
+                c.copy();
+                OsClipboard.setText(win.hwnd, c.editor().clipboardText());
+            }
+            private static method editorCut(GlWindow* win, Controller* c) returns void {
+                if (!c.editor().hasSelection()) {
+                    return;
+                }
+                c.cut();
+                OsClipboard.setText(win.hwnd, c.editor().clipboardText());
+            }
+            private static method editorPaste(GlWindow* win, Controller* c) returns void {
+                String os = OsClipboard.getText(win.hwnd);
+                if (os.length() > 0) {
+                    c.editor().setClipboard(os);
+                }
+                c.paste();
+            }
+
             private static method dispatchKey(Workbench* wb, int vk, boolean ctrl, boolean shift, boolean alt)
                     returns void {
                 // A real Ctrl shortcut never has Alt held; Ctrl+Alt is AltGr (a character), so exclude it.
