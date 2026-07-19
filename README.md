@@ -5,71 +5,92 @@
 **The IDE for [LDP3](https://github.com/jvpts11/LDP3), written in LDP3.**
 
 Forge is the first flagship application of the LDP3 language: a native, from-scratch
-IDE — editor, language server client, build runner, debugger, and memory inspector —
-built entirely in LDP3 on top of a pluggable graphics stack. It is how LDP3 proves it
-can carry real, GUI-heavy systems software, not just command-line programs.
+IDE — editor, navigation, git, build/run, integrated terminals, and a debugger client —
+built entirely in LDP3, rendered on the GPU through the `ldp3-opengl` stack. It is how
+LDP3 proves it can carry real, GUI-heavy systems software, not just command-line programs.
 
 Mascot and identity are shared with the language: **Flamo**, the amber flame, on the
-deep teal ground.
+deep brand ground. Forge's own icon is a hammer striking an anvil.
 
-## Status — editor engine built (headless), graphics layer next
+## Status — a working native graphical IDE
 
-The **editor engine is implemented and passing** — a complete, well-structured,
-multi-file LDP3 codebase built decoupled from graphics so it is unit-testable without a
-window. `ldp3 build` compiles all of `src/` into one program; `build.ps1` runs the
-headless self-check (**"editor tests: OK (229 checks)"**), and running `Forge.exe` prints
-one fully-composed IDE frame — tab bar, project tree, editor pane with a gutter, and
-status bar — rendered from live state.
+Forge opens a native GL window and runs a full editing session today. `ldp3 build`
+compiles all of `src/` into one program; `build.ps1` builds it and runs the headless
+engine self-check (**over 400 checks**, the exact count printed by `Forge.exe test`).
 
-What works today (see [`docs/DESIGN.md`](docs/DESIGN.md) for the module map): a line-based
-text buffer; a full caret/editing model (selection, clipboard, undo/redo, word- and
-line-wise motion and deletion, smart Home/End, auto-indent, block indent/dedent, line
-comment toggle, configurable tab width); plain-text find/replace; bracket matching with
-auto-close pairs; a syntax highlighter; a scrolling viewport; a tab/document manager; a
-project file tree over the real filesystem; a fuzzy command palette; a key map; a
-Workbench application root; and text/screen renderers.
+What works today (see [`docs/DESIGN.md`](docs/DESIGN.md) for the module map):
 
-What's left is the **graphics/UI layer**, which needs visual verification: a window +
-input layer, the `ldp3-opengl` 2D canvas, glyph rendering, and a UI toolkit — then wiring
-the `Workbench` + `ScreenRenderer` onto a real surface. Forge's prerequisite chain:
+- **Editing** — line-based buffer; full caret/selection model; **multi-cursor** (add
+  caret above/below, add-next-occurrence, column select); snapshot undo/redo; word- and
+  line-wise motion/deletion; smart Home/End; auto-indent, block indent/dedent, comment
+  toggle; duplicate/move/sort/join lines; extract-variable; bracket matching + auto-close;
+  find/replace and **find/replace across files**; folding, bookmarks, word wrap.
+- **Files & project** — a real-filesystem project tree, tabs, open/save/new/rename/delete,
+  session restore, recent projects, and external-change detection.
+- **Navigation** — go-to-definition (into the bundled stdlib too), find references, an
+  outline/structure panel, breadcrumbs, go-to-symbol, workspace symbol search, quick-open,
+  go-to-line, back/forward history, and a fuzzy command palette.
+- **Language intelligence** — LDP3 syntax highlighting, autocomplete (keywords, buffer and
+  project symbols, import paths), hover, **live diagnostics** (the `ldp3` compiler runs on
+  the unsaved buffer, debounced), quick-fixes, `ldp3 explain`, and workspace-wide rename.
+- **Git** — status with gutter change bars, commit, push, branch list + checkout, and a
+  side-by-side / unified diff view.
+- **Build / run / terminal** — build (diagnostics become a navigable Problems list), run,
+  run-tests, and multiple **integrated terminals** (cmd or PowerShell, renamable tabs).
+- **Debugger** — a Debug Adapter Protocol client with gutter breakpoints, step over/in/out,
+  call stack and variables. It drives `lldb-dap`; source-line debugging depends on the
+  toolchain's debug info and is still being hardened.
+- **UI** — light/dark themes (persisted), split editor over a shared document, a minimap,
+  resizable panels, font zoom, and context menus.
+
+## Architecture
+
+Forge is a clean MVC engine with two interchangeable view backends over the same
+`Controller`/`Workbench`:
 
 ```
-prove FFI  →  windowing + input  →  ldp3-opengl  →  text rendering  →  UI toolkit  →  [editor core ✓]  →  IDE
+                +------------------ Forge (LDP3) ------------------+
+   ldp3     <-- |  navigation   editor engine   build/run runner   |
+   git      <-- |  file tree    terminals       debugger (DAP)     |
+                |         GpuScreen (GPU view)  /  ScreenRenderer   |
+                +--------------------+-----------------------------+
+                     glyph atlas     |   2D batch renderer
+                   (GDI Consolas)    |     (ldp3-opengl)
+                +--------------------+-----------------------------+
+                |     native GL window + input  (Win32 via FFI)     |
+                +--------------------------------------------------+
+                                     FFI (extern)
 ```
 
-The first graphics milestone is **not Vulkan** — a 2D canvas is all a text editor needs.
-`ldp3-vulkan` is a later, separate effort for the game-grade flagships.
-
-## What Forge looks like
-
-An IntelliJ / Visual Studio-class layout — dense, professional, tool windows docked on
-every edge — dressed in the LDP3 amber-and-teal identity. It leans into features that
-only an LDP3 IDE can have:
-
-- **Regions & Memory** tool window — live view of LDP3 regions, arenas, ownership
-  (`unique` / `movable`), and a leak checker driven by the compiler's flow analysis.
-- **Bundles** tool window — the `.ldb` dependency graph and ABI fingerprints.
-- Editor with LDP3 syntax highlighting (from the compiler's own lexer), inlay hints,
-  gutter run icons, and inline diagnostics + quick-fixes from **ldp3-lsp**.
-- Build / run driven by the `ldp3` toolchain, with the target and EH model in the
-  console (`x86-64, Itanium EH`).
+The **editor engine** (`editor/`, `view/`, `syntax/`, `app/`, `input/`, `io/`) is
+decoupled from graphics, so it is unit-tested headless without a window. The **graphics
+layer** (`gfx/`) is a second view backend: a pixel-space quad batcher (`Batch2D`), a glyph
+atlas (`Font`), the frame composer (`GpuScreen`), and the window + event loop (`GuiApp`).
 
 ## Ecosystem
 
-Forge depends on sibling LDP3 projects:
+Forge builds on sibling LDP3 projects:
 
 | Dependency     | Role                                              | State          |
 |----------------|---------------------------------------------------|----------------|
 | `LDP3`         | the language, compiler (`ldp3c`), driver (`ldp3`) | in progress    |
-| `ldp3-lsp`     | language server (ships in the LDP3 repo)          | exists         |
-| `ldp3-opengl`  | pluggable modern-GL (3.3 core) rendering library  | exists, proven |
-| windowing lib  | native window + input (GLFW/SDL via FFI, or OS)   | not started    |
+| `ldp3-opengl`  | pluggable modern-GL (3.3 core) rendering library  | in use         |
 
-## Building (eventually)
+Diagnostics and build/run shell out to the `ldp3` driver; git features shell out to `git`;
+the debugger drives `lldb-dap`. Forge locates the toolchain on `PATH` or in a sibling
+`../LDP3` checkout.
 
-Forge is a normal LDP3 project — `ldp3 build` / `ldp3 run`. It runs on every platform
-the language targets (Windows and Linux x86-64 today; ARM64 / macOS later).
+## Building
+
+Forge is a normal LDP3 project. With the `ldp3` toolchain available:
+
+```
+./build.ps1        # ldp3 build + bundle reference docs + run the headless self-test
+```
+
+`build.ps1` finds the driver on `PATH`, then the sibling `../LDP3` dev build (override with
+`-Ldp3 <path>`). It targets Windows x86-64 today; other targets follow the language.
 
 ---
 
-Created by João Victor Pereira Tavares. Private during bring-up.
+Created by João Victor Pereira Tavares.

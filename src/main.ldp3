@@ -6,7 +6,7 @@ program Forge;
 
 // Forge -- the LDP3 IDE. Entry point. With no arguments it opens the graphical editor window; `shot`
 // renders one frame to frame.ppm for offscreen verification; `test` runs the headless editor-core
-// self-check (the engine's 229 checks). See docs/DESIGN.md.
+// self-check (400+ checks). See docs/DESIGN.md.
 public bundle forge {
     public namespace app {
         public class Main {

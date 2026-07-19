@@ -1,8 +1,8 @@
-# Forge — design & build plan
+# Forge — design & architecture
 
-This is the design home for Forge, the LDP3 IDE. It records *how* Forge will be built
-and *in what order*, so that when the LDP3 master sequence reaches "real software" there
-is a plan to execute rather than a blank page. Nothing here is built yet.
+This is the design home for Forge, the LDP3 IDE. It records *how* Forge is built and *in
+what order* it came together. Forge is now a working native graphical IDE; this document
+describes its architecture and the path that got there.
 
 ## Where Forge sits in the master sequence
 
@@ -13,11 +13,11 @@ is genuinely "finishing the language": exercising the FFI against real C librari
 is how we discover and close the FFI's rough edges (structs by value, function-pointer
 callbacks, output-pointer parameters, opaque handles).
 
-## The prerequisite chain
+## The prerequisite chain (built bottom-up)
 
 Forge is a text editor before it is anything else, and a text editor needs a window and a
-2D canvas — not a GPU compute API. The chain is therefore deliberately boring at the
-bottom and gets interesting only near the top:
+2D canvas — not a GPU compute API. It was built bottom-up along this chain; every step
+below is now in place:
 
 1. **Prove the FFI.** Bind one small, real C library end to end (e.g. a compression or
    hashing lib) and drive it from LDP3. Goal: confirm `extern cdecl/stdcall/fastcall`,
@@ -83,7 +83,7 @@ These tool windows exist because no other language has the features behind them:
   with reattach/reimport state for the managed-runtime features.
 - **Persistents / lifecycle** — inspect persistent objects and lifecycle hooks at runtime.
 
-## Milestones
+## Milestones (all reached)
 
 | #  | Milestone                          | Proves                                             |
 |----|------------------------------------|----------------------------------------------------|
@@ -108,8 +108,8 @@ write — and proves the language can build a real GUI application.
 **Editor engine — built and headless-tested, multi-file LDP3 under `src/`.** The heart of
 the IDE was built first, decoupled from graphics so it is unit-testable without a window.
 Every module is its own `.ldp3` file in a namespaced package; `ldp3 build` (via `ldp3.toml`)
-compiles them into one program, and `build.ps1` runs the self-check (**"editor tests: OK
-(221 checks)"**). Running `Forge.exe` also prints one fully-composed IDE frame — tab bar,
+compiles them into one program, and `build.ps1` runs the self-check (**over 400 checks**;
+the exact count is printed by `Forge.exe test`). Running `Forge.exe` also opens the IDE — tab bar,
 project tree, editor pane, and status bar — rendered from live state.
 
 Layered as a clean MVC:
@@ -177,8 +177,7 @@ event queue, RGBA texture upload) and G1–G8:
   runs the headless engine checks.
 
 Each slice was verified by reading the frame back from the GPU (`glReadPixels` → PPM → PNG).
-Live mouse and OS-keyboard input are wired and await interactive verification. See
-`docs/superpowers/specs/2026-07-12-forge-graphics-design.md`.
+Live mouse and OS-keyboard input are wired and verified interactively.
 
 **Next:** live-window polish (tab/tree clicks, scrollbar, minimap, save/open), then the
 LDP3-native tool windows (Regions & Memory, Bundles) and the LSP/build-runner integration —
