@@ -44,6 +44,10 @@ try {
     & $Ldp3 build
     if ($LASTEXITCODE -ne 0) { throw "ldp3 build failed" }
 
+    # The app icon next to the exe, so the running window/taskbar shows it (Win32 WM_SETICON at startup).
+    $ico = Join-Path $here "branding\forge.ico"
+    if (Test-Path $ico) { Copy-Item $ico (Join-Path $here "build-output\forge.ico") -Force }
+
     Write-Host "== reference docs =="
     # Bundle the real, complete standard library (the compiler's embedded prelude) and the language
     # specification next to the exe, so Help > Standard Library / Language Reference can open them in a
