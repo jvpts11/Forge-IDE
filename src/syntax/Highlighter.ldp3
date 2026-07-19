@@ -35,14 +35,16 @@ public bundle forge {
                     + "mutable nullable sealed permits var move movable unique partitionable extern cdecl "
                     + "stdcall fastcall freestanding persistent eternal transient comptime literal fixed "
                     + "volatile cascade lazy external release reimport unimport requires ensures invariant "
-                    + "static_assert extends implements");
+                    + "static_assert extends implements "
+                    + "bump pool stack fixedslot ring growable");   // spec 17: region flavor / growth
                 this.addAll(this.decl, "program bundle namespace class interface struct record union enum "
                     + "catalog byCatalog method operator constructor destructor returns import annotation "
                     + "typealias newtype region label lambda function methodref");
                 this.addAll(this.types, "void boolean char string String int8 int16 int32 int64 int uint8 "
                     + "uint16 uint32 uint64 short long byte ubyte ushort uint ulong float32 float64 float "
-                    + "double Decimal smallfloat quadruple address vec2 vec3 vec4");
-                this.addAll(this.opword, "new delete on in is as cast of accepts rejects stack heap");
+                    + "double Decimal smallfloat quadruple address vec2 vec3 vec4 checkpoint");
+                this.addAll(this.opword, "new delete on in is as cast of accepts rejects stack heap "
+                    + "extract mark rollback");   // spec 17: region operations
                 this.addAll(this.constant, "true false null");
                 this.addAll(this.selfkw, "this super itself");
             }

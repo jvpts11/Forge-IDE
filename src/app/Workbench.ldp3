@@ -23,6 +23,7 @@ import System.IO.File;
 import System.IO.Files;
 import System.OS.Process;
 import System.OS.ProcessResult;
+import System.Memory.Units.kilobytes;
 
 program Forge;
 
@@ -53,6 +54,10 @@ public bundle forge {
             private mutable int dbgOutConsumed;      // how many debug-output lines are already in the panel
             private mutable boolean lightTheme;      // UI theme preference (true = light); the shell applies it
             private mutable ArrayList<Terminal*>* terms;  // integrated terminals (each a cmd.exe behind a Subprocess)
+            // Terminals live in a pool region (spec 17): closing one returns its slot to the free-list, so
+            // opening and closing terminals reuses memory instead of churning the global heap. The
+            // ArrayList above holds pointers INTO this region as the tab-order index.
+            private mutable pool region termRegion;
             private mutable int activeTerm;          // which terminal the panel shows / routes keystrokes to
             private mutable String branch;          // cached branch name (refreshed with the git status)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
@@ -93,8 +98,9 @@ public bundle forge {
                 this.renameOldName = "";
                 this.dbgOutConsumed = 0;
                 this.lightTheme = WorkspaceStore.loadTheme();
+                this.termRegion = itself.allocate(16 kilobytes);
                 this.terms = new ArrayList<Terminal*>() on heap;
-                this.terms.add(new Terminal() on heap);
+                this.terms.add(new Terminal() in region this.termRegion);
                 this.activeTerm = 0;
                 this.branch = "";
                 this.treeDirty = false;
@@ -298,7 +304,7 @@ public bundle forge {
             }
             // Open a brand-new terminal and make it active (the "+" button / Ctrl+Shift+`).
             public method newTerminal() returns void {
-                Terminal* t = new Terminal() on heap;
+                Terminal* t = new Terminal() in region this.termRegion;
                 t.setCwd(this.projectDir);
                 this.terms.add(t);
                 this.activeTerm = this.terms.size() - 1;
@@ -322,7 +328,7 @@ public bundle forge {
                 Terminal* t = this.terms.get(i);
                 this.terms.removeAt(i);
                 t.close();   // terminate the shell subprocess before freeing the terminal
-                delete t;
+                delete t from region this.termRegion;   // reclaim the terminal's pool slot (spec 17)
                 // Keep the active index pointing at the same terminal it did before the removal.
                 if (this.activeTerm > i) {
                     this.activeTerm = this.activeTerm - 1;

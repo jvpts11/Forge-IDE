@@ -2,7 +2,7 @@
 
 [program]
 name = "Forge"
-version = "0.1.0"
+version = "0.2.0"
 language_version = "1.0"
 entry = "src/main.ldp3"
 
