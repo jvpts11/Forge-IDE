@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Forge IDE installer (WiX 4+). Ships Forge.exe plus a self-contained LDP3 toolchain (compiler,
+     driver, clang/lld/CRT, and the lldb-dap debugger with its Python runtime), so a user can edit, build,
+     run and debug LDP3 with nothing else installed. One required feature; everything installs to a single
+     folder on PATH, a Start Menu shortcut launches Forge, and .ldp3 files open with it. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Forge IDE" Manufacturer="Joao Victor Pereira Tavares"
+           Version="0.2.0.0" UpgradeCode="9a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+           Scope="perMachine" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Forge is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="ForgeIco" SourceFile="../branding/forge.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ForgeIco" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Forge" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="ForgeApp" Title="Forge IDE and the LDP3 toolchain (required)"
+             Description="The Forge IDE plus a self-contained LDP3 toolchain (compiler, driver, clang/lld/CRT, and the lldb-dap debugger) so you can edit, build, run and debug LDP3 with nothing else installed."
+             Level="1" AllowAbsent="no" TypicalDefault="install">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ForgeMain" />
+      <ComponentRef Id="PathEntry" />
+      <ComponentRef Id="FileAssociation" />
+    </Feature>
+
+    <!-- The bundled toolchain + Forge's reference docs + icon. Forge.exe is staged separately (dist\stage\
+         main) and installed as its own component below, so the shortcut and file association can reference
+         it by a stable Id (this WiX's Files harvester has no per-file exclude). -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="dist\stage\app\**" />
+    </ComponentGroup>
+
+    <!-- Forge.exe itself, with a Start Menu shortcut to it. -->
+    <Component Id="ForgeMain" Directory="INSTALLFOLDER" Guid="1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f0">
+      <File Id="ForgeExe" Source="dist\stage\main\Forge.exe" Name="Forge.exe" KeyPath="yes" />
+      <Shortcut Id="ForgeStartMenu" Directory="ProgramMenuFolder" Name="Forge"
+                Description="The Forge IDE for LDP3" Target="[#ForgeExe]"
+                Icon="ForgeIco" WorkingDirectory="INSTALLFOLDER" />
+    </Component>
+
+    <!-- Open .ldp3 files by double-click with Forge, showing the Forge icon in Explorer. -->
+    <Component Id="FileAssociation" Directory="INSTALLFOLDER" Guid="2e3d4c5b-6a79-4887-9584-b3c2d1e0f001">
+      <File Id="ForgeFileIco" Source="../branding/forge.ico" Name="forge-file.ico" />
+      <ProgId Id="Forge.SourceFile" Description="LDP3 source file" Icon="ForgeFileIco">
+        <Extension Id="ldp3" ContentType="text/x-ldp3">
+          <Verb Id="open" Command="Open with Forge" TargetFile="ForgeExe" Argument="&quot;%1&quot;" />
+        </Extension>
+      </ProgId>
+    </Component>
+
+    <!-- Put the install directory on the system PATH so Forge, ldp3, clang and lldb-dap all resolve. -->
+    <Component Id="PathEntry" Directory="INSTALLFOLDER" Guid="3d4c5b6a-7988-4796-8473-c2d1e0f00102">
+      <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last"
+                   System="yes" Permanent="no" />
+    </Component>
+  </Package>
+</Wix>

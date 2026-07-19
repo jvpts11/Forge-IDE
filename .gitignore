@@ -1,5 +1,9 @@
 # LDP3 build artifacts
 build-output/
+
+# installer staging + output (.msi, the staged toolchain bundle, the cached Python embeddable)
+installer/dist/
+installer/.cache/
 *.ll
 *.bc
 *.obj
