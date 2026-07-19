@@ -255,6 +255,9 @@ public bundle forge {
                             scrollDrag = 2;
                             dragging = false;
                         } else if (screen.overMinimap(wb, win.width(), cxNow, cyNow)) {
+                            if (wb.isSplit()) {
+                                wb.focusPane(1);   // overMinimap detects the rightmost strip -- the right pane's
+                            }
                             wb.active().scrollToLine(screen.minimapFirstLineAtY(wb, win.height(), cyNow));
                             scrollDrag = 3;      // grab the minimap slider; drag scrolls the file
                             dragging = false;
@@ -714,6 +717,9 @@ public bundle forge {
                 // a click on the minimap scrolls the editor (viewport-centered, VS Code-style: the caret
                 // does not move). Interactive drag is wired in the main loop via scrollDrag == 3.
                 if (screen.overMinimap(wb, win.width(), mx, my)) {
+                    if (wb.isSplit()) {
+                        wb.focusPane(1);   // the rightmost minimap belongs to the right pane
+                    }
                     wb.active().scrollToLine(screen.minimapFirstLineAtY(wb, win.height(), my));
                     return;
                 }
