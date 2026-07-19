@@ -46,6 +46,27 @@ public bundle forge {
             public static method settingsFile() returns String {
                 return Settings.configDir() + "/settings.txt";
             }
+            public static method keybindingsFile() returns String {
+                return Settings.configDir() + "/keybindings.txt";
+            }
+            // Write a commented template for the keybindings file if it does not exist yet, so opening it
+            // from "Preferences: Keybindings" shows the format and the available actions rather than a blank
+            // buffer. KeyMap reads this same file to override the Ctrl+<letter> shortcuts.
+            public static method ensureKeybindingsTemplate() returns void {
+                String path = Settings.keybindingsFile();
+                if (File.exists(path)) {
+                    return;
+                }
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append("# Forge keybindings -- override the Ctrl+<letter> editor shortcuts.\n");
+                sb.append("# Format: ctrl+<letter> = <action>\n");
+                sb.append("# Actions: copy cut paste undo redo selectAll duplicateLine save toggleComment\n");
+                sb.append("# Example: ctrl+d = duplicateLine\n");
+                Settings.ensureConfigDir();
+                File.writeAll(path, sb.toString());
+                delete sb;
+                return;
+            }
 
             // The text after the first '=' on a line, trimmed (or "" if there is none). Avoids relying on a
             // String.indexOf the stdlib may not expose.

@@ -1,4 +1,8 @@
 import app.Controller;
+import System.IO.File;
+import System.OS.Env;
+import System.Text.Strings;
+import System.Collections.ArrayList;
 
 program Forge;
 
@@ -6,10 +10,120 @@ public bundle forge {
     public namespace input {
 
         // The editor's key bindings, in one place: translate decoded Key events into Controller commands so
-        // they can be tested and later remapped. dispatch() returns true when the key was handled. The
-        // Shift flag becomes the "extend selection" argument; Ctrl scopes motion to words/document; Alt+Up/
-        // Down move the whole line.
+        // they can be tested and remapped. dispatch() returns true when the key was handled. The Shift flag
+        // becomes the "extend selection" argument; Ctrl scopes motion to words/document; Alt+Up/Down move the
+        // whole line. The Ctrl+<letter> shortcuts can be overridden from ~/.forge/keybindings.txt.
         public class KeyMap {
+            // User overrides for the Ctrl+<letter> shortcuts, loaded once at construction from
+            // ~/.forge/keybindings.txt (`ctrl+<letter> = <action>`). Parallel arrays: overrideKeys holds the
+            // (lower-cased) letter's code, overrideActions the action name. Empty when the file is absent, so
+            // the built-in bindings below stay in effect; an unknown action name also falls back to them.
+            private mutable ArrayList<int>* overrideKeys;
+            private mutable ArrayList<String>* overrideActions;
+
+            public constructor KeyMap() {
+                this.overrideKeys = new ArrayList<int>() on heap;
+                this.overrideActions = new ArrayList<String>() on heap;
+                this.loadOverrides();
+            }
+
+            private method loadOverrides() returns void {
+                String path = Env.get("USERPROFILE") + "/.forge/keybindings.txt";
+                if (!File.exists(path)) {
+                    return;
+                }
+                ArrayList<String> lines = Strings.split(File.readAll(path), "\n");
+                mutable int i = 0;
+                while (i < lines.size()) {
+                    String ln = lines.get(i).trim();
+                    if (ln.length() > 0 && ln.charAt(0) != '#') {
+                        this.parseBinding(ln);
+                    }
+                    i = i + 1;
+                }
+                return;
+            }
+            // Parse one `ctrl+<letter> = <action>` line into the override arrays; ignore anything malformed.
+            private method parseBinding(String ln) returns void {
+                mutable int eq = 0 - 1;
+                mutable int i = 0;
+                while (i < ln.length()) {
+                    if (ln.charAt(i) == '=') {
+                        eq = i;
+                        i = ln.length();
+                    } else {
+                        i = i + 1;
+                    }
+                }
+                if (eq < 0) {
+                    return;
+                }
+                String chord = ln.substring(0, eq).trim();
+                String action = ln.substring(eq + 1, ln.length()).trim();
+                if (!chord.startsWith("ctrl+") || action.length() == 0) {
+                    return;
+                }
+                String letter = chord.substring(5, chord.length()).trim();
+                if (letter.length() != 1) {
+                    return;
+                }
+                this.overrideKeys.add(cast<int>(this.lower(letter.charAt(0))));
+                this.overrideActions.add(action);
+                return;
+            }
+            // The action name bound to Ctrl+`ch` by the user, or "" if there is no override.
+            private method overrideFor(char ch) returns String {
+                int code = cast<int>(ch);
+                mutable int i = 0;
+                while (i < this.overrideKeys.size()) {
+                    if (this.overrideKeys.get(i) == code) {
+                        return this.overrideActions.get(i);
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+            // Run a named editor action -- the vocabulary a keybinding may map to. Returns false for an
+            // unknown name so the caller can fall back to the default binding.
+            private method runAction(Controller* c, String name) returns boolean {
+                if (name.equals("copy")) {
+                    c.copy();
+                    return true;
+                }
+                if (name.equals("cut")) {
+                    c.cut();
+                    return true;
+                }
+                if (name.equals("paste")) {
+                    c.paste();
+                    return true;
+                }
+                if (name.equals("undo")) {
+                    c.undo();
+                    return true;
+                }
+                if (name.equals("redo")) {
+                    c.redo();
+                    return true;
+                }
+                if (name.equals("selectAll")) {
+                    c.selectAll();
+                    return true;
+                }
+                if (name.equals("duplicateLine")) {
+                    c.duplicateLine();
+                    return true;
+                }
+                if (name.equals("save")) {
+                    c.save();
+                    return true;
+                }
+                if (name.equals("toggleComment")) {
+                    c.toggleComment();
+                    return true;
+                }
+                return false;
+            }
 
             private method lower(char c) returns char {
                 if (c >= 'A' && c <= 'Z') {
@@ -117,8 +231,13 @@ public bundle forge {
                 return false;
             }
 
-            // Ctrl+letter shortcuts. `ch` is already lower-cased.
+            // Ctrl+letter shortcuts. `ch` is already lower-cased. A user override (keybindings.txt) wins;
+            // an unknown override action falls through to the built-in binding below.
             private method shortcut(Controller* c, char ch) returns boolean {
+                String ov = this.overrideFor(ch);
+                if (ov.length() > 0 && this.runAction(c, ov)) {
+                    return true;
+                }
                 if (ch == 'c') {
                     c.copy();
                     return true;

@@ -2404,7 +2404,20 @@ public bundle forge {
                     GuiApp.openSettingsFile(wb);
                     return true;
                 }
+                if (id.equals("prefs.keys")) {
+                    GuiApp.openKeybindingsFile(wb);
+                    return true;
+                }
                 return false;
+            }
+
+            // Open the keybindings file (~/.forge/keybindings.txt) in the editor, writing a commented
+            // template first if it does not exist. Changes take effect on the next launch (KeyMap reads it
+            // at construction).
+            private static method openKeybindingsFile(Workbench* wb) returns void {
+                Settings.ensureKeybindingsTemplate();
+                wb.openFile(Settings.keybindingsFile());
+                return;
             }
 
             // Open the user preferences file (~/.forge/settings.txt) in the editor, creating it with the
