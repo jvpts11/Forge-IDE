@@ -70,6 +70,7 @@ public bundle forge {
             private mutable int seenEdits;           // sum of open documents' revisions, to notice an edit
             private mutable boolean sidebarToggle;   // a palette/menu request to toggle the sidebar; the shell
                                                      // owns the screen and consumes this each frame
+            private mutable int pendingCloseIdx;     // tab index awaiting the unsaved-changes confirm (-1 = none)
 
             public constructor Workbench(int rows, int cols) {
                 this.docs = new DocumentManager(rows, cols) on heap;
@@ -107,6 +108,7 @@ public bundle forge {
                 this.navInit = false;
                 this.peek = new Peek() on heap;
                 this.diff = new DiffView() on heap;
+                this.pendingCloseIdx = 0 - 1;
                 this.docs.openNew();               // start on one empty document
             }
 
@@ -872,6 +874,43 @@ public bundle forge {
             }
             public method closeActiveTab() returns void {
                 this.closeTab(this.docs.activeIndex());
+            }
+            public method activeTabIndex() returns int {
+                return this.docs.activeIndex();
+            }
+            // --- unsaved-changes guard on close (the shell drives the confirm prompt) ---
+            // Whether the tab at index i (pane 0) has unsaved edits, so a close should be confirmed first.
+            public method tabModified(int i) returns boolean {
+                if (i < 0 || i >= this.docs.count()) {
+                    return false;
+                }
+                return this.docs.at(i).document().isModified();
+            }
+            // Whether the tab at index i is backed by a file on disk (so "save" is unambiguous). An
+            // untitled buffer has no path, so the confirm only offers discard/cancel for it.
+            public method tabHasPath(int i) returns boolean {
+                if (i < 0 || i >= this.docs.count()) {
+                    return false;
+                }
+                return this.docs.at(i).document().path().length() > 0;
+            }
+            public method tabName(int i) returns String {
+                if (i < 0 || i >= this.docs.count()) {
+                    return "";
+                }
+                return this.docs.title(i);
+            }
+            public method saveTab(int i) returns void {
+                if (i < 0 || i >= this.docs.count()) {
+                    return;
+                }
+                this.docs.at(i).save();
+            }
+            public method setPendingClose(int i) returns void {
+                this.pendingCloseIdx = i;
+            }
+            public method pendingClose() returns int {
+                return this.pendingCloseIdx;
             }
             // Close every tab except the active one (the tab bar's "Close Others" context action).
             public method closeOtherTabs() returns void {

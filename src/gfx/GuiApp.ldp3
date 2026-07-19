@@ -326,7 +326,7 @@ public bundle forge {
                         if (my2 >= screen.menuH() && my2 < screen.contentTop()) {
                             int ti = screen.tabAtX(wb.documents(), win.cursorX());
                             if (ti >= 0) {
-                                wb.closeTab(ti);
+                                GuiApp.requestClose(ov, wb, ti);
                             }
                         }
                     }
@@ -625,7 +625,7 @@ public bundle forge {
                 if (my < screen.contentTop()) {
                     int ci = screen.tabCloseAtX(wb.documents(), mx);
                     if (ci >= 0) {
-                        wb.closeTab(ci);
+                        GuiApp.requestClose(ov, wb, ci);
                         return;
                     }
                     int ti = screen.tabAtX(wb.documents(), mx);
@@ -908,7 +908,7 @@ public bundle forge {
                     return;
                 }
                 if (id.equals("ctx.tabClose")) {
-                    wb.closeActiveTab();
+                    GuiApp.requestClose(ov, wb, wb.activeTabIndex());
                     return;
                 }
                 if (id.equals("ctx.tabCloseOthers")) {
@@ -1047,7 +1047,7 @@ public bundle forge {
                     return;
                 }
                 if (id.equals("file.close")) {
-                    wb.closeActiveTab();
+                    GuiApp.requestClose(ov, wb, wb.activeTabIndex());
                     return;
                 }
                 if (id.equals("app.quit")) {
@@ -1780,7 +1780,7 @@ public bundle forge {
                 } else if (GuiApp.caretHotkey(wb, vk, ctrl, shift, alt)) {
                     return;
                 } else if (ctrl && vk == 87) {
-                    wb.closeActiveTab();
+                    GuiApp.requestClose(ov, wb, wb.activeTabIndex());
                     return;
                 } else {
                     GuiApp.dispatchKey(wb, vk, ctrl, shift, alt);
@@ -2537,6 +2537,28 @@ public bundle forge {
             // Grep every project text file (captured in ov.items) for ov.query and list the matches, as
             // `file:line: text`, in the output panel. Bounded so a huge project can't stall the search.
             // Run the action a text prompt (mode 7) was opened for, with the typed text.
+            // Close a tab, but guard unsaved edits: a modified tab opens a confirm prompt first
+            // (save & close / discard & close / cancel). runPrompt's "closeUnsaved" branch finishes it.
+            private static method requestClose(Overlay* ov, Workbench* wb, int i) returns void {
+                if (!wb.tabModified(i)) {
+                    wb.closeTab(i);
+                    return;
+                }
+                wb.setPendingClose(i);
+                mutable String nm = wb.tabName(i);
+                if (nm.endsWith(" *")) {
+                    nm = nm.substring(0, nm.length() - 2);   // drop the dirty marker for the caption
+                }
+                if (wb.tabHasPath(i)) {
+                    ov.openPrompt("closeUnsaved", "'" + nm
+                        + "' has unsaved changes  (s = save & close, d = discard & close, esc = cancel): ");
+                } else {
+                    ov.openPrompt("closeUnsaved", "'" + nm
+                        + "' has unsaved changes  (d = discard & close, esc = cancel): ");
+                }
+                return;
+            }
+
             private static method runPrompt(Overlay* ov, Workbench* wb) returns void {
                 if (ov.promptKind.equals("commit")) {
                     if (ov.query.length() > 0) {
@@ -2568,6 +2590,18 @@ public bundle forge {
                     int n = wb.renameSymbolAcross(wb.renameTargetName(), ov.query);
                     wb.output().banner("Rename", "Renamed " + n.toString() + " occurrence(s) of '"
                         + wb.renameTargetName() + "' across the workspace.");
+                } else if (ov.promptKind.equals("closeUnsaved")) {
+                    int idx = wb.pendingClose();
+                    if (idx >= 0) {
+                        if (ov.query.equals("s") || ov.query.equals("save")) {
+                            wb.saveTab(idx);
+                            wb.closeTab(idx);
+                        } else if (ov.query.equals("d") || ov.query.equals("discard")) {
+                            wb.closeTab(idx);
+                        }
+                        // any other answer (incl. empty) cancels: the tab stays open
+                    }
+                    wb.setPendingClose(0 - 1);
                 }
                 return;
             }
