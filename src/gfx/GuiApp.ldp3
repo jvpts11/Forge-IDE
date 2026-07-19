@@ -330,6 +330,7 @@ public bundle forge {
                     if (mdown && !prevMiddle && !ov.isOpen()) {
                         int my2 = win.cursorY();
                         if (my2 >= screen.menuH() && my2 < screen.contentTop()) {
+                            wb.focusPane(0);   // the top tab bar is always pane 0's, whatever pane had focus
                             int ti = screen.tabAtX(wb.documents(), win.cursorX());
                             if (ti >= 0) {
                                 GuiApp.requestClose(ov, wb, ti);
@@ -629,6 +630,7 @@ public bundle forge {
                     return;
                 }
                 if (my < screen.contentTop()) {
+                    wb.focusPane(0);   // the top tab bar is always pane 0's, whatever pane had focus
                     int ci = screen.tabCloseAtX(wb.documents(), mx);
                     if (ci >= 0) {
                         GuiApp.requestClose(ov, wb, ci);
@@ -778,6 +780,7 @@ public bundle forge {
                     return;
                 }
                 if (my < screen.contentTop()) {
+                    wb.focusPane(0);   // the top tab bar is always pane 0's, whatever pane had focus
                     int ti = screen.tabAtX(wb.documents(), mx);
                     if (ti >= 0) {
                         wb.documents().setActive(ti);
