@@ -484,6 +484,15 @@ public bundle forge {
                 if (screen.onPanelDivider(wb, mx, my, win.width(), win.height())) {
                     return 4;   // vertical double-arrow over the resizable panel divider
                 }
+                // The bottom panel (terminal/output) is not editable text: arrow there, hand over a
+                // terminal-header control (tab / + / x). Without this the I-beam bled onto the terminal.
+                int panelH = screen.currentPanelHeight(wb, win.height());
+                if (panelH > 0 && my >= win.height() - screen.statusH() - panelH) {
+                    if (screen.terminalHeaderHit(wb, win.width(), win.height(), mx, my) != 0 - 1) {
+                        return 2;
+                    }
+                    return 0;
+                }
                 int topY = screen.editorTop();
                 int botY = win.height() - screen.statusH() - screen.hscrollH();
                 if (my >= topY && my < botY && mx >= screen.treeWidth() && mx < screen.textOx()) {

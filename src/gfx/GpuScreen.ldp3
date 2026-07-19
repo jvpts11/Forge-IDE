@@ -1403,7 +1403,12 @@ public bundle forge {
                 mutable int bdepth = c.bracketDepthAt(firstDoc);
                 mutable int expectDoc = firstDoc;
                 mutable int r = 0;
+                int used = c.screenRowsUsed(visible);   // real content rows; below this the viewport is empty
                 while (r < visible) {
+                    if (r >= used) {
+                        r = r + 1;
+                        continue;   // past the last (folded) line: leave the row blank, no repeated "}" furniture
+                    }
                     int y = oy + this.topPad + r * ch;
                     int docLine = c.lineNumberAt(r);
                     if (r == caretRow) {

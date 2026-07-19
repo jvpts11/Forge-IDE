@@ -794,6 +794,28 @@ public bundle forge {
                 }
                 return line;
             }
+            // How many screen rows the visible (folded) document actually occupies from the top of the
+            // viewport, capped at `cap`. The renderer stops drawing line numbers / text past this so a
+            // collapsed block does not spill the last line's "}" down every empty row (lineNumberAt clamps
+            // to the last line, which is what produced the repeated "27 }" rows).
+            public method screenRowsUsed(int cap) returns int {
+                int total = this.ed.document().lineCount();
+                mutable int line = this.folds.firstVisibleFrom(this.view.firstLine(), total);
+                mutable int rows = 0;
+                while (line < total && rows < cap) {
+                    if (this.wrap && this.wrapCols > 0) {
+                        rows = rows + this.rowsForLine(line);
+                    } else {
+                        rows = rows + 1;
+                    }
+                    mutable int next = line + 1;
+                    while (next < total && this.folds.isHidden(next)) {
+                        next = next + 1;
+                    }
+                    line = next;
+                }
+                return rows;
+            }
             public method renderLine(int screenRow) returns String {
                 String line = this.ed.document().line(this.lineNumberAt(screenRow));
                 if (!this.wrap || this.wrapCols <= 0) {
