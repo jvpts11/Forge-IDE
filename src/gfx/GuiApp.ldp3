@@ -200,6 +200,14 @@ public bundle forge {
                         }
                     }
                     prevRight = rdown;
+                    // Menu bar hover-follow: once a menu is open, sliding the mouse onto another top-level
+                    // title opens that menu (the standard menu-bar behaviour), no click needed.
+                    if (focused && menu.isOpen() && win.cursorY() < screen.menuH()) {
+                        int mti = screen.menuTitleAtX(menu, win.cursorX());
+                        if (mti >= 0 && mti != menu.openIndex) {
+                            menu.openAt(mti);
+                        }
+                    }
                     // left click -> context-menu item (when open), else menu bar / tab / tree / caret
                     boolean down = focused && win.keyDown(1);   // VK_LBUTTON
                     if (down && !prevDown && ctx.isActive()) {
@@ -2787,7 +2795,16 @@ public bundle forge {
                 int mx = win.cursorX();
                 int my = win.cursorY();
                 batch.begin(w, h, screen.fontTexture());
-                screen.drawWorkbench(batch, wb, tree, ov, mx, my, w, h);
+                // When a menu dropdown or an overlay is up it owns the hover: send off-screen coords to the
+                // workbench so the tree/tabs/editor underneath don't light up behind the modal (the menu bar
+                // and dropdown below still get the real coords).
+                mutable int hmx = mx;
+                mutable int hmy = my;
+                if (menu.isOpen() || ov.isOpen() || ctx.isActive()) {
+                    hmx = 0 - 1;
+                    hmy = 0 - 1;
+                }
+                screen.drawWorkbench(batch, wb, tree, ov, hmx, hmy, w, h);
                 if (comp.active) {
                     screen.drawCompletion(batch, comp, wb, w, h);
                 } else if (!ov.isOpen()) {
