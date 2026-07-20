@@ -13,7 +13,12 @@ public bundle forge {
             public static method main(string[] args) returns void {
                 if (args.length() > 0) {
                     if (args[0].equals("test")) {
-                        CoreTests.run();
+                        // Exit non-zero when a check fails, so a failing self-test actually fails the
+                        // build instead of printing into a green log that nobody re-reads.
+                        int failures = CoreTests.run();
+                        if (failures > 0) {
+                            Win32.ExitProcess(1);
+                        }
                         return;
                     }
                     if (args[0].equals("shot")) {

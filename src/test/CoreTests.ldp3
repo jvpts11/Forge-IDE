@@ -1,4 +1,4 @@
-import System.Collections.ArrayList;
+﻿import System.Collections.ArrayList;
 import System.Text.StringBuilder;
 import app.Terminal;
 import app.TermGrid;
@@ -769,8 +769,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 70, "cmd.count");
-                a.eqInt(cr.filter("").size(), 70, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 71, "cmd.count");
+                a.eqInt(cr.filter("").size(), 71, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 2, "cmd.filter-undo-count");  // + "Set Breakpoint Condition" (u-n-d-o subseq)
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -1098,6 +1098,14 @@ public bundle forge {
                 a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
                 trmTrim.absorb("TAIL");
                 a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- test explorer: pulling the method name out of a declaration line ---
+                a.eqStr(Workbench.testNameOf("public static method doubling() returns boolean {"),
+                        "doubling", "tests.name-static");
+                a.eqStr(Workbench.testNameOf("    public method checks_it() returns void {"),
+                        "checks_it", "tests.name-instance");
+                a.eqStr(Workbench.testNameOf("private int counter;"), "", "tests.name-not-a-method");
+                a.eqStr(Workbench.testNameOf("@Test"), "", "tests.name-annotation");
 
                 a.summary("editor tests");
                 return a.failCount();

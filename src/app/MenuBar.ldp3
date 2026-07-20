@@ -122,6 +122,7 @@ public bundle forge {
                 run.add("Build", "run.build");
                 run.add("Run", "run.program");
                 run.add("Run Tests", "run.test");
+                run.add("Test Explorer", "view.tests");
                 run.sep();
                 run.add("Start / Continue  F5", "debug.start");
                 run.add("Step Over  F10", "debug.stepOver");

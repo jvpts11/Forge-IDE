@@ -46,6 +46,7 @@ public bundle forge {
                 this.register("view.regions", "LDP3: Regions");
                 this.register("view.bundles", "LDP3: Bundles");
                 this.register("view.persistents", "LDP3: Persistents");
+                this.register("view.tests", "Tests: Run and List");
                 this.register("edit.selectAll", "Select All");
                 this.register("edit.duplicateLine", "Duplicate Line");
                 this.register("edit.joinLines", "Join Lines");

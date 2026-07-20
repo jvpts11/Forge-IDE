@@ -43,6 +43,9 @@ public bundle forge {
             public extern stdcall static method GetModuleFileNameA(long hModule, long buf, int size) returns int;
             public extern stdcall static method LoadImageA(long hinst, long name, int type, int cx, int cy, int load) returns long;
             public extern stdcall static method SendMessageA(long hwnd, int msg, long wp, long lp) returns long;
+            // Ends the process with a status code. LDP3's `main` returns void, so this is how a failing
+            // self-test reports failure to whatever ran it (build.ps1, CI) instead of exiting 0.
+            public extern stdcall static method ExitProcess(int code) returns void;
         }
 
         // A one-shot request from a menu command back to the run loop to open a project folder. The loop owns

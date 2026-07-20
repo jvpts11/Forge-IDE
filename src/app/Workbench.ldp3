@@ -1311,6 +1311,127 @@ public bundle forge {
                 this.scanDecls(files, "persistent", "Persistents");
                 return;
             }
+            // The project's test methods, each with the result of the run that just happened. Scanning the
+            // sources gives the FULL list -- including tests that never ran because an earlier one crashed
+            // the harness -- while `ldp3 test` reports `PASS <name>` / `FAIL <name>`, matched back by name.
+            // A test the run never reported keeps a `?`, which is how a crashed harness stays visible.
+            public method showTests(ArrayList<String>* files) returns void {
+                ArrayList<String>* names = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".ldp3")) {
+                        continue;
+                    }
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String t = lines.get(row).trim();
+                        if (t.equals("@Test") || t.equals("[Test]")) {
+                            // The method header follows the annotation, possibly after further annotations.
+                            mutable int look = row + 1;
+                            while (look < lines.size() && look < row + 5) {
+                                String name = Workbench.testNameOf(lines.get(look));
+                                if (name.length() > 0) {
+                                    names.add(name);
+                                    navFiles.add(path);
+                                    navLines.add(look);
+                                    break;
+                                }
+                                look = look + 1;
+                            }
+                        }
+                        row = row + 1;
+                    }
+                }
+                if (names.size() == 0) {
+                    ArrayList<String>* empty = new ArrayList<String>() on heap;
+                    empty.add("(no @Test methods in this project)");
+                    ArrayList<String>* ef = new ArrayList<String>() on heap;
+                    ef.add("");
+                    ArrayList<int>* el = new ArrayList<int>() on heap;
+                    el.add(0 - 1);
+                    this.out.showNavigable("Tests", empty, ef, el);
+                    delete names;
+                    delete navFiles;
+                    delete navLines;
+                    return;
+                }
+                // Run the harness and collect the reported outcome per test name.
+                ProcessResult r = Process.run("cd /d \"" + this.projectDir + "\" && ldp3 test 2>&1");
+                ArrayList<String> outLines = Strings.split(r.output, "\n");
+                ArrayList<String>* ranNames = new ArrayList<String>() on heap;
+                ArrayList<String>* ranHow = new ArrayList<String>() on heap;
+                mutable int oi = 0;
+                while (oi < outLines.size()) {
+                    String ln = outLines.get(oi).trim();
+                    oi = oi + 1;
+                    if (ln.startsWith("PASS ")) {
+                        ranNames.add(ln.substring(5, ln.length()).trim());
+                        ranHow.add("pass");
+                    } else if (ln.startsWith("FAIL ")) {
+                        ranNames.add(ln.substring(5, ln.length()).trim());
+                        ranHow.add("fail");
+                    }
+                }
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int passed = 0;
+                mutable int failed = 0;
+                mutable int missing = 0;
+                mutable int i = 0;
+                while (i < names.size()) {
+                    String n = names.get(i);
+                    mutable String mark = "  ?    ";
+                    mutable int k = 0;
+                    while (k < ranNames.size()) {
+                        if (ranNames.get(k).equals(n)) {
+                            if (ranHow.get(k).equals("pass")) {
+                                mark = "  ok   ";
+                            } else {
+                                mark = "  FAIL ";
+                            }
+                            break;
+                        }
+                        k = k + 1;
+                    }
+                    if (mark.equals("  ok   ")) {
+                        passed = passed + 1;
+                    } else if (mark.equals("  FAIL ")) {
+                        failed = failed + 1;
+                    } else {
+                        missing = missing + 1;
+                    }
+                    body.add(mark + n + "   (" + Paths.basename(navFiles.get(i)) + ":"
+                             + (navLines.get(i) + 1).toString() + ")");
+                    i = i + 1;
+                }
+                mutable String caption = "Tests -- " + passed.toString() + " passed, "
+                                         + failed.toString() + " failed";
+                if (missing > 0) {
+                    caption = caption + ", " + missing.toString() + " not reported";
+                }
+                this.out.showNavigable(caption, body, navFiles, navLines);
+                delete names;
+                delete ranNames;
+                delete ranHow;
+                return;
+            }
+            // The method name in a declaration line, or "" when the line is not a method header.
+            public static method testNameOf(String line) returns String {
+                int m = line.indexOf("method ");
+                if (m < 0) {
+                    return "";
+                }
+                int start = m + 7;
+                int paren = line.indexOf("(");
+                if (paren <= start) {
+                    return "";
+                }
+                return line.substring(start, paren).trim();
+            }
             // The program's bundles: dependency bundles from ldp3.toml first, then each `bundle` declaration.
             public method showBundles(ArrayList<String>* files) returns void {
                 ArrayList<String>* body = new ArrayList<String>() on heap;
@@ -2123,6 +2244,12 @@ public bundle forge {
                     ArrayList<String>* pf = this.projectFiles();
                     this.showPersistents(pf);
                     delete pf;
+                    return true;
+                }
+                if (id.equals("view.tests")) {
+                    ArrayList<String>* tf = this.projectFiles();
+                    this.showTests(tf);
+                    delete tf;
                     return true;
                 }
                 if (id.equals("edit.format")) {
