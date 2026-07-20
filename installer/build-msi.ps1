@@ -3,10 +3,10 @@
 # (cmake --build build --config Release there), LLVM on PATH or in C:\Program Files\LLVM, and the WiX tool
 # (dotnet tool install --global wix).
 #
-#   ./build-msi.ps1                       # -> installer/dist/Forge-0.2.1.msi
+#   ./build-msi.ps1                       # -> installer/dist/Forge-0.3.0.msi
 param(
     [string]$Config = "Release",
-    [string]$Version = "0.2.1"
+    [string]$Version = "0.3.0"
 )
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
