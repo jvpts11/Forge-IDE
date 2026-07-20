@@ -35,3 +35,7 @@ frame.*
 
 # live-check scratch buffers
 .forge/
+
+# Python bytecode from the MCP server
+__pycache__/
+*.pyc
