@@ -22,6 +22,7 @@ public bundle forge {
             public mutable boolean minimap;
             public mutable boolean whitespace;
             public mutable boolean wordWrap;
+            public mutable String themeName;   // "Dark", "Light", or an installed theme's name
 
             public constructor Settings() {
                 this.fontFamily = "Consolas";
@@ -31,6 +32,7 @@ public bundle forge {
                 this.minimap = true;
                 this.whitespace = false;
                 this.wordWrap = false;
+                this.themeName = "Dark";
             }
 
             private static method configDir() returns String {
@@ -163,6 +165,11 @@ public bundle forge {
                         else if (k.equals("wordWrap")) {
                             s.wordWrap = v.equals("true");
                         }
+                        else if (k.equals("themeName")) {
+                            if (v.length() > 0) {
+                                s.themeName = v;
+                            }
+                        }
                     }
                     i = i + 1;
                 }
@@ -185,6 +192,7 @@ public bundle forge {
                 sb.append("minimap = " + Settings.boolStr(s.minimap) + "\n");
                 sb.append("whitespace = " + Settings.boolStr(s.whitespace) + "\n");
                 sb.append("wordWrap = " + Settings.boolStr(s.wordWrap) + "\n");
+                sb.append("themeName = " + s.themeName + "\n");
                 Settings.ensureConfigDir();
                 File.writeAll(Settings.settingsFile(), sb.toString());
                 WorkspaceStore.saveTheme(s.lightTheme);

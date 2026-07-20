@@ -17,6 +17,7 @@ import io.FileTree;
 import io.FileNode;
 import io.WorkspaceStore;
 import io.Settings;
+import io.ThemeStore;
 import input.Key;
 import input.KeyCode;
 import System.Collections.ArrayList;
@@ -71,6 +72,9 @@ public bundle forge {
                 }
                 GuiApp.setWindowIcon(win);
                 win.setVSync(1);
+                // Seed a commented example theme on first run, so the format is discoverable: making a
+                // theme is copying that file and editing colours.
+                ThemeStore.ensureExampleTheme();
                 Font* font = GuiApp.loadFont(win, 18, "Consolas");
                 Batch2D* batch = new Batch2D(win.gl) on heap;
                 GpuScreen* screen = new GpuScreen(font) on heap;

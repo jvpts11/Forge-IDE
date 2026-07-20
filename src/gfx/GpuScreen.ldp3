@@ -1,6 +1,7 @@
 import gfx.Batch2D;
 import gfx.Font;
 import gfx.Overlay;
+import io.ThemeStore;
 import app.Controller;
 import app.Workbench;
 import app.Debugger;
@@ -71,14 +72,12 @@ public bundle forge {
             }
             // Sync the palette to the workbench's theme preference. Cheap: only rebuilds the Theme when the
             // light/dark choice actually changed, so it is safe to call every frame.
+            // Rebuild the palette when the chosen theme changed. Comparing by NAME (not just dark/light)
+            // is what lets installed themes work: two themes can share a base preset and still differ.
             public method applyThemeFor(Workbench* wb) returns void {
-                boolean isLight = !this.theme.dark;
-                if (wb.wantsLight() != isLight) {
-                    if (wb.wantsLight()) {
-                        this.theme = Theme.makeLight();
-                    } else {
-                        this.theme = Theme.makeDark();
-                    }
+                String want = wb.settings().themeName;
+                if (!this.theme.name.equals(want)) {
+                    this.theme = ThemeStore.build(want);
                 }
             }
 
@@ -2612,7 +2611,7 @@ public bundle forge {
             // The current value of row `i`, as shown on the right of the panel.
             private method settingsValueOf(Workbench* wb, int i) returns String {
                 if (i == 0) {
-                    return wb.wantsLight() ? "Light" : "Dark";
+                    return wb.themeName();
                 }
                 if (i == 1) {
                     return wb.settings().fontFamily;

@@ -5,6 +5,7 @@ import syntax.Tok;
 import app.Controller;
 import io.Document;
 import io.Settings;
+import io.ThemeStore;
 import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
@@ -274,10 +275,33 @@ public bundle forge {
             public method wantsLight() returns boolean {
                 return this.lightTheme;
             }
+            // Step to the next installed theme, wrapping around. With only the built-ins present this
+            // behaves exactly like the old dark/light toggle; every theme dropped into ~/.forge/themes
+            // joins the rotation.
             public method toggleTheme() returns void {
-                this.lightTheme = !this.lightTheme;
+                ArrayList<String>* names = ThemeStore.available();
+                mutable int at = 0;
+                mutable int i = 0;
+                while (i < names.size()) {
+                    if (names.get(i).equals(this.settings.themeName)) {
+                        at = i;
+                    }
+                    i = i + 1;
+                }
+                String next = names.get((at + 1) % names.size());
+                delete names;
+                this.setTheme(next);
+            }
+            // Select a theme by name and persist it. lightTheme is kept in step so the older paths that
+            // still ask "is it light?" (the welcome screen, the workspace store) stay correct.
+            public method setTheme(String name) returns void {
+                this.settings.themeName = name;
+                this.lightTheme = name.equals("Light");
                 this.settings.lightTheme = this.lightTheme;
                 Settings.save(this.settings);
+            }
+            public method themeName() returns String {
+                return this.settings.themeName;
             }
             // The live user preferences (font, tab width, theme, view toggles); persisted on change.
             public method settings() returns Settings* {

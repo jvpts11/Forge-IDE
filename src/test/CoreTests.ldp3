@@ -1,6 +1,8 @@
 ﻿import System.Collections.ArrayList;
 import System.Text.StringBuilder;
 import gfx.Overlay;
+import gfx.Color;
+import io.ThemeStore;
 import app.Terminal;
 import app.TermGrid;
 import app.TermLine;
@@ -1099,6 +1101,23 @@ public bundle forge {
                 a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
                 trmTrim.absorb("TAIL");
                 a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- installable themes: a theme file is `key = RRGGBB`, so the hex parse is the part
+                // that must reject junk rather than paint garbage ---
+                a.eqBool(ThemeStore.hexValid("1d2021"), true, "theme.hex-plain");
+                a.eqBool(ThemeStore.hexValid("#1d2021"), true, "theme.hex-hash");
+                a.eqBool(ThemeStore.hexValid("12345"), false, "theme.hex-short");
+                a.eqBool(ThemeStore.hexValid("zzzzzz"), false, "theme.hex-nondigit");
+                Color* themeCol = ThemeStore.parseHex("#ff8000");
+                a.eqInt(cast<int>(themeCol.r * 255.0 + 0.5), 255, "theme.hex-r");
+                a.eqInt(cast<int>(themeCol.g * 255.0 + 0.5), 128, "theme.hex-g");
+                a.eqInt(cast<int>(themeCol.b * 255.0 + 0.5), 0, "theme.hex-b");
+                delete themeCol;
+                ArrayList<String>* themeNames = ThemeStore.available();
+                a.eqBool(themeNames.size() >= 2, true, "theme.builtins-present");
+                a.eqStr(themeNames.get(0), "Dark", "theme.builtin-dark");
+                a.eqStr(themeNames.get(1), "Light", "theme.builtin-light");
+                delete themeNames;
 
                 // --- settings panel rows: the renderer, the hit-test and the key handler all read these,
                 // so a row added to one of them without the others shows up here as a mismatch ---
