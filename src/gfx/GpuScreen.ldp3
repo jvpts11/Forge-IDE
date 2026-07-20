@@ -8,6 +8,8 @@ import app.Debugger;
 import app.DebugFrame;
 import app.DebugVar;
 import app.Terminal;
+import app.ChatMessage;
+import app.AiChat;
 import app.TermGrid;
 import app.TermLine;
 import app.DocumentManager;
@@ -2571,6 +2573,103 @@ public bundle forge {
                 }
                 else if (ov.mode == 9) {
                     this.drawSettings(batch, ov, wb, screenW, screenH);
+                }
+                else if (ov.mode == 10) {
+                    this.drawChat(batch, wb, screenW, screenH);
+                }
+            }
+
+            // The AI chat (mode 10): the conversation above, what you are typing below. Wide and tall,
+            // because answers are prose and a cramped box makes them unreadable. Long lines wrap to the
+            // card width instead of running off the edge.
+            private method drawChat(Batch2D* batch, Workbench* wb, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                AiChat* chat = wb.aiChat();
+                int bw = screenW - 160;
+                int bh = screenH - 140;
+                int bx = 80;
+                int by = 70;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.45);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+
+                this.font.drawText(batch, bx + 24, by + 20, "Assistant  --  " + chat.modelName(),
+                                   this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+
+                // Flatten the conversation into display lines first, so scrolling works on what is drawn
+                // rather than on turns of wildly different heights.
+                int wrapAt = (bw - 60) / cw;
+                ArrayList<String>* flat = new ArrayList<String>() on heap;
+                ArrayList<int>* kinds = new ArrayList<int>() on heap;   // 0 you, 1 reply, 2/3 role label
+                ArrayList<ChatMessage*>* turns = chat.history();
+                mutable int t = 0;
+                while (t < turns.size()) {
+                    ChatMessage* m = turns.get(t);
+                    boolean isUser = m.role.equals("user");
+                    flat.add(isUser ? "you" : "assistant");
+                    kinds.add(isUser ? 2 : 3);
+                    ArrayList<String>* wrapped = TextWrap.wrap(m.text, wrapAt);
+                    mutable int w = 0;
+                    while (w < wrapped.size()) {
+                        flat.add(wrapped.get(w));
+                        kinds.add(isUser ? 0 : 1);
+                        w = w + 1;
+                    }
+                    delete wrapped;
+                    flat.add("");
+                    kinds.add(0);
+                    t = t + 1;
+                }
+
+                int bodyTop = by + 56;
+                int inputY = by + bh - 34;
+                int rows = (inputY - bodyTop) / ch;
+                mutable int start = flat.size() - rows - chat.scrollOffset();
+                if (start < 0) {
+                    start = 0;
+                }
+                mutable int r = 0;
+                mutable int idx = start;
+                while (idx < flat.size() && r < rows) {
+                    int kind = kinds.get(idx);
+                    mutable float cr = this.theme.text.r;
+                    mutable float cg = this.theme.text.g;
+                    mutable float cb = this.theme.text.b;
+                    if (kind == 2 || kind == 3) {
+                        cr = this.theme.accent.r;
+                        cg = this.theme.accent.g;
+                        cb = this.theme.accent.b;
+                    } else if (kind == 0) {
+                        cr = this.theme.textDim.r;
+                        cg = this.theme.textDim.g;
+                        cb = this.theme.textDim.b;
+                    }
+                    this.font.drawText(batch, bx + 30, bodyTop + r * ch, flat.get(idx), cr, cg, cb, 1.0);
+                    r = r + 1;
+                    idx = idx + 1;
+                }
+                delete flat;
+                delete kinds;
+
+                batch.rect(bx + 20, inputY - 8, bw - 40, 1, this.theme.divider.r, this.theme.divider.g,
+                           this.theme.divider.b, this.theme.divider.a);
+                mutable String prompt = "> ";
+                if (chat.isRunning()) {
+                    prompt = "  ";
+                }
+                this.font.drawText(batch, bx + 30, inputY, prompt + chat.inputLine(),
+                                   this.theme.text.r, this.theme.text.g, this.theme.text.b, 1.0);
+                // Status sits ABOVE the input, inside the card: below it falls past the bottom border.
+                if (chat.statusLine().length() > 0) {
+                    this.font.drawText(batch, bx + 30, inputY - ch - 14, chat.statusLine(),
+                                       this.theme.warning.r, this.theme.warning.g, this.theme.warning.b,
+                                       1.0);
                 }
             }
 

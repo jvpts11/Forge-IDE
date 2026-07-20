@@ -1,0 +1,343 @@
+import System.Collections.ArrayList;
+import System.OS.Subprocess;
+import System.OS.Env;
+import System.IO.File;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One turn in the conversation.
+        public class ChatMessage {
+            public mutable String role;    // "user" or "assistant"
+            public mutable String text;
+            public constructor ChatMessage(String role, String text) {
+                this.role = role;
+                this.text = text;
+            }
+        }
+
+        // A chat panel talking to an HTTP API.
+        //
+        // Two constraints shape this. LDP3 has raw TCP but no TLS, so HTTPS goes through `curl` (present
+        // on Windows 10+) the same way git and ldp3 are already driven. And a request takes seconds, so
+        // it runs as a Subprocess drained per frame -- exactly what the checker and the debugger do --
+        // rather than blocking the UI while the model thinks.
+        //
+        // The key is read from the ANTHROPIC_API_KEY environment variable, or from `apiKey` in the
+        // settings file. It is never written back by Forge, so it cannot end up in a commit by accident.
+        public class AiChat {
+            private mutable ArrayList<ChatMessage*>* messages;
+            private mutable Subprocess proc;
+            private mutable boolean running;
+            private mutable String buf;
+            private mutable String input;
+            private mutable boolean open;
+            private mutable String status;
+            private mutable String model;
+            private mutable int scrollOff;
+
+            public constructor AiChat() {
+                this.messages = new ArrayList<ChatMessage*>() on heap;
+                this.running = false;
+                this.buf = "";
+                this.input = "";
+                this.open = false;
+                this.status = "";
+                this.model = "claude-sonnet-5";
+                this.scrollOff = 0;
+            }
+            public destructor ~AiChat() returns void {
+                mutable int i = 0;
+                while (i < this.messages.size()) {
+                    delete this.messages.get(i);
+                    i = i + 1;
+                }
+                delete this.messages;
+            }
+
+            public method isOpen() returns boolean {
+                return this.open;
+            }
+            public method toggle() returns void {
+                this.open = !this.open;
+            }
+            public method close() returns void {
+                this.open = false;
+            }
+            public method isRunning() returns boolean {
+                return this.running;
+            }
+            public method statusLine() returns String {
+                return this.status;
+            }
+            public method inputLine() returns String {
+                return this.input;
+            }
+            public method setModel(String m) returns void {
+                this.model = m;
+            }
+            public method modelName() returns String {
+                return this.model;
+            }
+            public method history() returns ArrayList<ChatMessage*>* {
+                return this.messages;
+            }
+            public method scrollOffset() returns int {
+                return this.scrollOff;
+            }
+            public method scrollBy(int d) returns void {
+                mutable int n = this.scrollOff + d;
+                if (n < 0) {
+                    n = 0;
+                }
+                this.scrollOff = n;
+            }
+            public method typeChar(char c) returns void {
+                this.input = this.input + AiChat.ch2s(c);
+            }
+            public method backspace() returns void {
+                if (this.input.length() > 0) {
+                    this.input = this.input.substring(0, this.input.length() - 1);
+                }
+            }
+            public method clearHistory() returns void {
+                mutable int i = 0;
+                while (i < this.messages.size()) {
+                    delete this.messages.get(i);
+                    i = i + 1;
+                }
+                this.messages.clear();
+                this.status = "";
+                this.scrollOff = 0;
+            }
+
+            // The API key: environment first, then the settings file. Empty means "not configured", which
+            // the panel reports instead of firing a request that would fail anyway.
+            public static method apiKey() returns String {
+                String fromEnv = Env.get("ANTHROPIC_API_KEY");
+                if (fromEnv.length() > 0) {
+                    return fromEnv;
+                }
+                String path = Env.get("USERPROFILE") + "/.forge/settings.txt";
+                if (!File.exists(path)) {
+                    return "";
+                }
+                ArrayList<String> lines = Strings.split(File.readAll(path), "\n");
+                mutable int i = 0;
+                while (i < lines.size()) {
+                    String ln = lines.get(i).trim();
+                    i = i + 1;
+                    int eq = ln.indexOf("=");
+                    if (eq < 0) {
+                        continue;
+                    }
+                    if (ln.substring(0, eq).trim().equals("apiKey")) {
+                        return ln.substring(eq + 1, ln.length()).trim();
+                    }
+                }
+                return "";
+            }
+
+            // Send the typed line. The whole conversation goes with it, so the model has the context of
+            // what was already said.
+            public method send() returns void {
+                if (this.running || this.input.trim().length() == 0) {
+                    return;
+                }
+                String key = AiChat.apiKey();
+                if (key.length() == 0) {
+                    this.status = "no API key: set ANTHROPIC_API_KEY, or apiKey in settings";
+                    return;
+                }
+                this.messages.add(new ChatMessage("user", this.input) on heap);
+                this.input = "";
+                this.scrollOff = 0;
+
+                // The body goes to a file and curl reads it with `-d @file`: a prompt containing quotes
+                // or newlines cannot survive being pasted into a command line.
+                String bodyPath = Env.get("USERPROFILE") + "/.forge/chat-request.json";
+                File.writeAll(bodyPath, this.buildBody());
+                String cmd = "curl -s -X POST https://api.anthropic.com/v1/messages"
+                    + " -H \"x-api-key: " + key + "\""
+                    + " -H \"anthropic-version: 2023-06-01\""
+                    + " -H \"content-type: application/json\""
+                    + " -d @\"" + bodyPath + "\"";
+                this.buf = "";
+                this.proc = Subprocess.startCombined(cmd);
+                this.running = this.proc.isValid();
+                this.status = this.running ? "thinking..." : "could not start curl";
+                return;
+            }
+
+            // The request body: the model, a token budget, and every turn so far.
+            private method buildBody() returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append("{\"model\":\"" + this.model + "\",\"max_tokens\":2048,\"messages\":[");
+                mutable int i = 0;
+                while (i < this.messages.size()) {
+                    ChatMessage* m = this.messages.get(i);
+                    if (i > 0) {
+                        sb.append(",");
+                    }
+                    sb.append("{\"role\":\"" + m.role + "\",\"content\":\""
+                              + AiChat.jsonEscape(m.text) + "\"}");
+                    i = i + 1;
+                }
+                sb.append("]}");
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+
+            // Drain the request without blocking; parse the reply once curl exits. Called every frame.
+            public method pump() returns void {
+                if (!this.running) {
+                    return;
+                }
+                mutable int guard = 0;
+                while (this.proc.canRead() && guard < 64) {
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        break;
+                    }
+                    this.buf = this.buf + chunk;
+                    guard = guard + 1;
+                }
+                if (this.proc.isAlive()) {
+                    return;
+                }
+                while (this.proc.canRead()) {          // whatever it wrote just before exiting
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        break;
+                    }
+                    this.buf = this.buf + chunk;
+                }
+                this.proc.close();
+                this.running = false;
+                String reply = AiChat.replyFrom(this.buf);
+                if (reply.length() == 0) {
+                    this.status = "no reply -- " + AiChat.errorFrom(this.buf);
+                } else {
+                    this.messages.add(new ChatMessage("assistant", reply) on heap);
+                    this.status = "";
+                }
+                this.scrollOff = 0;
+                return;
+            }
+
+            // Pull the assistant text out of the response. The shape is
+            // {"content":[{"type":"text","text":"..."}], ...}; anything else counts as no reply, which
+            // the caller reports rather than showing a blank turn.
+            public static method replyFrom(String json) returns String {
+                return AiChat.fieldValue(json, "\"text\":");
+            }
+
+            // The string value following `key` (which includes its quotes and colon), with JSON escapes
+            // undone. Empty when the key is absent -- enough for the two fields that matter here without
+            // dragging in a full JSON parser.
+            public static method fieldValue(String json, String key) returns String {
+                int at = json.indexOf(key);
+                if (at < 0) {
+                    return "";
+                }
+                mutable int i = at + key.length();
+                while (i < json.length() && json.charAt(i) != '"') {
+                    i = i + 1;
+                }
+                if (i >= json.length()) {
+                    return "";
+                }
+                i = i + 1;                                  // past the opening quote
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable boolean done = false;
+                while (i < json.length() && !done) {
+                    char c = json.charAt(i);
+                    if (c == '\\' && i + 1 < json.length()) {
+                        char n = json.charAt(i + 1);
+                        if (n == 'n') {
+                            sb.appendChar('\n');
+                        } else if (n == 't') {
+                            sb.appendChar('\t');
+                        } else if (n == '"') {
+                            sb.appendChar('"');
+                        } else if (n == '\\') {
+                            sb.appendChar('\\');
+                        } else {
+                            sb.appendChar(n);
+                        }
+                        i = i + 2;
+                    } else if (c == '"') {
+                        done = true;
+                    } else {
+                        sb.appendChar(c);
+                        i = i + 1;
+                    }
+                }
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+
+            // A short reason when there was no reply: the API's own message if there is one, else the
+            // first line of whatever came back (curl's error, an HTML error page, ...).
+            public static method errorFrom(String raw) returns String {
+                String apiMsg = AiChat.fieldValue(raw, "\"message\":");
+                if (apiMsg.length() > 0) {
+                    return apiMsg;
+                }
+                String t = raw.trim();
+                if (t.length() == 0) {
+                    return "empty response";
+                }
+                int nl = t.indexOf("\n");
+                if (nl > 0) {
+                    return t.substring(0, nl);
+                }
+                if (t.length() > 120) {
+                    return t.substring(0, 120);
+                }
+                return t;
+            }
+
+            // Escape a string for a JSON body: quotes, backslashes and the control characters that would
+            // otherwise end the string early.
+            public static method jsonEscape(String s) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i < s.length()) {
+                    char c = s.charAt(i);
+                    if (c == '"') {
+                        sb.append("\\\"");
+                    } else if (c == '\\') {
+                        sb.append("\\\\");
+                    } else if (c == '\n') {
+                        sb.append("\\n");
+                    } else if (c == '\r') {
+                        sb.append("\\r");
+                    } else if (c == '\t') {
+                        sb.append("\\t");
+                    } else {
+                        sb.appendChar(c);
+                    }
+                    i = i + 1;
+                }
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+
+            private static method ch2s(char c) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(c);
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+        }
+    }
+}

@@ -15,6 +15,8 @@ import app.OutputPanel;
 import app.Diagnostic;
 import app.Checker;
 import app.QuickFix;
+import app.AiChat;
+import app.ChatMessage;
 import app.Symbol;
 import app.Symbols;
 import app.GitStatus;
@@ -68,6 +70,7 @@ public bundle forge {
             private mutable String branch;          // cached branch name (refreshed with the git status)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean fontDirty;      // set by the settings panel; the shell reloads the atlas
+            private mutable AiChat* chat;           // the AI panel; its request is drained per frame
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
             private mutable boolean renderWs;        // view preference: draw a dot at each space (whitespace)
             private mutable ArrayList<NavLoc>* navBack;  // Alt+Left history of caret locations before a jump
@@ -113,6 +116,7 @@ public bundle forge {
                 this.branch = "";
                 this.treeDirty = false;
                 this.fontDirty = false;
+                this.chat = new AiChat() on heap;
                 this.showMinimap = this.settings.minimap;
                 this.renderWs = this.settings.whitespace;
                 this.navBack = new ArrayList<NavLoc>() on heap;
@@ -305,6 +309,9 @@ public bundle forge {
             }
             public method themeName() returns String {
                 return this.settings.themeName;
+            }
+            public method aiChat() returns AiChat* {
+                return this.chat;
             }
 
             // --- plugins ---

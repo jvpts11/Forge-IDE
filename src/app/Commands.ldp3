@@ -86,6 +86,7 @@ public bundle forge {
                 this.register("prefs.open", "Preferences: Settings");
                 this.register("prefs.file", "Preferences: Settings (file)");
                 this.register("prefs.keys", "Preferences: Keybindings");
+                this.register("ai.chat", "AI: Chat");
                 this.register("plugins.list", "Plugins: Installed");
                 this.register("plugins.install", "Plugins: Install from GitHub");
                 this.register("plugins.update", "Plugins: Update");

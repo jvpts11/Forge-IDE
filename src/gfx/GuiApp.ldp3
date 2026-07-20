@@ -8,6 +8,7 @@ import app.Workbench;
 import app.Diagnostic;
 import app.DiffView;
 import app.Debugger;
+import app.AiChat;
 import app.Terminal;
 import app.TermGrid;
 import app.TermLine;
@@ -416,6 +417,7 @@ public bundle forge {
                     // raises a flag and the reload happens here, between frames.
                     // The change always arrives with a key or click, so this frame already counts as active
                     // and repaints -- no extra redraw flag needed.
+                    wb.aiChat().pump();    // the AI request runs as a subprocess; drain it per frame
                     if (wb.takeFontDirty()) {
                         fontPx = wb.settings().fontSize;
                         screen.setFont(GuiApp.loadFont(win, fontPx, wb.settings().fontFamily));
@@ -1404,6 +1406,18 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("unknown command");
                     }
+                } else if (cmd.equals("chat")) {
+                    // chat [text]: open the AI panel, optionally typing a line into it.
+                    ov.open(10);
+                    mutable int ci = 0;
+                    while (ci < arg.length()) {
+                        wb.aiChat().typeChar(arg.charAt(ci));
+                        ci = ci + 1;
+                    }
+                    System.IO.Console.println("ok chat");
+                } else if (cmd.equals("chatsend")) {
+                    wb.aiChat().send();
+                    System.IO.Console.println("ok send status=" + wb.aiChat().statusLine());
                 } else if (cmd.equals("settings")) {
                     // settings [row]: open the panel, optionally selecting a row. The panel lives in the
                     // overlay, which `cmd` cannot reach (it dispatches through the Workbench).
@@ -2353,6 +2367,10 @@ public bundle forge {
                         GuiApp.settingsKey(ov, wb, vk);
                         return;
                     }
+                    if (ov.mode == 10) {
+                        GuiApp.chatKey(ov, wb, vk, ctrl);
+                        return;
+                    }
                     if (ov.mode == 2) {
                         GuiApp.findKey(ov, wb, vk, ctrl, shift, alt);
                         return;
@@ -2401,7 +2419,11 @@ public bundle forge {
                 if (e.isChar()) {
                     int cp = e.code;
                     if (cp >= 32 && cp != 127 && (!ctrl || alt)) {
-                        ov.typeChar(cast<char>(cp));
+                        if (ov.mode == 10) {          // the chat keeps its own input line
+                            wb.aiChat().typeChar(cast<char>(cp));
+                        } else {
+                            ov.typeChar(cast<char>(cp));
+                        }
                     }
                 }
                 return;
@@ -2456,6 +2478,10 @@ public bundle forge {
                     GuiApp.openFind(ov, wb);
                     return true;
                 }
+                if (id.equals("ai.chat")) {
+                    ov.open(10);
+                    return true;
+                }
                 if (id.equals("plugins.install")) {
                     ov.openPrompt("pluginInstall", "plugin repo (owner/repo or URL): ");
                     return true;
@@ -2503,6 +2529,48 @@ public bundle forge {
             // Open the user preferences file (~/.forge/settings.txt) in the editor, creating it with the
             // current values first if it does not exist yet. Edits take effect on the next launch; the live
             // toggles (theme, font zoom, view options) keep the file in sync as you use the IDE.
+            // Keys in the AI chat (mode 10). Enter sends, Ctrl+L clears, the arrows and page keys scroll
+            // the transcript, Esc closes. Typing is ignored while a request is in flight, so a
+            // half-written follow-up cannot be swept into the wrong turn.
+            private static method chatKey(Overlay* ov, Workbench* wb, int vk, boolean ctrl) returns void {
+                AiChat* chat = wb.aiChat();
+                if (vk == 27) {
+                    ov.close();
+                    return;
+                }
+                if (ctrl && vk == 76) {                  // Ctrl+L clears the conversation
+                    chat.clearHistory();
+                    return;
+                }
+                if (vk == 38) {                          // Up
+                    chat.scrollBy(1);
+                    return;
+                }
+                if (vk == 40) {                          // Down
+                    chat.scrollBy(0 - 1);
+                    return;
+                }
+                if (vk == 33) {                          // PageUp
+                    chat.scrollBy(10);
+                    return;
+                }
+                if (vk == 34) {                          // PageDown
+                    chat.scrollBy(0 - 10);
+                    return;
+                }
+                if (chat.isRunning()) {
+                    return;
+                }
+                if (vk == 13) {
+                    chat.send();
+                    return;
+                }
+                if (vk == 8) {
+                    chat.backspace();
+                    return;
+                }
+            }
+
             // Keys in the settings panel (mode 9). Arrows move the selection; Enter flips a switch or opens
             // a prompt for a typed value; the last row hands over to the settings file for anything the
             // panel does not expose. Every change is applied and saved as it is made.

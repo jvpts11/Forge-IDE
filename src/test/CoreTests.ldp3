@@ -4,6 +4,7 @@ import gfx.Overlay;
 import gfx.Color;
 import io.ThemeStore;
 import io.PluginStore;
+import app.AiChat;
 import app.Terminal;
 import app.TermGrid;
 import app.TermLine;
@@ -773,8 +774,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 75, "cmd.count");
-                a.eqInt(cr.filter("").size(), 75, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 76, "cmd.count");
+                a.eqInt(cr.filter("").size(), 76, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 2, "cmd.filter-undo-count");  // + "Set Breakpoint Condition" (u-n-d-o subseq)
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -1102,6 +1103,18 @@ public bundle forge {
                 a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
                 trmTrim.absorb("TAIL");
                 a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- AI chat: the request body is hand-built JSON, so escaping and the reply parse are
+                // where a quote or a newline in a prompt would otherwise corrupt the request ---
+                a.eqStr(AiChat.jsonEscape("plain"), "plain", "chat.escape-plain");
+                a.eqStr(AiChat.jsonEscape("say \"hi\""), "say \\\"hi\\\"", "chat.escape-quote");
+                a.eqStr(AiChat.replyFrom("{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}"),
+                        "hello", "chat.reply-plain");
+                // A \n inside the JSON string has to come back as a real newline.
+                a.eqStr(AiChat.replyFrom("{\"text\":\"two\\nlines\"}"),
+                        "two" + CoreTests.chr(10) + "lines", "chat.reply-newline");
+                a.eqStr(AiChat.replyFrom("{\"nothing\":1}"), "", "chat.reply-absent");
+                a.eqStr(AiChat.errorFrom("{\"error\":{\"message\":\"bad key\"}}"), "bad key", "chat.error-api");
 
                 // --- plugins: install accepts `owner/repo` or a URL, and the directory it clones into is
                 // what identifies the plugin everywhere afterwards ---
