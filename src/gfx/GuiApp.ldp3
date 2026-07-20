@@ -2456,6 +2456,14 @@ public bundle forge {
                     GuiApp.openFind(ov, wb);
                     return true;
                 }
+                if (id.equals("plugins.install")) {
+                    ov.openPrompt("pluginInstall", "plugin repo (owner/repo or URL): ");
+                    return true;
+                }
+                if (id.equals("plugins.update")) {
+                    ov.openPrompt("pluginUpdate", "plugin name to update: ");
+                    return true;
+                }
                 if (id.equals("prefs.open")) {
                     ov.openSettings();
                     return true;
@@ -2830,6 +2838,10 @@ public bundle forge {
                     if (ov.query.length() > 0) {
                         wb.gitCommit(ov.query);
                     }
+                } else if (ov.promptKind.equals("pluginInstall")) {
+                    wb.installPlugin(ov.query);
+                } else if (ov.promptKind.equals("pluginUpdate")) {
+                    wb.updatePlugin(ov.query);
                 } else if (ov.promptKind.equals("setfont")) {
                     // Back to the panel afterwards, so several settings can be changed in one visit.
                     wb.setFontFamily(ov.query);

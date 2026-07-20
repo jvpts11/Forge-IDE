@@ -6,6 +6,9 @@ import app.Controller;
 import io.Document;
 import io.Settings;
 import io.ThemeStore;
+import io.PluginStore;
+import io.Plugin;
+import io.PluginCommand;
 import app.DocumentManager;
 import app.CommandRegistry;
 import app.OutputPanel;
@@ -302,6 +305,77 @@ public bundle forge {
             }
             public method themeName() returns String {
                 return this.settings.themeName;
+            }
+
+            // --- plugins ---
+            // What is installed, with its state and description, as a navigable list.
+            public method showPlugins() returns void {
+                ArrayList<Plugin*>* plugins = PluginStore.installed();
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < plugins.size()) {
+                    Plugin* p = plugins.get(i);
+                    i = i + 1;
+                    mutable String row = p.enabled ? "  on   " : "  off  ";
+                    row = row + p.title;
+                    if (p.version.length() > 0) {
+                        row = row + "  " + p.version;
+                    }
+                    if (p.description.length() > 0) {
+                        row = row + "  --  " + p.description;
+                    }
+                    body.add(row);
+                    navFiles.add(p.dir + "/plugin.txt");    // clicking a row opens its manifest
+                    navLines.add(0);
+                }
+                if (body.size() == 0) {
+                    body.add("(no plugins installed -- use \"Plugins: Install from GitHub\")");
+                    navFiles.add("");
+                    navLines.add(0 - 1);
+                }
+                this.out.showNavigable("Plugins", body, navFiles, navLines);
+                mutable int f = 0;
+                while (f < plugins.size()) {
+                    delete plugins.get(f);
+                    f = f + 1;
+                }
+                delete plugins;
+                return;
+            }
+            // Clone a plugin repository and report what happened. A clone fails for many ordinary
+            // reasons (no network, typo, already installed), so the git output is shown rather than
+            // swallowed.
+            public method installPlugin(String source) returns void {
+                this.out.banner("Plugins", PluginStore.install(source));
+                return;
+            }
+            public method updatePlugin(String name) returns void {
+                this.out.banner("Plugins", PluginStore.update(name));
+                return;
+            }
+            // Run a command contributed by a plugin, by its prefixed id. False when no plugin owns that
+            // id, so the caller falls through to the built-in commands.
+            public method runPluginCommand(String id) returns boolean {
+                ArrayList<PluginCommand*>* cmds = PluginStore.commands();
+                mutable boolean ran = false;
+                mutable int i = 0;
+                while (i < cmds.size()) {
+                    PluginCommand* c = cmds.get(i);
+                    if (!ran && c.id.equals(id)) {
+                        this.runShell(c.title, c.run);
+                        ran = true;
+                    }
+                    i = i + 1;
+                }
+                mutable int f = 0;
+                while (f < cmds.size()) {
+                    delete cmds.get(f);
+                    f = f + 1;
+                }
+                delete cmds;
+                return ran;
             }
             // The live user preferences (font, tab width, theme, view toggles); persisted on change.
             public method settings() returns Settings* {
@@ -2317,6 +2391,13 @@ public bundle forge {
                     ArrayList<String>* pf = this.projectFiles();
                     this.showPersistents(pf);
                     delete pf;
+                    return true;
+                }
+                if (id.startsWith("plugin.")) {   // contributed by a plugin, not built in
+                    return this.runPluginCommand(id);
+                }
+                if (id.equals("plugins.list")) {
+                    this.showPlugins();
                     return true;
                 }
                 if (id.equals("view.tests")) {

@@ -3,6 +3,7 @@ import System.Text.StringBuilder;
 import gfx.Overlay;
 import gfx.Color;
 import io.ThemeStore;
+import io.PluginStore;
 import app.Terminal;
 import app.TermGrid;
 import app.TermLine;
@@ -772,8 +773,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 72, "cmd.count");
-                a.eqInt(cr.filter("").size(), 72, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 75, "cmd.count");
+                a.eqInt(cr.filter("").size(), 75, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 2, "cmd.filter-undo-count");  // + "Set Breakpoint Condition" (u-n-d-o subseq)
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -1101,6 +1102,18 @@ public bundle forge {
                 a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
                 trmTrim.absorb("TAIL");
                 a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- plugins: install accepts `owner/repo` or a URL, and the directory it clones into is
+                // what identifies the plugin everywhere afterwards ---
+                a.eqStr(PluginStore.nameFromUrl("https://github.com/jvpts11/forge-hello"),
+                        "forge-hello", "plugin.name-url");
+                a.eqStr(PluginStore.nameFromUrl("https://github.com/jvpts11/forge-hello.git"),
+                        "forge-hello", "plugin.name-dotgit");
+                a.eqStr(PluginStore.nameFromUrl("jvpts11/forge-hello"), "forge-hello", "plugin.name-short");
+                a.eqStr(PluginStore.nameFromUrl("git@github.com:jvpts11/forge-hello.git"),
+                        "forge-hello", "plugin.name-ssh");
+                a.eqStr(PluginStore.nameFromUrl("https://github.com/jvpts11/forge-hello/"),
+                        "forge-hello", "plugin.name-trailing-slash");
 
                 // --- installable themes: a theme file is `key = RRGGBB`, so the hex parse is the part
                 // that must reject junk rather than paint garbage ---

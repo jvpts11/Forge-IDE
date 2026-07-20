@@ -7,6 +7,7 @@ import System.Text.StringBuilder;
 import System.Collections.ArrayList;
 import gfx.Theme;
 import gfx.Color;
+import io.PluginStore;
 
 program Forge;
 
@@ -52,15 +53,44 @@ public bundle forge {
                     String base = Paths.basename(e);
                     names.add(base.substring(0, base.length() - 6));   // drop ".theme"
                 }
+                // Themes shipped by enabled plugins are selectable the same way the user's own are.
+                ArrayList<String>* fromPlugins = PluginStore.themeFiles();
+                mutable int k = 0;
+                while (k < fromPlugins.size()) {
+                    String base = Paths.basename(fromPlugins.get(k));
+                    k = k + 1;
+                    names.add(base.substring(0, base.length() - 6));
+                }
+                delete fromPlugins;
                 return names;
             }
 
-            // The file backing an installed theme (empty for the built-ins).
+            // The file backing an installed theme (empty for the built-ins). The user's own themes win
+            // over a plugin's when both use a name, so a local edit is never shadowed by an update.
             public static method fileFor(String name) returns String {
                 if (name.equals("Dark") || name.equals("Light")) {
                     return "";
                 }
-                return ThemeStore.themesDir() + "/" + name + ".theme";
+                String own = ThemeStore.themesDir() + "/" + name + ".theme";
+                if (File.exists(own)) {
+                    return own;
+                }
+                ArrayList<String>* fromPlugins = PluginStore.themeFiles();
+                mutable String found = "";
+                mutable int i = 0;
+                while (i < fromPlugins.size()) {
+                    String f = fromPlugins.get(i);
+                    i = i + 1;
+                    String base = Paths.basename(f);
+                    if (base.substring(0, base.length() - 6).equals(name)) {
+                        found = f;
+                    }
+                }
+                delete fromPlugins;
+                if (found.length() > 0) {
+                    return found;
+                }
+                return own;
             }
 
             // Build the theme called `name`. Unknown names and unreadable files fall back to Dark rather

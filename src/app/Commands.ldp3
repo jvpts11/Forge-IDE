@@ -86,6 +86,9 @@ public bundle forge {
                 this.register("prefs.open", "Preferences: Settings");
                 this.register("prefs.file", "Preferences: Settings (file)");
                 this.register("prefs.keys", "Preferences: Keybindings");
+                this.register("plugins.list", "Plugins: Installed");
+                this.register("plugins.install", "Plugins: Install from GitHub");
+                this.register("plugins.update", "Plugins: Update");
                 this.register("view.terminal", "Toggle Terminal");
                 this.register("edit.format", "Format Document");
                 this.register("debug.start", "Debug: Start / Continue");
