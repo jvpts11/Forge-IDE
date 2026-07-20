@@ -1,0 +1,6 @@
+# Commands this plugin adds to Forge. Format: id | title | shell command.
+# The server itself is normally started by the MCP client, not from here; these are for
+# inspecting and testing it from inside the IDE.
+perms | MCP: Show Capabilities | python "%USERPROFILE%/.forge/plugins/forge-mcp/forge_mcp.py" perms
+selftest | MCP: Self-Test | python "%USERPROFILE%/.forge/plugins/forge-mcp/forge_mcp.py" selftest
+edit-perms | MCP: Edit Capabilities | notepad "%USERPROFILE%/.forge/mcp-permissions.txt"

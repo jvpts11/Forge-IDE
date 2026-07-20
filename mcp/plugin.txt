@@ -1,0 +1,5 @@
+# Forge plugin manifest. Copying this directory (or cloning the repo) into
+# ~/.forge/plugins/ makes the MCP server a plugin like any other.
+title = Forge MCP
+version = 1.0.0
+description = drive Forge from an MCP client or AI agent; capabilities are user-controlled
