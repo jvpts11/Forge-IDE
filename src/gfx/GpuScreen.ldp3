@@ -1,6 +1,7 @@
 import gfx.Batch2D;
 import gfx.Font;
 import gfx.Overlay;
+import gfx.ImagePreview;
 import io.ThemeStore;
 import app.Controller;
 import app.Workbench;
@@ -2577,6 +2578,74 @@ public bundle forge {
                 else if (ov.mode == 10) {
                     this.drawChat(batch, wb, screenW, screenH);
                 }
+                else if (ov.mode == 11) {
+                    this.drawPreview(batch, wb, screenW, screenH);
+                }
+            }
+
+            // The render preview (mode 11): an image the program under development wrote, shown at its
+            // real aspect ratio. The batch carries ONE texture at a time, so the queued chrome is
+            // flushed, the image texture is bound for a draw of its own, and the atlas is restored --
+            // otherwise every glyph drawn afterwards would sample the image instead of the font.
+            private method drawPreview(Batch2D* batch, Workbench* wb, int screenW, int screenH)
+                    returns void {
+                int ch = this.font.lineHeight();
+                ImagePreview* pv = wb.renderPreview();
+                int bw = screenW - 160;
+                int bh = screenH - 140;
+                int bx = 80;
+                int by = 70;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.55);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+                mutable String title = "Render Preview";
+                if (pv.sourcePath().length() > 0) {
+                    title = title + "  --  " + pv.sourcePath();
+                }
+                this.font.drawText(batch, bx + 24, by + 20, title, this.theme.accent.r,
+                                   this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 24, by + bh - 26, "R refresh    O open image    Esc close",
+                                   this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
+                                   this.theme.textDim.a);
+                if (!pv.hasImage()) {
+                    mutable String msg = pv.statusLine();
+                    if (msg.length() == 0) {
+                        msg = "no image yet -- press O and give a path (.ppm, .png, .bmp)";
+                    }
+                    this.font.drawText(batch, bx + 24, by + 60, msg, this.theme.warning.r,
+                                       this.theme.warning.g, this.theme.warning.b, 1.0);
+                    return;
+                }
+                // Fit inside the card preserving aspect, and never upscale past the available box.
+                int availW = bw - 48;
+                int availH = bh - 110;
+                mutable int dw = pv.width();
+                mutable int dh = pv.height();
+                if (dw > availW) {
+                    dh = dh * availW / dw;
+                    dw = availW;
+                }
+                if (dh > availH) {
+                    dw = dw * availH / dh;
+                    dh = availH;
+                }
+                int ix = bx + (bw - dw) / 2;
+                int iy = by + 44 + (availH - dh) / 2;
+                int atlas = batch.currentTexture();
+                batch.flush();                       // everything queued so far draws with the atlas
+                batch.setTexture(pv.texture());
+                batch.image(ix, iy, dw, dh, 1.0);
+                batch.flush();                       // the image draws alone, with its own texture
+                batch.setTexture(atlas);             // restore, or the next glyphs sample the image
+                this.font.drawText(batch, bx + 24, by + bh - 26 - ch,
+                                   pv.width().toString() + " x " + pv.height().toString(),
+                                   this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
+                                   this.theme.textDim.a);
             }
 
             // The AI chat (mode 10): the conversation above, what you are typing below. Wide and tall,

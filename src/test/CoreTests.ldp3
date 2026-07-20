@@ -1,6 +1,7 @@
 ﻿import System.Collections.ArrayList;
 import System.Text.StringBuilder;
 import gfx.Overlay;
+import gfx.ImagePreview;
 import gfx.Color;
 import io.ThemeStore;
 import io.PluginStore;
@@ -774,8 +775,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 76, "cmd.count");
-                a.eqInt(cr.filter("").size(), 76, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 77, "cmd.count");
+                a.eqInt(cr.filter("").size(), 77, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 2, "cmd.filter-undo-count");  // + "Set Breakpoint Condition" (u-n-d-o subseq)
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -1103,6 +1104,16 @@ public bundle forge {
                 a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
                 trmTrim.absorb("TAIL");
                 a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- render preview: PPM header scanning, which has to skip comments and whitespace
+                // between fields (a header read wrong shows a garbled or empty image) ---
+                a.eqInt(ImagePreview.nextInt("P3 1084 681", 2), 1084, "ppm.width");
+                a.eqInt(ImagePreview.nextInt("P3 1084 681", ImagePreview.afterInt("P3 1084 681", 2)),
+                        681, "ppm.height");
+                a.eqInt(ImagePreview.nextInt("P3" + CoreTests.chr(10) + "# a comment" + CoreTests.chr(10) + "64 48", 2),
+                        64, "ppm.skips-comment");
+                a.eqInt(ImagePreview.nextInt("P3   " + CoreTests.chr(9) + "32", 2), 32, "ppm.skips-blanks");
+                a.eqInt(ImagePreview.nextInt("P3 abc", 2), 0 - 1, "ppm.no-number");
 
                 // --- AI chat: the request body is hand-built JSON, so escaping and the reply parse are
                 // where a quote or a newline in a prompt would otherwise corrupt the request ---

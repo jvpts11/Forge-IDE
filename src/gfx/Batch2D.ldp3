@@ -114,6 +114,26 @@ public bundle forge {
                 this.vert(x, y + h, 0.0, 0.0, r, g, b, a, 0.0);
             }
 
+            // Draw an image filling the given rectangle (texFlag 2 -> the texture supplies the colour).
+            // The caller flushes, swaps the bound texture, draws, flushes again and restores the atlas:
+            // the batch holds one texture at a time, so an image cannot share a draw call with glyphs.
+            public method image(int x, int y, int w, int h, float alpha) returns void {
+                this.ensure(54);
+                this.vert(x, y, 0.0, 0.0, 1.0, 1.0, 1.0, alpha, 2.0);
+                this.vert(x + w, y, 1.0, 0.0, 1.0, 1.0, 1.0, alpha, 2.0);
+                this.vert(x + w, y + h, 1.0, 1.0, 1.0, 1.0, 1.0, alpha, 2.0);
+                this.vert(x, y, 0.0, 0.0, 1.0, 1.0, 1.0, alpha, 2.0);
+                this.vert(x + w, y + h, 1.0, 1.0, 1.0, 1.0, 1.0, alpha, 2.0);
+                this.vert(x, y + h, 0.0, 1.0, 1.0, 1.0, 1.0, alpha, 2.0);
+            }
+            // Swap the bound texture mid-frame. Flush first, or the queued glyphs draw with this one.
+            public method setTexture(int texId) returns void {
+                this.tex = texId;
+            }
+            public method currentTexture() returns int {
+                return this.tex;
+            }
+
             // Upload the accumulated vertices and issue the single draw call.
             public method flush() returns void {
                 if (this.count == 0) {
@@ -137,8 +157,10 @@ public bundle forge {
             private static method vertSrc() returns String {
                 return "#version 330 core\nlayout(location=0) in vec2 aPos;\nlayout(location=1) in vec2 aUV;\nlayout(location=2) in vec4 aColor;\nlayout(location=3) in float aTex;\nuniform vec2 uScreen;\nout vec2 vUV;\nout vec4 vColor;\nout float vTex;\nvoid main(){\n  float x = aPos.x/uScreen.x*2.0-1.0;\n  float y = 1.0-aPos.y/uScreen.y*2.0;\n  gl_Position = vec4(x,y,0.0,1.0);\n  vUV=aUV; vColor=aColor; vTex=aTex;\n}\n";
             }
+            // texFlag: 0 solid colour, 1 glyph (the atlas supplies coverage in its alpha), 2 image (the
+            // texture supplies the colour itself -- a preview of what a program drew, not a glyph).
             private static method fragSrc() returns String {
-                return "#version 330 core\nin vec2 vUV;\nin vec4 vColor;\nin float vTex;\nuniform sampler2D uTex;\nout vec4 FragColor;\nvoid main(){\n  float cov = mix(1.0, texture(uTex,vUV).a, vTex);\n  FragColor = vec4(vColor.rgb, vColor.a*cov);\n}\n";
+                return "#version 330 core\nin vec2 vUV;\nin vec4 vColor;\nin float vTex;\nuniform sampler2D uTex;\nout vec4 FragColor;\nvoid main(){\n  if (vTex > 1.5) {\n    vec4 t = texture(uTex,vUV);\n    FragColor = vec4(t.rgb, t.a*vColor.a);\n  } else {\n    float cov = mix(1.0, texture(uTex,vUV).a, vTex);\n    FragColor = vec4(vColor.rgb, vColor.a*cov);\n  }\n}\n";
             }
         }
     }

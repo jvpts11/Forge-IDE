@@ -15,6 +15,7 @@ import app.OutputPanel;
 import app.Diagnostic;
 import app.Checker;
 import app.QuickFix;
+import gfx.ImagePreview;
 import app.AiChat;
 import app.ChatMessage;
 import app.Symbol;
@@ -71,6 +72,7 @@ public bundle forge {
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean fontDirty;      // set by the settings panel; the shell reloads the atlas
             private mutable AiChat* chat;           // the AI panel; its request is drained per frame
+            private mutable ImagePreview* preview;  // render preview: an image the program wrote
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
             private mutable boolean renderWs;        // view preference: draw a dot at each space (whitespace)
             private mutable ArrayList<NavLoc>* navBack;  // Alt+Left history of caret locations before a jump
@@ -117,6 +119,7 @@ public bundle forge {
                 this.treeDirty = false;
                 this.fontDirty = false;
                 this.chat = new AiChat() on heap;
+                this.preview = new ImagePreview() on heap;
                 this.showMinimap = this.settings.minimap;
                 this.renderWs = this.settings.whitespace;
                 this.navBack = new ArrayList<NavLoc>() on heap;
@@ -312,6 +315,9 @@ public bundle forge {
             }
             public method aiChat() returns AiChat* {
                 return this.chat;
+            }
+            public method renderPreview() returns ImagePreview* {
+                return this.preview;
             }
 
             // --- plugins ---

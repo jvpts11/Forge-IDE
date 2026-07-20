@@ -89,6 +89,7 @@ public bundle forge {
                                                       GuiApp.fileToOpenFor(ws));
                 wb.setProjectDir(treeRoot);
                 GuiApp.configureChecker(wb);
+                wb.renderPreview().attach(win.gl);   // the preview uploads textures; it needs a context
                 GuiApp.restoreSession(wb, treeRoot);
                 mutable FileTree* tree = new FileTree(treeRoot) on heap;
                 // No project yet? Show the welcome screen instead of an editor over the launch directory.
@@ -1271,6 +1272,7 @@ public bundle forge {
                                                       "src/gfx/GpuScreen.ldp3");
                 wb.setProjectDir(".");
                 GuiApp.configureChecker(wb);
+                wb.renderPreview().attach(win.gl);   // serve needs the context too
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
@@ -1406,6 +1408,13 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("unknown command");
                     }
+                } else if (cmd.equals("preview")) {
+                    // preview <path>: open the render preview on an image.
+                    wb.renderPreview().load(arg);
+                    ov.open(11);
+                    System.IO.Console.println("ok preview " + wb.renderPreview().statusLine()
+                                              + " " + wb.renderPreview().width().toString()
+                                              + "x" + wb.renderPreview().height().toString());
                 } else if (cmd.equals("chat")) {
                     // chat [text]: open the AI panel, optionally typing a line into it.
                     ov.open(10);
@@ -2371,6 +2380,16 @@ public bundle forge {
                         GuiApp.chatKey(ov, wb, vk, ctrl);
                         return;
                     }
+                    if (ov.mode == 11) {
+                        if (vk == 27) {
+                            ov.close();
+                        } else if (vk == 82) {              // R: re-read the image from disk
+                            wb.renderPreview().reload();
+                        } else if (vk == 79) {              // O: pick a different image
+                            ov.openPrompt("previewOpen", "image to preview (.ppm, .png, .bmp): ");
+                        }
+                        return;
+                    }
                     if (ov.mode == 2) {
                         GuiApp.findKey(ov, wb, vk, ctrl, shift, alt);
                         return;
@@ -2476,6 +2495,10 @@ public bundle forge {
                 }
                 if (id.equals("edit.find")) {
                     GuiApp.openFind(ov, wb);
+                    return true;
+                }
+                if (id.equals("view.preview")) {
+                    ov.open(11);
                     return true;
                 }
                 if (id.equals("ai.chat")) {
@@ -2906,6 +2929,10 @@ public bundle forge {
                     if (ov.query.length() > 0) {
                         wb.gitCommit(ov.query);
                     }
+                } else if (ov.promptKind.equals("previewOpen")) {
+                    wb.renderPreview().load(ov.query);
+                    ov.open(11);
+                    return;
                 } else if (ov.promptKind.equals("pluginInstall")) {
                     wb.installPlugin(ov.query);
                 } else if (ov.promptKind.equals("pluginUpdate")) {
