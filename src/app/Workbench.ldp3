@@ -16,6 +16,7 @@ import app.Diagnostic;
 import app.Checker;
 import app.QuickFix;
 import gfx.ImagePreview;
+import app.LspClient;
 import app.AiChat;
 import app.ChatMessage;
 import app.Symbol;
@@ -72,6 +73,8 @@ public bundle forge {
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
             private mutable boolean fontDirty;      // set by the settings panel; the shell reloads the atlas
             private mutable AiChat* chat;           // the AI panel; its request is drained per frame
+            private mutable LspClient* lsp;         // language server: types the textual path lacks
+            private mutable String pendingExtract;  // extract-method name, awaiting the server's answer
             private mutable ImagePreview* preview;  // render preview: an image the program wrote
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
             private mutable boolean renderWs;        // view preference: draw a dot at each space (whitespace)
@@ -119,6 +122,8 @@ public bundle forge {
                 this.treeDirty = false;
                 this.fontDirty = false;
                 this.chat = new AiChat() on heap;
+                this.lsp = new LspClient() on heap;
+                this.pendingExtract = "";
                 this.preview = new ImagePreview() on heap;
                 this.showMinimap = this.settings.minimap;
                 this.renderWs = this.settings.whitespace;
@@ -315,6 +320,73 @@ public bundle forge {
             }
             public method aiChat() returns AiChat* {
                 return this.chat;
+            }
+            public method language() returns LspClient* {
+                return this.lsp;
+            }
+
+            // --- extract method -----------------------------------------------------------------
+            // The signature depends on types, so the server decides it. Asking is asynchronous: this
+            // records the name and fires the request, and applyPendingExtract() finishes the job on a
+            // later frame when the answer lands.
+            public method beginExtractMethod(String name) returns void {
+                if (name.length() == 0 || !this.documents().hasActive()) {
+                    return;
+                }
+                if (!this.lsp.isRunning()) {
+                    this.out.banner("Extract Method",
+                                    "the language server is not running, and the signature cannot be "
+                                    + "worked out without it");
+                    return;
+                }
+                int[] rows = this.active().editor().selectedLineRange();
+                int first = rows[0];
+                int last = rows[1];
+                delete rows;
+                if (first < 0) {
+                    this.out.banner("Extract Method", "select the lines to extract first");
+                    return;
+                }
+                this.syncLanguageServer();
+                String path = this.documents().active().document().path();
+                this.pendingExtract = name;
+                this.lsp.askExtract("file:///" + path, first + 1, last + 1);   // server is 1-based
+                return;
+            }
+            // Called each frame: applies the extraction once the server has answered.
+            public method applyPendingExtract() returns void {
+                if (this.pendingExtract.length() == 0 || !this.lsp.extractIsReady()) {
+                    return;
+                }
+                String name = this.pendingExtract;
+                this.pendingExtract = "";
+                if (!this.lsp.extractSucceeded()) {
+                    this.out.banner("Extract Method", this.lsp.extractWhyNot());
+                    return;
+                }
+                boolean ok = this.active().editor().extractMethod(name, this.lsp.extractParamList(),
+                                                                  this.lsp.extractArgList(),
+                                                                  this.lsp.extractReturnType(),
+                                                                  this.lsp.extractReturnVar());
+                this.active().edited();
+                if (!ok) {
+                    this.out.banner("Extract Method", "the edit could not be applied");
+                }
+                return;
+            }
+            // Keep the server's copy of the active file current. Cheap when nothing is open, and the
+            // server only ever sees what is already on screen.
+            public method syncLanguageServer() returns void {
+                if (!this.lsp.isRunning() || !this.documents().hasActive()) {
+                    return;
+                }
+                String path = this.documents().active().document().path();
+                if (path.length() == 0) {
+                    return;
+                }
+                this.lsp.syncDocument("file:///" + path,
+                                      this.documents().active().editor().document().text());
+                return;
             }
             public method renderPreview() returns ImagePreview* {
                 return this.preview;

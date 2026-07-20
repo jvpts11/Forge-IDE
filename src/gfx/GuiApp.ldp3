@@ -90,6 +90,9 @@ public bundle forge {
                 wb.setProjectDir(treeRoot);
                 GuiApp.configureChecker(wb);
                 wb.renderPreview().attach(win.gl);   // the preview uploads textures; it needs a context
+                // The language server is optional: when it will not start, every feature that uses it
+                // falls back to Forge's own textual search rather than breaking.
+                wb.language().start(GuiApp.lspCommand());
                 GuiApp.restoreSession(wb, treeRoot);
                 mutable FileTree* tree = new FileTree(treeRoot) on heap;
                 // No project yet? Show the welcome screen instead of an editor over the launch directory.
@@ -419,6 +422,8 @@ public bundle forge {
                     // The change always arrives with a key or click, so this frame already counts as active
                     // and repaints -- no extra redraw flag needed.
                     wb.aiChat().pump();    // the AI request runs as a subprocess; drain it per frame
+                    wb.language().pump();  // same for the language server's replies
+                    wb.applyPendingExtract();   // finishes an extract once the server has answered
                     if (wb.takeFontDirty()) {
                         fontPx = wb.settings().fontSize;
                         screen.setFont(GuiApp.loadFont(win, fontPx, wb.settings().fontFamily));
@@ -1244,6 +1249,32 @@ public bundle forge {
                 }
                 return;
             }
+            // Where the language server lives: FORGE_LDP3 points at the ldp3 driver, and ldp3-lsp
+            // sits beside it in the same toolchain. Falls back to the PATH.
+            public static method lspCommand() returns String {
+                String tool = Env.get("FORGE_LDP3");
+                if (tool.length() == 0) {
+                    return "ldp3-lsp";
+                }
+                int cut = GuiApp.lastSlash(tool);
+                if (cut < 0) {
+                    return "ldp3-lsp";
+                }
+                return "\"" + tool.substring(0, cut) + "/ldp3-lsp.exe\"";
+            }
+            private static method lastSlash(String path) returns int {
+                mutable int cut = 0 - 1;
+                mutable int i = 0;
+                while (i < path.length()) {
+                    char c = path.charAt(i);
+                    if (c == '/' || c == cast<char>(92)) {   // 92 = backslash
+                        cut = i;
+                    }
+                    i = i + 1;
+                }
+                return cut;
+            }
+
             private static method restoreSession(Workbench* wb, String dir) returns void {
                 ArrayList<String>* sess = WorkspaceStore.loadSession(dir);
                 mutable int i = 0;
@@ -1273,6 +1304,7 @@ public bundle forge {
                 wb.setProjectDir(".");
                 GuiApp.configureChecker(wb);
                 wb.renderPreview().attach(win.gl);   // serve needs the context too
+                wb.language().start(GuiApp.lspCommand());   // serve needs it too
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
@@ -1408,6 +1440,19 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("unknown command");
                     }
+                } else if (cmd.equals("extractmethod")) {
+                    // extractmethod <name>: on the current selection; the answer applies a frame or
+                    // two later, so a test pumps before reading the buffer back.
+                    wb.beginExtractMethod(arg);
+                    System.IO.Console.println("ok extract requested");
+                } else if (cmd.equals("lsppump")) {
+                    mutable int n = 0;
+                    while (n < 40) {           // give the server time to answer, then apply
+                        wb.language().pump();
+                        wb.applyPendingExtract();
+                        n = n + 1;
+                    }
+                    System.IO.Console.println("ok pumped lsp=" + (wb.language().isRunning() ? "up" : "down"));
                 } else if (cmd.equals("preview")) {
                     // preview <path>: open the render preview on an image.
                     wb.renderPreview().load(arg);
@@ -2497,6 +2542,10 @@ public bundle forge {
                     GuiApp.openFind(ov, wb);
                     return true;
                 }
+                if (id.equals("refactor.extractMethod")) {
+                    ov.openPrompt("extractMethod", "new method name: ");
+                    return true;
+                }
                 if (id.equals("view.preview")) {
                     ov.open(11);
                     return true;
@@ -2929,6 +2978,8 @@ public bundle forge {
                     if (ov.query.length() > 0) {
                         wb.gitCommit(ov.query);
                     }
+                } else if (ov.promptKind.equals("extractMethod")) {
+                    wb.beginExtractMethod(ov.query);
                 } else if (ov.promptKind.equals("previewOpen")) {
                     wb.renderPreview().load(ov.query);
                     ov.open(11);

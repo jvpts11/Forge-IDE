@@ -654,6 +654,118 @@ public bundle forge {
                 return c;
             }
 
+            // The selected whole lines, as the range for the language server to analyse. Returns
+            // [firstRow, lastRow] 0-based; both -1 when there is no selection.
+            public method selectedLineRange() returns int[] {
+                int[] out = new int[2]();
+                out[0] = 0 - 1;
+                out[1] = 0 - 1;
+                if (!this.hasSelection()) {
+                    return out;
+                }
+                mutable int first = this.selRow;
+                mutable int last = this.row;
+                if (first > last) {
+                    first = this.row;
+                    last = this.selRow;
+                }
+                out[0] = first;
+                out[1] = last;
+                return out;
+            }
+            // Leading-whitespace width of a line.
+            public static method indentOf(String line) returns int {
+                mutable int i = 0;
+                while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
+                    i = i + 1;
+                }
+                return i;
+            }
+
+            // Replace the selected lines with a call and append the extracted method after the
+            // enclosing one, as a single undo step.
+            //
+            // The SIGNATURE is not decided here. `paramList` ("int w, int h"), `argList` ("w, h"),
+            // `returnType` and `returnVar` come from the language server, which parsed the file and
+            // therefore knows the types -- the thing an editor cannot work out from text, and the
+            // reason this refactor is only correct with a server behind it.
+            public method extractMethod(String name, String paramList, String argList,
+                                        String returnType, String returnVar) returns boolean {
+                if (this.buf.isReadOnly() || name.length() == 0 || !this.hasSelection()) {
+                    return false;
+                }
+                int[] rows = this.selectedLineRange();
+                int first = rows[0];
+                int last = rows[1];
+                delete rows;
+                if (first < 0 || last < first) {
+                    return false;
+                }
+                this.saveUndo();
+                String firstLine = this.buf.line(first);
+                int ind = Editor.indentOf(firstLine);
+                String indent = firstLine.substring(0, ind);
+
+                // Keep the selected text before removing it: it becomes the new method's body.
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int r = first;
+                while (r <= last) {
+                    body.add(this.buf.line(r));
+                    r = r + 1;
+                }
+                mutable int drop = last;
+                while (drop >= first) {
+                    this.buf.removeLine(drop);
+                    drop = drop - 1;
+                }
+                mutable String call = indent + "this." + name + "(" + argList + ");";
+                if (returnVar.length() > 0) {
+                    call = indent + returnType + " " + returnVar + " = this." + name
+                           + "(" + argList + ");";
+                }
+                this.buf.insertLine(first, call);
+
+                // The enclosing method ends at the first following line indented LESS than the
+                // selection -- that is its closing brace. The new method goes just after it.
+                mutable int at = first + 1;
+                mutable int endOfMethod = this.buf.lineCount();
+                mutable boolean searching = true;
+                while (at < this.buf.lineCount() && searching) {
+                    String ln = this.buf.line(at);
+                    if (ln.trim().length() > 0 && Editor.indentOf(ln) < ind) {
+                        endOfMethod = at + 1;
+                        searching = false;
+                    }
+                    at = at + 1;
+                }
+                mutable String outerIndent = indent;
+                if (indent.length() >= 4) {
+                    outerIndent = indent.substring(0, indent.length() - 4);
+                }
+                mutable int put = endOfMethod;
+                this.buf.insertLine(put, "");
+                put = put + 1;
+                this.buf.insertLine(put, outerIndent + "private method " + name + "(" + paramList
+                                         + ") returns " + returnType + " {");
+                put = put + 1;
+                mutable int b = 0;
+                while (b < body.size()) {
+                    this.buf.insertLine(put, body.get(b));
+                    put = put + 1;
+                    b = b + 1;
+                }
+                if (returnVar.length() > 0) {
+                    this.buf.insertLine(put, indent + "return " + returnVar + ";");
+                    put = put + 1;
+                }
+                this.buf.insertLine(put, outerIndent + "}");
+                delete body;
+                this.clearSelection();
+                this.row = first;
+                this.col = 0;
+                return true;
+            }
+
             // Extract the selected single-line expression into a new `var <name> = <expr>;` declaration on the
             // line above (at the same indent), replacing the selection with `<name>`. One undo step; the caret
             // lands on the new usage. Returns false unless there's a non-empty single-line selection.

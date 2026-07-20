@@ -1,0 +1,385 @@
+import System.Collections.ArrayList;
+import System.OS.Subprocess;
+import System.Json.Json;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // A language server client, over the same transport the debugger uses: a persistent
+        // subprocess speaking JSON-RPC framed with Content-Length, drained once per frame so the
+        // window never blocks waiting for an answer.
+        //
+        // What this buys over Forge's own textual search is resolution: the server parses the file,
+        // so go-to-definition lands on a DECLARATION rather than the next occurrence of the word,
+        // hover can state a real signature, and extract-method can compute a signature that
+        // compiles -- none of which text matching can do.
+        //
+        // Requests are correlated by id and their answers land in fields the caller reads next
+        // frame. When the server is not running, every accessor reports "nothing", and the caller
+        // falls back to the textual path rather than losing the feature.
+        public class LspClient {
+            private mutable Subprocess proc;
+            private mutable boolean running;
+            private mutable String inbuf;
+            private mutable int nextId;
+            private mutable String openUri;      // the document currently synced to the server
+            private mutable int version;
+
+            // Correlation: which request id is outstanding for each kind of answer.
+            private mutable int defId;
+            private mutable int hoverId;
+            private mutable int extractId;
+
+            // Latest answers, read by the UI on a later frame.
+            private mutable int defLine;         // -1 when there is no answer
+            private mutable int defCol;
+            private mutable String hoverText;
+            private mutable boolean extractReady;
+            private mutable boolean extractOk;
+            private mutable String extractReason;
+            private mutable String extractParams;
+            private mutable String extractArgs;
+            private mutable String extractReturn;
+            private mutable String extractReturnName;
+
+            public constructor LspClient() {
+                this.running = false;
+                this.inbuf = "";
+                this.nextId = 1;
+                this.openUri = "";
+                this.version = 1;
+                this.defId = 0;
+                this.hoverId = 0;
+                this.extractId = 0;
+                this.defLine = 0 - 1;
+                this.defCol = 0;
+                this.hoverText = "";
+                this.extractReady = false;
+                this.extractOk = false;
+                this.extractReason = "";
+                this.extractParams = "";
+                this.extractArgs = "";
+                this.extractReturn = "void";
+                this.extractReturnName = "";
+            }
+
+            public method isRunning() returns boolean {
+                if (!this.running) {
+                    return false;
+                }
+                return this.proc.isAlive();
+            }
+
+            // Start the server and initialize it. False when it could not be launched, which leaves
+            // every feature on its textual fallback rather than broken.
+            public method start(String command) returns boolean {
+                this.proc = Subprocess.start(command);
+                this.running = this.proc.isValid();
+                if (!this.running) {
+                    return false;
+                }
+                Json init = Json.object();
+                init.put("processId", Json.ofNull());
+                init.put("rootUri", Json.ofNull());
+                init.put("capabilities", Json.object());
+                this.request("initialize", init);
+                this.notify("initialized", Json.object());
+                return true;
+            }
+
+            public method stop() returns void {
+                if (!this.running) {
+                    return;
+                }
+                this.notify("exit", Json.object());
+                this.proc.close();
+                this.running = false;
+                return;
+            }
+
+            // --- outgoing ---------------------------------------------------------------------
+
+            private method frame(String payload) returns void {
+                if (!this.running) {
+                    return;
+                }
+                mutable String out = "Content-Length: ";
+                out = out + payload.length().toString();
+                out = out + "\r\n\r\n";
+                out = out + payload;
+                this.proc.write(out);
+                return;
+            }
+            private method request(String rpcName, Json params) returns int {
+                int id = this.nextId;
+                this.nextId = this.nextId + 1;
+                Json msg = Json.object();
+                msg.put("jsonrpc", Json.ofStr("2.0"));
+                msg.put("id", Json.ofNum(cast<long>(id)));
+                msg.put("method", Json.ofStr(rpcName));
+                msg.put("params", params);
+                this.frame(msg.toString());
+                return id;
+            }
+            private method notify(String rpcName, Json params) returns void {
+                Json msg = Json.object();
+                msg.put("jsonrpc", Json.ofStr("2.0"));
+                msg.put("method", Json.ofStr(rpcName));
+                msg.put("params", params);
+                this.frame(msg.toString());
+                return;
+            }
+
+            // Keep the server's copy of the file in step. Full sync: the whole text each time, which
+            // is what the server advertises and what keeps this simple.
+            public method syncDocument(String uri, String text) returns void {
+                if (!this.running) {
+                    return;
+                }
+                Json doc = Json.object();
+                doc.put("uri", Json.ofStr(uri));
+                Json params = Json.object();
+                if (!this.openUri.equals(uri)) {
+                    doc.put("languageId", Json.ofStr("ldp3"));
+                    doc.put("version", Json.ofNum(cast<long>(this.version)));
+                    doc.put("text", Json.ofStr(text));
+                    params.put("textDocument", doc);
+                    this.notify("textDocument/didOpen", params);
+                    this.openUri = uri;
+                    return;
+                }
+                this.version = this.version + 1;
+                doc.put("version", Json.ofNum(cast<long>(this.version)));
+                Json change = Json.object();
+                change.put("text", Json.ofStr(text));
+                Json changes = Json.array();
+                changes.add(change);
+                params.put("textDocument", doc);
+                params.put("contentChanges", changes);
+                this.notify("textDocument/didChange", params);
+                return;
+            }
+
+            private method positionParams(String uri, int line, int col) returns Json {
+                Json doc = Json.object();
+                doc.put("uri", Json.ofStr(uri));
+                Json pos = Json.object();
+                pos.put("line", Json.ofNum(cast<long>(line)));
+                pos.put("character", Json.ofNum(cast<long>(col)));
+                Json params = Json.object();
+                params.put("textDocument", doc);
+                params.put("position", pos);
+                return params;
+            }
+
+            // Ask where the name at (line, col) is declared. The answer arrives on a later frame;
+            // read it with definitionLine()/definitionCol().
+            public method askDefinition(String uri, int line, int col) returns void {
+                if (!this.running) {
+                    return;
+                }
+                this.defLine = 0 - 1;
+                this.defId = this.request("textDocument/definition",
+                                          this.positionParams(uri, line, col));
+                return;
+            }
+            public method askHover(String uri, int line, int col) returns void {
+                if (!this.running) {
+                    return;
+                }
+                this.hoverText = "";
+                this.hoverId = this.request("textDocument/hover", this.positionParams(uri, line, col));
+                return;
+            }
+            // Ask what signature extracting [startLine, endLine] would need. Lines are 1-based here,
+            // matching the editor's own numbering.
+            public method askExtract(String uri, int startLine, int endLine) returns void {
+                if (!this.running) {
+                    return;
+                }
+                this.extractReady = false;
+                Json doc = Json.object();
+                doc.put("uri", Json.ofStr(uri));
+                Json params = Json.object();
+                params.put("textDocument", doc);
+                params.put("startLine", Json.ofNum(cast<long>(startLine)));
+                params.put("endLine", Json.ofNum(cast<long>(endLine)));
+                this.extractId = this.request("ldp3/extractMethod", params);
+                return;
+            }
+
+            // --- answers ----------------------------------------------------------------------
+
+            public method definitionLine() returns int {
+                return this.defLine;
+            }
+            public method definitionCol() returns int {
+                return this.defCol;
+            }
+            public method hoverInfo() returns String {
+                return this.hoverText;
+            }
+            public method extractIsReady() returns boolean {
+                return this.extractReady;
+            }
+            public method extractSucceeded() returns boolean {
+                return this.extractOk;
+            }
+            public method extractWhyNot() returns String {
+                return this.extractReason;
+            }
+            public method extractParamList() returns String {
+                return this.extractParams;
+            }
+            public method extractArgList() returns String {
+                return this.extractArgs;
+            }
+            public method extractReturnType() returns String {
+                return this.extractReturn;
+            }
+            public method extractReturnVar() returns String {
+                return this.extractReturnName;
+            }
+
+            // --- incoming ---------------------------------------------------------------------
+
+            // Drain the pipe and dispatch every complete message. Called once per frame.
+            public method pump() returns void {
+                if (!this.running) {
+                    return;
+                }
+                while (this.proc.canRead()) {
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        break;
+                    }
+                    this.inbuf = this.inbuf + chunk;
+                }
+                mutable boolean more = true;
+                while (more) {
+                    int sep = this.inbuf.indexOf("\r\n\r\n");
+                    if (sep < 0) {
+                        more = false;
+                    } else {
+                        String header = this.inbuf.substring(0, sep);
+                        int len = LspClient.contentLength(header);
+                        int bodyStart = sep + 4;
+                        if (len < 0) {
+                            this.inbuf = this.inbuf.substring(bodyStart, this.inbuf.length());
+                        } else if (this.inbuf.length() < bodyStart + len) {
+                            more = false;                   // body has not fully arrived
+                        } else {
+                            String body = this.inbuf.substring(bodyStart, bodyStart + len);
+                            this.inbuf = this.inbuf.substring(bodyStart + len, this.inbuf.length());
+                            this.dispatch(Json.parse(body));
+                        }
+                    }
+                }
+                return;
+            }
+
+            // Route one reply to the field its requester will read.
+            private method dispatch(Json msg) returns void {
+                nullable Json idNode = msg.field("id");
+                if (idNode == null) {
+                    return;                                  // a notification: diagnostics, logs
+                }
+                int id = cast<int>(idNode.asNum());
+                nullable Json result = msg.field("result");
+                if (id == this.defId) {
+                    if (result != null) {
+                        nullable Json range = result.field("range");
+                        if (range != null) {
+                            nullable Json start = range.field("start");
+                            if (start != null) {
+                                this.defLine = cast<int>(start.field("line").asNum());
+                                this.defCol = cast<int>(start.field("character").asNum());
+                            }
+                        }
+                    }
+                    return;
+                }
+                if (id == this.hoverId) {
+                    if (result != null) {
+                        nullable Json contents = result.field("contents");
+                        if (contents != null) {
+                            this.hoverText = LspClient.stripFence(contents.field("value").asStr());
+                        }
+                    }
+                    return;
+                }
+                if (id == this.extractId) {
+                    this.extractReady = true;
+                    this.extractOk = false;
+                    if (result != null) {
+                        this.extractOk = result.field("ok").asBool();
+                        if (this.extractOk) {
+                            this.extractParams = result.field("paramList").asStr();
+                            this.extractArgs = result.field("argList").asStr();
+                            this.extractReturn = result.field("returnType").asStr();
+                            this.extractReturnName = result.field("returnName").asStr();
+                        } else {
+                            this.extractReason = result.field("reason").asStr();
+                        }
+                    } else {
+                        this.extractReason = "the language server gave no answer";
+                    }
+                    return;
+                }
+                return;
+            }
+
+            // Hover comes back as fenced markdown; the panel shows one line, so drop the fences.
+            public static method stripFence(String s) returns String {
+                mutable String out = "";
+                ArrayList<String> lines = Strings.split(s, "\n");
+                mutable int i = 0;
+                while (i < lines.size()) {
+                    String ln = lines.get(i).trim();
+                    i = i + 1;
+                    if (ln.length() == 0 || ln.startsWith("```")) {
+                        continue;
+                    }
+                    if (out.length() > 0) {
+                        out = out + " ";
+                    }
+                    out = out + ln;
+                }
+                return out;
+            }
+
+            // The Content-Length value in a header block, or -1 when it is not there.
+            public static method contentLength(String header) returns int {
+                int at = header.indexOf("Content-Length:");
+                if (at < 0) {
+                    return 0 - 1;
+                }
+                mutable int i = at + 15;
+                while (i < header.length() && header.charAt(i) == ' ') {
+                    i = i + 1;
+                }
+                mutable int n = 0;
+                mutable boolean any = false;
+                mutable boolean going = true;
+                while (i < header.length() && going) {
+                    char c = header.charAt(i);
+                    if (c < '0' || c > '9') {
+                        going = false;
+                    } else {
+                        n = n * 10 + (cast<int>(c) - cast<int>('0'));
+                        any = true;
+                        i = i + 1;
+                    }
+                }
+                if (!any) {
+                    return 0 - 1;
+                }
+                return n;
+            }
+        }
+    }
+}

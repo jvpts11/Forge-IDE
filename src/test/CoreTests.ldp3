@@ -5,6 +5,7 @@ import gfx.ImagePreview;
 import gfx.Color;
 import io.ThemeStore;
 import io.PluginStore;
+import app.LspClient;
 import app.AiChat;
 import app.Terminal;
 import app.TermGrid;
@@ -775,8 +776,8 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 77, "cmd.count");
-                a.eqInt(cr.filter("").size(), 77, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 78, "cmd.count");
+                a.eqInt(cr.filter("").size(), 78, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 2, "cmd.filter-undo-count");  // + "Set Breakpoint Condition" (u-n-d-o subseq)
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
@@ -1104,6 +1105,17 @@ public bundle forge {
                 a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
                 trmTrim.absorb("TAIL");
                 a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- language server client: the Content-Length framing and the fenced-markdown
+                // hover text, both of which sit between the server and the UI ---
+                a.eqInt(LspClient.contentLength("Content-Length: 42"), 42, "lsp.len");
+                a.eqInt(LspClient.contentLength("Content-Type: x" + CoreTests.chr(13) + CoreTests.chr(10)
+                                                + "Content-Length: 7"), 7, "lsp.len-second-header");
+                a.eqInt(LspClient.contentLength("Content-Length:9"), 9, "lsp.len-no-space");
+                a.eqInt(LspClient.contentLength("nothing here"), 0 - 1, "lsp.len-absent");
+                a.eqStr(LspClient.stripFence("```ldp3" + CoreTests.chr(10) + "public method f() returns int"
+                                             + CoreTests.chr(10) + "```"),
+                        "public method f() returns int", "lsp.hover-unfenced");
 
                 // --- render preview: PPM header scanning, which has to skip comments and whitespace
                 // between fields (a header read wrong shows a garbled or empty image) ---
