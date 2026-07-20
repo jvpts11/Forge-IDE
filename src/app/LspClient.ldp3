@@ -37,7 +37,10 @@ public bundle forge {
             // Latest answers, read by the UI on a later frame.
             private mutable int defLine;         // -1 when there is no answer
             private mutable int defCol;
+            private mutable String defUri;       // the file the definition lives in (may be another file)
+            private mutable boolean defReady;    // an answer has landed (even if it was "not found")
             private mutable String hoverText;
+            private mutable boolean hoverReady;    // an answer has landed, even if it was empty
             private mutable boolean extractReady;
             private mutable boolean extractOk;
             private mutable String extractReason;
@@ -57,7 +60,10 @@ public bundle forge {
                 this.extractId = 0;
                 this.defLine = 0 - 1;
                 this.defCol = 0;
+                this.defUri = "";
+                this.defReady = false;
                 this.hoverText = "";
+                this.hoverReady = false;
                 this.extractReady = false;
                 this.extractOk = false;
                 this.extractReason = "";
@@ -76,7 +82,11 @@ public bundle forge {
 
             // Start the server and initialize it. False when it could not be launched, which leaves
             // every feature on its textual fallback rather than broken.
-            public method start(String command) returns boolean {
+            //
+            // `root` is the project directory. It matters: the server indexes the workspace from it,
+            // and without one it can only answer about the buffer currently open -- so a name declared
+            // in a file the editor has not opened would resolve to nothing.
+            public method start(String command, String root) returns boolean {
                 this.proc = Subprocess.start(command);
                 this.running = this.proc.isValid();
                 if (!this.running) {
@@ -84,7 +94,11 @@ public bundle forge {
                 }
                 Json init = Json.object();
                 init.put("processId", Json.ofNull());
-                init.put("rootUri", Json.ofNull());
+                if (root.length() == 0) {
+                    init.put("rootUri", Json.ofNull());
+                } else {
+                    init.put("rootUri", Json.ofStr("file:///" + root));
+                }
                 init.put("capabilities", Json.object());
                 this.request("initialize", init);
                 this.notify("initialized", Json.object());
@@ -177,12 +191,14 @@ public bundle forge {
             }
 
             // Ask where the name at (line, col) is declared. The answer arrives on a later frame;
-            // read it with definitionLine()/definitionCol().
+            // read it with definitionReady()/definitionUri()/definitionLine()/definitionCol().
             public method askDefinition(String uri, int line, int col) returns void {
                 if (!this.running) {
                     return;
                 }
                 this.defLine = 0 - 1;
+                this.defUri = "";
+                this.defReady = false;
                 this.defId = this.request("textDocument/definition",
                                           this.positionParams(uri, line, col));
                 return;
@@ -192,6 +208,7 @@ public bundle forge {
                     return;
                 }
                 this.hoverText = "";
+                this.hoverReady = false;
                 this.hoverId = this.request("textDocument/hover", this.positionParams(uri, line, col));
                 return;
             }
@@ -220,8 +237,23 @@ public bundle forge {
             public method definitionCol() returns int {
                 return this.defCol;
             }
+            // The file the definition lives in ("" when the server named none). May differ from the
+            // file the request came from -- that is the whole point of asking the server.
+            public method definitionUri() returns String {
+                return this.defUri;
+            }
+            // Whether the server has answered the last definition request. defLine stays -1 when it
+            // resolved nothing, so the caller can fall back to its own search.
+            public method definitionIsReady() returns boolean {
+                return this.defReady;
+            }
             public method hoverInfo() returns String {
                 return this.hoverText;
+            }
+            // Whether the server has answered the last hover request. Distinguishes "no answer yet"
+            // from "answered, and there is nothing to say" -- only the second should fall back.
+            public method hoverIsReady() returns boolean {
+                return this.hoverReady;
             }
             public method extractIsReady() returns boolean {
                 return this.extractReady;
@@ -291,7 +323,12 @@ public bundle forge {
                 int id = cast<int>(idNode.asNum());
                 nullable Json result = msg.field("result");
                 if (id == this.defId) {
+                    this.defReady = true;
                     if (result != null) {
+                        nullable Json uriNode = result.field("uri");
+                        if (uriNode != null) {
+                            this.defUri = uriNode.asStr();
+                        }
                         nullable Json range = result.field("range");
                         if (range != null) {
                             nullable Json start = range.field("start");
@@ -304,6 +341,7 @@ public bundle forge {
                     return;
                 }
                 if (id == this.hoverId) {
+                    this.hoverReady = true;
                     if (result != null) {
                         nullable Json contents = result.field("contents");
                         if (contents != null) {

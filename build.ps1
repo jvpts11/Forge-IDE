@@ -108,6 +108,10 @@ try {
     }
 
     Write-Host "== self-test =="
+    # Point the self-test at the language server that sits next to the driver, so its live LSP
+    # round-trip actually runs (it skips when this is unset). ldp3-lsp.exe is built beside ldp3.exe.
+    $lspExe = Join-Path (Split-Path $Ldp3 -Parent) "ldp3-lsp.exe"
+    if (Test-Path $lspExe) { $env:FORGE_LSP = (Resolve-Path $lspExe).Path }
     & (Join-Path $here "build-output\Forge.exe") test
     if ($LASTEXITCODE -ne 0) { throw "Forge exited $LASTEXITCODE" }
 } finally {

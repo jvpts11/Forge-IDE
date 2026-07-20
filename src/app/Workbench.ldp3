@@ -374,6 +374,30 @@ public bundle forge {
                 }
                 return;
             }
+            // --- hover ---------------------------------------------------------------------------
+            // Ask the server what the identifier under the caret is. The answer lands on a later
+            // frame; read it with hoverAtCaret().
+            public method askHoverAtCaret() returns void {
+                if (!this.lsp.isRunning() || !this.documents().hasActive()) {
+                    return;
+                }
+                this.syncLanguageServer();
+                String path = this.documents().active().document().path();
+                this.lsp.askHover("file:///" + path, this.active().editor().cursorRow(),
+                                  this.active().editor().cursorCol());
+                return;
+            }
+            // The best hover available right now. The server states a full typed signature, which
+            // Forge's own lookup cannot; when it has not answered -- or has nothing to say about this
+            // name -- fall back to the declaration line rather than showing an empty box.
+            public method hoverAtCaret() returns String {
+                if (this.lsp.hoverIsReady() && this.lsp.hoverInfo().length() > 0) {
+                    return this.lsp.hoverInfo();
+                }
+                return this.active().hoverInfo(this.active().editor().cursorRow(),
+                                               this.active().editor().cursorCol());
+            }
+
             // Keep the server's copy of the active file current. Cheap when nothing is open, and the
             // server only ever sees what is already on screen.
             public method syncLanguageServer() returns void {

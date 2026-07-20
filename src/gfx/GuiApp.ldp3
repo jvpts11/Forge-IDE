@@ -26,6 +26,8 @@ import System.IO.Console;
 import System.IO.File;
 import System.IO.Paths;
 import System.Text.StringBuilder;
+import System.Text.Strings;
+import System.Time.Stopwatch;
 import System.Memory;
 import System.OS.Env;
 
@@ -92,7 +94,7 @@ public bundle forge {
                 wb.renderPreview().attach(win.gl);   // the preview uploads textures; it needs a context
                 // The language server is optional: when it will not start, every feature that uses it
                 // falls back to Forge's own textual search rather than breaking.
-                wb.language().start(GuiApp.lspCommand());
+                wb.language().start(GuiApp.lspCommand(), treeRoot);
                 GuiApp.restoreSession(wb, treeRoot);
                 mutable FileTree* tree = new FileTree(treeRoot) on heap;
                 // No project yet? Show the welcome screen instead of an editor over the launch directory.
@@ -1304,7 +1306,7 @@ public bundle forge {
                 wb.setProjectDir(".");
                 GuiApp.configureChecker(wb);
                 wb.renderPreview().attach(win.gl);   // serve needs the context too
-                wb.language().start(GuiApp.lspCommand());   // serve needs it too
+                wb.language().start(GuiApp.lspCommand(), ".");   // serve needs it too
                 FileTree* tree = new FileTree("src") on heap;
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
@@ -1446,12 +1448,14 @@ public bundle forge {
                     wb.beginExtractMethod(arg);
                     System.IO.Console.println("ok extract requested");
                 } else if (cmd.equals("lsppump")) {
-                    mutable int n = 0;
-                    while (n < 40) {           // give the server time to answer, then apply
+                    // Wall-clock bounded, not iteration bounded: a tight spin laps the server before
+                    // it answers. Real frames pace this in the GUI; a one-shot command must wait.
+                    Stopwatch* psw = Stopwatch.startNew();
+                    while (psw.elapsedMillis() < 3000) {
                         wb.language().pump();
                         wb.applyPendingExtract();
-                        n = n + 1;
                     }
+                    delete psw;
                     System.IO.Console.println("ok pumped lsp=" + (wb.language().isRunning() ? "up" : "down"));
                 } else if (cmd.equals("preview")) {
                     // preview <path>: open the render preview on an image.
@@ -1636,6 +1640,16 @@ public bundle forge {
                     GuiApp.runGoToLine(ov, wb);
                     ov.close();
                     System.IO.Console.println("ok ln=" + (wb.active().editor().cursorRow() + 1).toString());
+                } else if (cmd.equals("caret")) {
+                    // "caret <row> <col>", both 1-based. Positional features (hover, definition) are
+                    // only testable headlessly if the caret can be put somewhere exact.
+                    ArrayList<String>* parts = Strings.split(arg, " ");
+                    if (parts.size() >= 2) {
+                        wb.active().placeCaret(parts.get(0).toInt() - 1, parts.get(1).toInt() - 1);
+                    }
+                    delete parts;
+                    System.IO.Console.println("ok " + (wb.active().editor().cursorRow() + 1).toString()
+                                              + ":" + (wb.active().editor().cursorCol() + 1).toString());
                 } else if (cmd.equals("welcomeshot")) {
                     GuiApp.drawWelcomeFrame(win, batch, screen, WorkspaceStore.loadRecent());
                     Wgl.glFinish();
@@ -1658,9 +1672,17 @@ public bundle forge {
                     WorkspaceStore.addRecent(arg);
                     System.IO.Console.println("ok last=" + WorkspaceStore.lastProject());
                 } else if (cmd.equals("hoverat")) {
-                    Controller* hc = wb.active();
-                    String info = hc.hoverInfo(hc.editor().cursorRow(), hc.editor().cursorCol());
-                    System.IO.Console.println("hover: " + info);
+                    // The window drains the server once per frame, giving it real time between reads;
+                    // a one-shot command has no frames, so wait on the clock rather than a spin count
+                    // (a tight loop laps the server before it has parsed the file). Bounded, so a
+                    // server that never replies degrades to the textual fallback instead of hanging.
+                    wb.askHoverAtCaret();
+                    Stopwatch* hsw = Stopwatch.startNew();
+                    while (hsw.elapsedMillis() < 3000 && !wb.language().hoverIsReady()) {
+                        wb.language().pump();
+                    }
+                    delete hsw;
+                    System.IO.Console.println("hover: " + wb.hoverAtCaret());
                 } else if (cmd.equals("refs")) {
                     int n = wb.findReferencesAcross(tree.allFiles());
                     System.IO.Console.println("ok " + n.toString() + " references");
@@ -2819,6 +2841,13 @@ public bundle forge {
             // the definition can live in another file. Records nothing here -- the per-frame nav tracker captures
             // the jump for Alt+Left. Returns true if it jumped.
             private static method gotoDef(Workbench* wb, FileTree* tree) returns boolean {
+                // Prefer the language server: it resolves the name to a real declaration -- in another
+                // file if that is where it lives -- whereas the textual scan below can only match the
+                // next place the word appears. Fall back to textual when the server is off or found
+                // nothing.
+                if (GuiApp.gotoDefViaServer(wb)) {
+                    return true;
+                }
                 if (wb.active().goToDefinition()) {
                     return true;
                 }
@@ -2843,6 +2872,44 @@ public bundle forge {
                 }
                 // Not in the project -- try the bundled stdlib reference (System.IO.Console, ArrayList, ...).
                 return GuiApp.gotoStdlibDef(wb, w);
+            }
+
+            // Ask the language server where the identifier under the caret is declared, and jump there --
+            // opening another file first if the declaration lives in one. Waits on the clock for the
+            // reply (the server is local and fast); returns false when the server is off or resolved
+            // nothing, so the caller can fall back to its textual search.
+            private static method gotoDefViaServer(Workbench* wb) returns boolean {
+                LspClient* lsp = wb.language();
+                if (!lsp.isRunning() || !wb.documents().hasActive()) {
+                    return false;
+                }
+                wb.syncLanguageServer();
+                lsp.askDefinition("file:///" + wb.activePath(),
+                                  wb.active().editor().cursorRow(), wb.active().editor().cursorCol());
+                Stopwatch* sw = Stopwatch.startNew();
+                while (sw.elapsedMillis() < 3000 && !lsp.definitionIsReady()) {
+                    lsp.pump();
+                }
+                delete sw;
+                if (!lsp.definitionIsReady() || lsp.definitionLine() < 0) {
+                    return false;
+                }
+                String target = GuiApp.uriToPath(lsp.definitionUri());
+                if (target.length() > 0 && !target.equals(wb.activePath())) {
+                    wb.openFile(target);
+                }
+                wb.active().placeCaret(lsp.definitionLine(), lsp.definitionCol());
+                return true;
+            }
+            // Strip the file:// scheme from an LSP document URI, leaving a path the editor can open.
+            private static method uriToPath(String uri) returns String {
+                if (uri.startsWith("file:///")) {
+                    return uri.substring(8, uri.length());
+                }
+                if (uri.startsWith("file://")) {
+                    return uri.substring(7, uri.length());
+                }
+                return uri;
             }
 
             // Rebuild the project-wide symbol index feeding autocomplete: every class/method/enum name across

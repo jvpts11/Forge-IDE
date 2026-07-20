@@ -19,10 +19,12 @@ import syntax.Highlighter;
 import io.Document;
 import io.FileTree;
 import io.FileNode;
+import System.IO.Console;
 import System.IO.File;
 import System.IO.Files;
 import System.IO.Paths;
 import System.OS.Env;
+import System.Time.Stopwatch;
 import view.Viewport;
 import view.TextRenderer;
 import view.ScreenRenderer;
@@ -54,7 +56,7 @@ public bundle forge {
         // number of failed checks (0 == all green), so the entry point can report and exit accordingly.
         public class CoreTests {
             public static method run() returns int {
-                Asserts a = new Asserts() on heap;
+                Asserts* a = new Asserts() on heap;
 
                 // --- TextBuffer edits ---
                 TextBuffer buf = new TextBuffer() on heap;
@@ -1117,6 +1119,12 @@ public bundle forge {
                                              + CoreTests.chr(10) + "```"),
                         "public method f() returns int", "lsp.hover-unfenced");
 
+                // --- language server round-trip: start the real ldp3-lsp, open a buffer, and hover a
+                // call, exercising start/syncDocument/askHover/pump/hoverInfo end to end. Needs the LSP
+                // binary; build.ps1 points FORGE_LSP at it. When it is absent (a checkout without the
+                // toolchain), the round-trip is skipped rather than failed -- the framing above still runs.
+                CoreTests.checkLiveHover(a);
+
                 // --- render preview: PPM header scanning, which has to skip comments and whitespace
                 // between fields (a header read wrong shows a garbled or empty image) ---
                 a.eqInt(ImagePreview.nextInt("P3 1084 681", 2), 1084, "ppm.width");
@@ -1185,12 +1193,72 @@ public bundle forge {
                 a.eqStr(Workbench.testNameOf("@Test"), "", "tests.name-annotation");
 
                 a.summary("editor tests");
-                return a.failCount();
+                int failures = a.failCount();
+                delete a;
+                return failures;
             }
 
             // ESC followed by `rest` -- the escape byte cannot be written as a literal in source.
             private static method esc(String rest) returns String {
                 return CoreTests.chr(27) + rest;
+            }
+
+            // Drive the real language server through the LspClient the window uses: start it, sync a
+            // small buffer, hover the call to addTwo, and read the answer back. This is the one check
+            // that proves the whole client path -- framing, id correlation, and reply routing -- against
+            // a live server, not just the pure helpers above. Skipped (no checks emitted) when the LSP
+            // binary is not on hand, so a source-only checkout stays green.
+            private static method checkLiveHover(Asserts* a) returns void {
+                String lsp = Env.get("FORGE_LSP");
+                if (lsp.length() == 0) {
+                    return;
+                }
+                String nl = CoreTests.chr(10);
+                String src = "program P;" + nl
+                    + "public bundle main {" + nl
+                    + "    public namespace app {" + nl
+                    + "        public class C {" + nl
+                    + "            public method addTwo(int a, int b) returns int {" + nl
+                    + "                return a + b;" + nl
+                    + "            }" + nl
+                    + "            public method use() returns int {" + nl
+                    + "                return this.addTwo(1, 2);" + nl
+                    + "            }" + nl
+                    + "        }" + nl
+                    + "    }" + nl
+                    + "}" + nl;
+                LspClient* client = new LspClient() on heap;
+                boolean up = client.start("\"" + lsp + "\"", "");
+                if (up) {
+                    String uri = "file:///probe.ldp3";
+                    client.syncDocument(uri, src);
+                    // Line 8 (0-based) is `                return this.addTwo(1, 2);`; column 30 sits
+                    // inside addTwo, whose declaration is line 4 in the same buffer.
+                    client.askHover(uri, 8, 30);
+                    Stopwatch* sw = Stopwatch.startNew();
+                    while (sw.elapsedMillis() < 5000 && !client.hoverIsReady()) {
+                        client.pump();
+                    }
+                    delete sw;
+                    a.eqBool(client.hoverIsReady(), true, "lsp.live-hover-answered");
+                    a.eqBool(client.hoverInfo().indexOf("addTwo") >= 0, true, "lsp.live-hover-names-method");
+                    a.eqBool(client.hoverInfo().indexOf("returns int") >= 0, true, "lsp.live-hover-has-return");
+
+                    // Same buffer, same call site: definition must resolve to addTwo's declaration on
+                    // line 4 (0-based) and name the file it lives in -- the fields F12 reads back.
+                    client.askDefinition(uri, 8, 30);
+                    Stopwatch* dsw = Stopwatch.startNew();
+                    while (dsw.elapsedMillis() < 5000 && !client.definitionIsReady()) {
+                        client.pump();
+                    }
+                    delete dsw;
+                    a.eqBool(client.definitionIsReady(), true, "lsp.live-def-answered");
+                    a.eqInt(client.definitionLine(), 4, "lsp.live-def-line");
+                    a.eqBool(client.definitionUri().indexOf("probe.ldp3") >= 0, true, "lsp.live-def-uri");
+                    client.stop();
+                }
+                delete client;
+                return;
             }
             private static method chr(int code) returns String {
                 StringBuilder sb = new StringBuilder() on heap;
