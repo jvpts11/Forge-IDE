@@ -36,7 +36,9 @@ What works today (see [`docs/DESIGN.md`](docs/DESIGN.md) for the module map):
 - **Git** — status with gutter change bars, commit, push, branch list + checkout, and a
   side-by-side / unified diff view.
 - **Build / run / terminal** — build (diagnostics become a navigable Problems list), run,
-  run-tests, and multiple **integrated terminals** (cmd or PowerShell, renamable tabs).
+  run-tests, and multiple **integrated terminals** (cmd or PowerShell, renamable tabs). Each
+  runs its shell behind a real pseudo-console (ConPTY), so colours, cursor movement, history
+  and tab-completion work as they do in a real console.
 - **Debugger** — a Debug Adapter Protocol client with gutter breakpoints, step over/in/out,
   call stack and variables. `ldp3 build --debug` emits DWARF and the client drives `lldb-dap`;
   source-line breakpoints bind and locals are shown (verified end to end). It needs `lldb-dap`

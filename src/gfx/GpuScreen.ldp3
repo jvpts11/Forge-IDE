@@ -7,6 +7,8 @@ import app.Debugger;
 import app.DebugFrame;
 import app.DebugVar;
 import app.Terminal;
+import app.TermGrid;
+import app.TermLine;
 import app.DocumentManager;
 import app.Command;
 import app.CommandRegistry;
@@ -1173,42 +1175,67 @@ public bundle forge {
                 boolean cmdHv = my >= oy && my < oy + headerH && mx >= cmdX && mx < cmdX + 7 * cw;
                 this.font.drawText(batch, cmdX, oy + 4, "+ cmd", this.theme.accent.r, this.theme.accent.g,
                                    this.theme.accent.b, cmdHv ? 1.0 : 0.72);
-                // Rows for output: everything below the header, leaving the last row for the input line.
+                // Rows for output: everything below the header. There is no separate input line -- the
+                // shell echoes what you type back through the pseudo-console, so what you are typing is
+                // already in the grid, at the shell's own cursor, exactly as in a real console.
                 int bodyTop = oy + headerH;
                 int rows = (ph - headerH) / ch;
                 if (rows < 2) {
                     return;
                 }
-                int outRows = rows - 1;
-                ArrayList<String>* sb = term.scrollback();
-                // Build the visible list = scrollback tail + the partial line, then show a window of outRows
-                // ending scrollOffset() lines above the newest (0 = pinned to the live tail).
-                int total = sb.size() + 1;
-                mutable int start = total - outRows - term.scrollOffset();
+                int visCols = (pw - 20) / cw;
+                // Keep the pseudo-console's viewport in step with the panel, so the shell re-wraps its
+                // output to the width actually on screen.
+                term.resize(visCols, rows);
+
+                TermGrid* grid = term.screen();
+                int total = grid.lineCount();
+                mutable int start = total - rows - term.scrollOffset();
                 if (start < 0) {
                     start = 0;
                 }
                 mutable int r = 0;
                 mutable int idx = start;
-                while (idx < total && r < outRows) {
-                    mutable String text = "";
-                    if (idx < sb.size()) {
-                        text = sb.get(idx);
-                    } else {
-                        text = term.partialLine();
+                while (idx < total && r < rows) {
+                    TermLine* ln = grid.lineAt(idx);
+                    ln.buildRuns();
+                    int y = bodyTop + r * ch;
+                    mutable int col = 0;
+                    mutable int k = 0;
+                    while (k < ln.runCount()) {
+                        String seg = ln.runTextAt(k);
+                        int a = ln.runAttrAt(k);
+                        mutable int fg = TermLine.attrFg(a);
+                        mutable int bg = TermLine.attrBg(a);
+                        if (TermLine.attrBold(a) && fg < 8) {
+                            fg = fg + 8;          // bold brightens the eight classic colours
+                        }
+                        if (TermLine.attrInverse(a)) {
+                            int swap = fg;
+                            fg = bg;
+                            bg = swap;
+                        }
+                        int x = ox + 10 + col * cw;
+                        if (bg != 0) {            // 0 means "default background": leave termBg showing
+                            Color* bc = this.theme.ansiColor(bg);
+                            batch.rect(x, y, seg.length() * cw, ch, bc.r, bc.g, bc.b, 1.0);
+                        }
+                        Color* fc = this.theme.ansiColor(fg);
+                        this.font.drawText(batch, x, y, seg, fc.r, fc.g, fc.b, 1.0);
+                        col = col + seg.length();
+                        k = k + 1;
                     }
-                    this.font.drawText(batch, ox + 10, bodyTop + r * ch, text, this.theme.termText.r, this.theme.termText.g, this.theme.termText.b, 1.0);
                     r = r + 1;
                     idx = idx + 1;
                 }
-                // Input line at the bottom with a prompt and (when focused) a block caret.
-                int iy = bodyTop + outRows * ch;
-                this.font.drawText(batch, ox + 10, iy, "$ ", this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
-                String inp = term.inputLine();
-                this.font.drawText(batch, ox + 10 + 2 * cw, iy, inp, this.theme.termText.r, this.theme.termText.g, this.theme.termText.b, 1.0);
-                if (term.isFocused() && this.caretOn) {
-                    int cx = ox + 10 + (2 + inp.length()) * cw;
-                    batch.rect(cx, iy, cw, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.7);
+                // Block caret at the shell's own cursor, drawn only while pinned to the live tail.
+                if (term.isFocused() && this.caretOn && term.scrollOffset() == 0) {
+                    int crow = grid.cursorRow() - start;
+                    if (crow >= 0 && crow < rows) {
+                        int cx = ox + 10 + grid.cursorCol() * cw;
+                        batch.rect(cx, bodyTop + crow * ch, cw, ch,
+                                   this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.7);
+                    }
                 }
             }
 

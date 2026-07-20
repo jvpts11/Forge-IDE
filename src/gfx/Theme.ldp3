@@ -33,6 +33,7 @@ public bundle forge {
             public mutable Color* panel;      // tree / output / debug panels
             public mutable Color* termBg;     // integrated terminal body (always dark, like a real shell)
             public mutable Color* termText;   // integrated terminal text (light, reads on termBg)
+            public mutable ArrayList<Color*>* ansi;  // the terminal's 256-entry xterm palette
             public mutable Color* gutter;     // the line-number gutter band
             public mutable Color* divider;    // hairlines between panels
             public mutable Color* caretLine;  // the current line's subtle highlight (usually white-on-alpha)
@@ -131,6 +132,7 @@ public bundle forge {
                 t.bracket1 = new Color(0.984, 0.827, 0.400, 1.0) on heap;   // gold
                 t.bracket2 = new Color(0.855, 0.573, 0.878, 1.0) on heap;   // orchid
                 t.bracket3 = new Color(0.361, 0.686, 0.980, 1.0) on heap;   // sky blue
+                Theme.applyAnsi(t);
             }
 
             // Light theme. Warm-neutral off-white surfaces, darker ink text, the same accent + token hues
@@ -174,6 +176,68 @@ public bundle forge {
                 t.bracket1 = new Color(0.706, 0.502, 0.090, 1.0) on heap;   // gold
                 t.bracket2 = new Color(0.600, 0.290, 0.620, 1.0) on heap;   // orchid
                 t.bracket3 = new Color(0.129, 0.435, 0.741, 1.0) on heap;   // blue
+                Theme.applyAnsi(t);
+            }
+
+            // The terminal's xterm-256 palette. It is theme-independent: the terminal body stays dark in
+            // both presets, and a shell that asks for "red" must get the red it expects, not a re-skin.
+            // 0-15 are the classic ANSI colours, 16-231 the 6x6x6 colour cube, 232-255 the grey ramp.
+            private static method applyAnsi(Theme* t) returns void {
+                t.ansi = new ArrayList<Color*>() on heap;
+                Theme.addAnsi(t, 0.157, 0.165, 0.180);   // 0 black (lifted, so it reads on termBg)
+                Theme.addAnsi(t, 0.800, 0.286, 0.290);   // 1 red
+                Theme.addAnsi(t, 0.482, 0.706, 0.353);   // 2 green
+                Theme.addAnsi(t, 0.851, 0.678, 0.310);   // 3 yellow
+                Theme.addAnsi(t, 0.353, 0.573, 0.851);   // 4 blue
+                Theme.addAnsi(t, 0.706, 0.443, 0.780);   // 5 magenta
+                Theme.addAnsi(t, 0.337, 0.714, 0.729);   // 6 cyan
+                Theme.addAnsi(t, 0.859, 0.871, 0.882);   // 7 white (the default foreground)
+                Theme.addAnsi(t, 0.376, 0.396, 0.427);   // 8 bright black
+                Theme.addAnsi(t, 0.937, 0.412, 0.400);   // 9 bright red
+                Theme.addAnsi(t, 0.612, 0.839, 0.451);   // 10 bright green
+                Theme.addAnsi(t, 0.965, 0.804, 0.400);   // 11 bright yellow
+                Theme.addAnsi(t, 0.478, 0.694, 0.965);   // 12 bright blue
+                Theme.addAnsi(t, 0.827, 0.561, 0.898);   // 13 bright magenta
+                Theme.addAnsi(t, 0.451, 0.843, 0.855);   // 14 bright cyan
+                Theme.addAnsi(t, 0.976, 0.980, 0.988);   // 15 bright white
+                // 16-231: the colour cube, each axis stepping 0, 95, 135, 175, 215, 255.
+                mutable int r = 0;
+                while (r < 6) {
+                    mutable int g = 0;
+                    while (g < 6) {
+                        mutable int b = 0;
+                        while (b < 6) {
+                            Theme.addAnsi(t, Theme.cubeLevel(r), Theme.cubeLevel(g), Theme.cubeLevel(b));
+                            b = b + 1;
+                        }
+                        g = g + 1;
+                    }
+                    r = r + 1;
+                }
+                // 232-255: 24 greys from 8 to 238 in steps of 10.
+                mutable int i = 0;
+                while (i < 24) {
+                    float v = cast<float>(8 + i * 10) / 255.0;
+                    Theme.addAnsi(t, v, v, v);
+                    i = i + 1;
+                }
+            }
+            private static method addAnsi(Theme* t, float r, float g, float b) returns void {
+                t.ansi.add(new Color(r, g, b, 1.0) on heap);
+            }
+            private static method cubeLevel(int n) returns float {
+                if (n == 0) {
+                    return 0.0;
+                }
+                return cast<float>(55 + n * 40) / 255.0;
+            }
+            // The colour for a palette index, clamped so a malformed sequence cannot index out of range.
+            public method ansiColor(int idx) returns Color* {
+                mutable int i = idx;
+                if (i < 0 || i >= this.ansi.size()) {
+                    i = 7;
+                }
+                return this.ansi.get(i);
             }
         }
     }

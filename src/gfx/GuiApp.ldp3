@@ -9,6 +9,8 @@ import app.Diagnostic;
 import app.DiffView;
 import app.Debugger;
 import app.Terminal;
+import app.TermGrid;
+import app.TermLine;
 import app.ContextMenu;
 import app.Command;
 import io.FileTree;
@@ -377,7 +379,7 @@ public bundle forge {
                             if (wb.terminal().isOpen() && wph > 0
                                     && wmy >= win.height() - screen.statusH() - wph
                                     && wmy < win.height() - screen.statusH()) {
-                                wb.terminal().scrollBy((scroll / 120) * 3, wb.terminal().scrollback().size());
+                                wb.terminal().scrollBy((scroll / 120) * 3, wb.terminal().lineCount());
                             } else {
                                 wb.active().scrollLines(0 - (scroll / 120) * 3);
                             }
@@ -1358,13 +1360,13 @@ public bundle forge {
                     }
                     System.IO.Console.println("ok term open=" + GuiApp.boolStr(wb.terminal().isOpen()));
                 } else if (cmd.equals("termdump")) {
-                    ArrayList<String>* tl = wb.terminal().scrollback();
+                    TermGrid* tg = wb.terminal().screen();
                     mutable int td = 0;
-                    if (tl.size() > 30) {
-                        td = tl.size() - 30;
+                    if (tg.lineCount() > 30) {
+                        td = tg.lineCount() - 30;
                     }
-                    while (td < tl.size()) {
-                        System.IO.Console.println("T| " + tl.get(td));
+                    while (td < tg.lineCount()) {
+                        System.IO.Console.println("T| " + tg.lineAt(td).plainText());
                         td = td + 1;
                     }
                     System.IO.Console.println("ok");
@@ -2197,6 +2199,8 @@ public bundle forge {
 
             // Route a key to the integrated terminal while it is focused.
             private static method terminalKey(Terminal* t, InputEvent* e, boolean ctrl) returns void {
+                // Keys go straight to the shell through the pseudo-console: it owns line editing, history
+                // and completion, so the arrows and Tab must reach it rather than being handled here.
                 if (e.isKey() && e.vk == 27) {           // Esc -> back to the editor (panel stays open)
                     t.blur();
                 } else if (e.isKey() && e.vk == 13) {    // Enter -> run the line
@@ -2205,6 +2209,16 @@ public bundle forge {
                     t.backspace();
                 } else if (ctrl && e.isKey() && e.vk == 67) {   // Ctrl+C -> interrupt
                     t.interrupt();
+                } else if (e.isKey() && e.vk == 38) {    // Up -> shell history
+                    t.arrowUp();
+                } else if (e.isKey() && e.vk == 40) {    // Down -> shell history
+                    t.arrowDown();
+                } else if (e.isKey() && e.vk == 37) {    // Left
+                    t.arrowLeft();
+                } else if (e.isKey() && e.vk == 39) {    // Right
+                    t.arrowRight();
+                } else if (e.isKey() && e.vk == 9) {     // Tab -> shell completion
+                    t.tabKey();
                 } else if (e.isChar()) {
                     int cp = e.code;
                     if (cp >= 32 && cp != 127) {

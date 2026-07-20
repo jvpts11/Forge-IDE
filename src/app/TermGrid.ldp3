@@ -1,0 +1,431 @@
+import System.Collections.ArrayList;
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One row of the terminal screen: a character per column plus a parallel attribute per column.
+        // The attribute packs the SGR state the character was written with:
+        //   bits 0-7   foreground colour index (0-15 ANSI, 16-255 xterm cube)
+        //   bits 8-15  background colour index
+        //   bit  16    bold/bright
+        //   bit  17    inverse (swap fg/bg at draw time)
+        // Storing colour per cell (rather than per line) is what lets `git status` or a compiler's
+        // diagnostics keep their colours mid-line.
+        public class TermLine {
+            private mutable char[] chars;
+            private mutable int[] attrs;
+            private mutable int cols;
+            private mutable ArrayList<String>* runText;   // same-attribute spans, rebuilt on demand
+            private mutable ArrayList<int>* runAttr;
+
+            public constructor TermLine(int width) {
+                this.cols = width;
+                this.chars = new char[width]();
+                this.attrs = new int[width]();
+                this.runText = new ArrayList<String>() on heap;
+                this.runAttr = new ArrayList<int>() on heap;
+                this.clearWith(TermLine.defaultAttr());
+            }
+            public destructor ~TermLine() returns void {
+                delete this.chars;
+                delete this.attrs;
+                delete this.runText;
+                delete this.runAttr;
+            }
+
+            // fg=7 (light grey) on bg=0 (default background), no flags.
+            public static method defaultAttr() returns int {
+                return 7;
+            }
+            public static method attrFg(int a) returns int {
+                return a & 255;
+            }
+            public static method attrBg(int a) returns int {
+                return (a >> 8) & 255;
+            }
+            public static method attrBold(int a) returns boolean {
+                return (a & 65536) != 0;
+            }
+            public static method attrInverse(int a) returns boolean {
+                return (a & 131072) != 0;
+            }
+
+            public method width() returns int {
+                return this.cols;
+            }
+            public method charAtCol(int c) returns char {
+                if (c < 0 || c >= this.cols) {
+                    return ' ';
+                }
+                return this.chars[c];
+            }
+            public method attrAtCol(int c) returns int {
+                if (c < 0 || c >= this.cols) {
+                    return TermLine.defaultAttr();
+                }
+                return this.attrs[c];
+            }
+            public method setCell(int c, char ch, int a) returns void {
+                if (c < 0 || c >= this.cols) {
+                    return;
+                }
+                this.chars[c] = ch;
+                this.attrs[c] = a;
+            }
+            public method clearWith(int a) returns void {
+                mutable int i = 0;
+                while (i < this.cols) {
+                    this.chars[i] = ' ';
+                    this.attrs[i] = a;
+                    i = i + 1;
+                }
+            }
+            // Erase from `from` to the end of the row (CSI K with no parameter).
+            public method clearFrom(int from, int a) returns void {
+                mutable int i = from;
+                if (i < 0) {
+                    i = 0;
+                }
+                while (i < this.cols) {
+                    this.chars[i] = ' ';
+                    this.attrs[i] = a;
+                    i = i + 1;
+                }
+            }
+            // Erase from the start of the row through `through` (CSI 1K).
+            public method clearTo(int through, int a) returns void {
+                mutable int i = 0;
+                while (i <= through && i < this.cols) {
+                    this.chars[i] = ' ';
+                    this.attrs[i] = a;
+                    i = i + 1;
+                }
+            }
+
+            // The last column holding a non-blank, so the renderer can skip trailing padding.
+            public method lastUsedCol() returns int {
+                mutable int last = -1;
+                mutable int i = 0;
+                while (i < this.cols) {
+                    if (this.chars[i] != ' ' || this.attrs[i] != TermLine.defaultAttr()) {
+                        last = i;
+                    }
+                    i = i + 1;
+                }
+                return last;
+            }
+
+            // Collapse the row into spans that share one attribute, so a frame draws a handful of
+            // coloured runs per line instead of one quad per character.
+            public method buildRuns() returns void {
+                this.runText.clear();
+                this.runAttr.clear();
+                int last = this.lastUsedCol();
+                if (last < 0) {
+                    return;
+                }
+                mutable StringBuilder sb = new StringBuilder() on heap;
+                mutable int cur = this.attrs[0];
+                mutable int i = 0;
+                while (i <= last) {
+                    if (this.attrs[i] != cur) {
+                        this.runText.add(sb.toString());
+                        this.runAttr.add(cur);
+                        delete sb;
+                        sb = new StringBuilder() on heap;
+                        cur = this.attrs[i];
+                    }
+                    sb.appendChar(this.chars[i]);
+                    i = i + 1;
+                }
+                this.runText.add(sb.toString());
+                this.runAttr.add(cur);
+                delete sb;
+            }
+            public method runCount() returns int {
+                return this.runText.size();
+            }
+            public method runTextAt(int i) returns String {
+                return this.runText.get(i);
+            }
+            public method runAttrAt(int i) returns int {
+                return this.runAttr.get(i);
+            }
+            // The whole row as plain text (used by the self-tests and by plain-text copy).
+            public method plainText() returns String {
+                int last = this.lastUsedCol();
+                if (last < 0) {
+                    return "";
+                }
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i <= last) {
+                    sb.appendChar(this.chars[i]);
+                    i = i + 1;
+                }
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+        }
+
+        // The terminal screen: an unbounded list of rows (scrollback plus the live viewport) with a
+        // cursor and the current SGR attribute. The ANSI parser in Terminal drives it; the renderer
+        // reads the last `rows` lines. Row addressing (CSI H) is relative to the viewport top, which
+        // is simply the last `rows` lines -- there is no alternate screen buffer or scroll region, so
+        // a full-screen TUI (vim) will not lay out correctly; a shell and its tools will.
+        public class TermGrid {
+            private mutable ArrayList<TermLine*>* lines;
+            private mutable int cols;
+            private mutable int rows;
+            private mutable int curRow;      // absolute index into `lines`
+            private mutable int curCol;
+            private mutable int curAttr;
+            private mutable int maxScroll;   // scrollback bound
+
+            public constructor TermGrid(int width, int height) {
+                this.cols = width;
+                this.rows = height;
+                this.lines = new ArrayList<TermLine*>() on heap;
+                this.curRow = 0;
+                this.curCol = 0;
+                this.curAttr = TermLine.defaultAttr();
+                this.maxScroll = 5000;
+                this.lines.add(new TermLine(this.cols) on heap);
+            }
+            public destructor ~TermGrid() returns void {
+                mutable int i = 0;
+                while (i < this.lines.size()) {
+                    delete this.lines.get(i);
+                    i = i + 1;
+                }
+                delete this.lines;
+            }
+
+            public method width() returns int {
+                return this.cols;
+            }
+            public method height() returns int {
+                return this.rows;
+            }
+            public method lineCount() returns int {
+                return this.lines.size();
+            }
+            public method lineAt(int i) returns TermLine* {
+                return this.lines.get(i);
+            }
+            public method cursorRow() returns int {
+                return this.curRow;
+            }
+            public method cursorCol() returns int {
+                return this.curCol;
+            }
+            public method currentAttr() returns int {
+                return this.curAttr;
+            }
+            // The first row of the visible viewport: the screen is the tail of the scrollback.
+            public method viewTop() returns int {
+                mutable int t = this.lines.size() - this.rows;
+                if (t < 0) {
+                    t = 0;
+                }
+                return t;
+            }
+            // Re-size the viewport (the window was resized). Existing content keeps its own width;
+            // only rows written after this point use the new width.
+            public method resize(int width, int height) returns void {
+                if (width > 0) {
+                    this.cols = width;
+                }
+                if (height > 0) {
+                    this.rows = height;
+                }
+            }
+
+            private method ensureRow(int idx) returns void {
+                while (this.lines.size() <= idx) {
+                    this.lines.add(new TermLine(this.cols) on heap);
+                }
+                // Drop the oldest rows once the scrollback is over budget, keeping the cursor's
+                // absolute index consistent with the shrunken list.
+                while (this.lines.size() > this.maxScroll) {
+                    delete this.lines.get(0);
+                    this.lines.removeAt(0);
+                    this.curRow = this.curRow - 1;
+                    if (this.curRow < 0) {
+                        this.curRow = 0;
+                    }
+                }
+            }
+
+            // --- the operations the ANSI parser drives ---
+
+            public method putChar(char c) returns void {
+                if (this.curCol >= this.cols) {   // auto-wrap at the right margin
+                    this.curCol = 0;
+                    this.curRow = this.curRow + 1;
+                }
+                this.ensureRow(this.curRow);
+                this.lines.get(this.curRow).setCell(this.curCol, c, this.curAttr);
+                this.curCol = this.curCol + 1;
+            }
+            public method lineFeed() returns void {
+                this.curRow = this.curRow + 1;
+                this.ensureRow(this.curRow);
+            }
+            public method carriageReturn() returns void {
+                this.curCol = 0;
+            }
+            public method backspace() returns void {
+                if (this.curCol > 0) {
+                    this.curCol = this.curCol - 1;
+                }
+            }
+            public method tab() returns void {
+                mutable int next = ((this.curCol / 8) + 1) * 8;
+                if (next >= this.cols) {
+                    next = this.cols - 1;
+                }
+                this.curCol = next;
+            }
+            // CSI H / CSI f -- 1-based row/col relative to the viewport top.
+            public method moveTo(int row, int col) returns void {
+                mutable int r = this.viewTop() + (row - 1);
+                if (r < 0) {
+                    r = 0;
+                }
+                mutable int c = col - 1;
+                if (c < 0) {
+                    c = 0;
+                }
+                if (c >= this.cols) {
+                    c = this.cols - 1;
+                }
+                this.ensureRow(r);
+                this.curRow = r;
+                this.curCol = c;
+            }
+            public method moveUp(int n) returns void {
+                mutable int r = this.curRow - n;
+                if (r < 0) {
+                    r = 0;
+                }
+                this.curRow = r;
+            }
+            public method moveDown(int n) returns void {
+                this.curRow = this.curRow + n;
+                this.ensureRow(this.curRow);
+            }
+            public method moveLeft(int n) returns void {
+                mutable int c = this.curCol - n;
+                if (c < 0) {
+                    c = 0;
+                }
+                this.curCol = c;
+            }
+            public method moveRight(int n) returns void {
+                mutable int c = this.curCol + n;
+                if (c >= this.cols) {
+                    c = this.cols - 1;
+                }
+                this.curCol = c;
+            }
+            public method setColumn(int col) returns void {   // CSI G
+                mutable int c = col - 1;
+                if (c < 0) {
+                    c = 0;
+                }
+                if (c >= this.cols) {
+                    c = this.cols - 1;
+                }
+                this.curCol = c;
+            }
+            // CSI K -- 0: cursor to end, 1: start to cursor, 2: whole row.
+            public method eraseInLine(int mode) returns void {
+                this.ensureRow(this.curRow);
+                TermLine* ln = this.lines.get(this.curRow);
+                if (mode == 1) {
+                    ln.clearTo(this.curCol, this.curAttr);
+                } else if (mode == 2) {
+                    ln.clearWith(this.curAttr);
+                } else {
+                    ln.clearFrom(this.curCol, this.curAttr);
+                }
+            }
+            // CSI J -- 0: cursor to end of screen, 1: start of screen to cursor, 2/3: whole screen.
+            // Clearing the screen scrolls the old content into scrollback (what a real terminal does)
+            // rather than destroying it, so Ctrl+L does not lose history.
+            public method eraseInDisplay(int mode) returns void {
+                if (mode == 2 || mode == 3) {
+                    mutable int add = this.rows;
+                    while (add > 0) {
+                        this.lines.add(new TermLine(this.cols) on heap);
+                        add = add - 1;
+                    }
+                    this.curRow = this.lines.size() - this.rows;
+                    if (this.curRow < 0) {
+                        this.curRow = 0;
+                    }
+                    this.curCol = 0;
+                    this.ensureRow(this.curRow);
+                    return;
+                }
+                if (mode == 1) {
+                    mutable int i = this.viewTop();
+                    while (i < this.curRow && i < this.lines.size()) {
+                        this.lines.get(i).clearWith(this.curAttr);
+                        i = i + 1;
+                    }
+                    this.eraseInLine(1);
+                    return;
+                }
+                this.eraseInLine(0);
+                mutable int j = this.curRow + 1;
+                while (j < this.lines.size()) {
+                    this.lines.get(j).clearWith(this.curAttr);
+                    j = j + 1;
+                }
+            }
+
+            // --- SGR (CSI m): colours and text flags ---
+            public method resetAttr() returns void {
+                this.curAttr = TermLine.defaultAttr();
+            }
+            public method applySgr(int code) returns void {
+                if (code == 0) {
+                    this.resetAttr();
+                } else if (code == 1) {
+                    this.curAttr = this.curAttr | 65536;                 // bold
+                } else if (code == 7) {
+                    this.curAttr = this.curAttr | 131072;                // inverse
+                } else if (code == 22) {
+                    this.curAttr = this.curAttr & (~65536);
+                } else if (code == 27) {
+                    this.curAttr = this.curAttr & (~131072);
+                } else if (code >= 30 && code <= 37) {
+                    this.curAttr = (this.curAttr & (~255)) | (code - 30);
+                } else if (code == 39) {
+                    this.curAttr = (this.curAttr & (~255)) | 7;
+                } else if (code >= 40 && code <= 47) {
+                    this.curAttr = (this.curAttr & (~65280)) | ((code - 40) << 8);
+                } else if (code == 49) {
+                    this.curAttr = this.curAttr & (~65280);
+                } else if (code >= 90 && code <= 97) {                   // bright foreground
+                    this.curAttr = (this.curAttr & (~255)) | ((code - 90) + 8);
+                } else if (code >= 100 && code <= 107) {                 // bright background
+                    this.curAttr = (this.curAttr & (~65280)) | (((code - 100) + 8) << 8);
+                }
+            }
+            // 256-colour form: CSI 38;5;N m (foreground) and CSI 48;5;N m (background).
+            public method setFgIndex(int n) returns void {
+                this.curAttr = (this.curAttr & (~255)) | (n & 255);
+            }
+            public method setBgIndex(int n) returns void {
+                this.curAttr = (this.curAttr & (~65280)) | ((n & 255) << 8);
+            }
+        }
+    }
+}

@@ -1,4 +1,8 @@
 import System.Collections.ArrayList;
+import System.Text.StringBuilder;
+import app.Terminal;
+import app.TermGrid;
+import app.TermLine;
 import editor.TextBuffer;
 import editor.Editor;
 import editor.Match;
@@ -1024,8 +1028,91 @@ public bundle forge {
                 a.eqInt(w4.size(), 1, "wrap.empty-one");
                 a.eqStr(w4.get(0), "", "wrap.empty-content");
 
+                // --- terminal: the ANSI/VT parser driving the cell grid ---
+                // Driven through absorb() with synthetic bytes rather than a live shell: spawning a
+                // pseudo-console needs a real console, which a headless test run does not have.
+                Terminal* trmText = new Terminal() on heap;
+                trmText.absorb("hello");
+                a.eqStr(trmText.screen().lineAt(0).plainText(), "hello", "term.text");
+                trmText.absorb("\r\nworld");
+                a.eqStr(trmText.screen().lineAt(1).plainText(), "world", "term.newline");
+                a.eqInt(trmText.screen().cursorRow(), 1, "term.cursor-row");
+
+                // SGR: colour, reset, bold and the 256-colour form all land in the cell attribute.
+                Terminal* trmSgr = new Terminal() on heap;
+                trmSgr.absorb(CoreTests.esc("[31m") + "R" + CoreTests.esc("[0m") + "N");
+                TermGrid* trmSgrG = trmSgr.screen();
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(0)), 1, "term.sgr-red");
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(1)), 7, "term.sgr-reset");
+                trmSgr.absorb(CoreTests.esc("[1;32m") + "G");
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(2)), 2, "term.sgr-green");
+                a.eqBool(TermLine.attrBold(trmSgrG.lineAt(0).attrAtCol(2)), true, "term.sgr-bold");
+                trmSgr.absorb(CoreTests.esc("[0m") + CoreTests.esc("[38;5;200m") + "X");
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(3)), 200, "term.sgr-256");
+                trmSgr.absorb(CoreTests.esc("[0m") + CoreTests.esc("[44m") + "B");
+                a.eqInt(TermLine.attrBg(trmSgrG.lineAt(0).attrAtCol(4)), 4, "term.sgr-bg");
+
+                // Cursor addressing overwrites in place; CSI K erases to end of line.
+                Terminal* trmCur = new Terminal() on heap;
+                trmCur.absorb("abc" + CoreTests.esc("[1;1H") + "Z");
+                a.eqStr(trmCur.screen().lineAt(0).plainText(), "Zbc", "term.cursor-home");
+                Terminal* trmEr = new Terminal() on heap;
+                trmEr.absorb("hello" + CoreTests.esc("[1;3H") + CoreTests.esc("[K"));
+                a.eqStr(trmEr.screen().lineAt(0).plainText(), "he", "term.erase-eol");
+
+                // Backspace moves the cursor without erasing; the next write overwrites.
+                Terminal* trmBs = new Terminal() on heap;
+                trmBs.absorb("abc" + CoreTests.chr(8) + "X");
+                a.eqStr(trmBs.screen().lineAt(0).plainText(), "abX", "term.backspace");
+
+                // A window-title OSC string is consumed whole, never printed.
+                Terminal* trmOsc = new Terminal() on heap;
+                trmOsc.absorb(CoreTests.esc("]0;My Title") + CoreTests.chr(7) + "ok");
+                a.eqStr(trmOsc.screen().lineAt(0).plainText(), "ok", "term.osc-dropped");
+
+                // Auto-wrap at the right margin continues on the next row.
+                Terminal* trmWrap = new Terminal() on heap;
+                trmWrap.resize(4, 3);
+                trmWrap.absorb("abcdef");
+                a.eqStr(trmWrap.screen().lineAt(0).plainText(), "abcd", "term.wrap-0");
+                a.eqStr(trmWrap.screen().lineAt(1).plainText(), "ef", "term.wrap-1");
+
+                // Runs collapse same-attribute spans so the renderer draws few quads per line.
+                Terminal* trmRun = new Terminal() on heap;
+                trmRun.absorb("ab" + CoreTests.esc("[31m") + "cd");
+                TermLine* trmRunLine = trmRun.screen().lineAt(0);
+                trmRunLine.buildRuns();
+                a.eqInt(trmRunLine.runCount(), 2, "term.runs-count");
+                a.eqStr(trmRunLine.runTextAt(0), "ab", "term.runs-0");
+                a.eqStr(trmRunLine.runTextAt(1), "cd", "term.runs-1");
+
+                // Scrollback trimming: past the bound the oldest rows are dropped, and the cursor's
+                // absolute index must follow them down or writes would land on the wrong row.
+                Terminal* trmTrim = new Terminal() on heap;
+                mutable int trmFeed = 0;
+                while (trmFeed < 5200) {
+                    trmTrim.absorb("L\r\n");
+                    trmFeed = trmFeed + 1;
+                }
+                TermGrid* trmTrimG = trmTrim.screen();
+                a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
+                trmTrim.absorb("TAIL");
+                a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
                 a.summary("editor tests");
                 return a.failCount();
+            }
+
+            // ESC followed by `rest` -- the escape byte cannot be written as a literal in source.
+            private static method esc(String rest) returns String {
+                return CoreTests.chr(27) + rest;
+            }
+            private static method chr(int code) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(cast<char>(code));
+                String out = sb.toString();
+                delete sb;
+                return out;
             }
         }
     }

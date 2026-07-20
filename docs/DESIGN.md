@@ -176,6 +176,26 @@ event queue, RGBA texture upload) and G1–G8:
   `Forge.exe shot` renders one frame to a PPM for offscreen verification; `Forge.exe test`
   runs the headless engine checks.
 
+**Integrated terminal — a real pseudo-console.** Each terminal runs its shell behind a Windows
+ConPTY (`System.OS.Pty`), not a plain pipe, so the shell believes it is talking to a terminal
+and emits the ANSI colour/cursor sequences it would in any console.
+
+- **`app.Terminal`** — owns the pseudo-console and an ANSI/VT state machine (ground → ESC →
+  CSI/OSC) that turns those bytes into grid operations: SGR colours (16, bright and the
+  256-colour `38;5;N` form), cursor addressing, erase-in-line/display, wrap, tab, backspace.
+  Keys are forwarded straight to the shell — there is no local echo or local line buffer,
+  because the shell itself owns echo, history, arrows and tab-completion.
+- **`app.TermGrid` / `app.TermLine`** — the screen: rows of cells, each a character plus a
+  packed attribute (fg, bg, bold, inverse). `TermLine.buildRuns()` collapses same-attribute
+  spans so a frame draws a handful of coloured runs per line rather than one quad per glyph.
+  The renderer also reports the panel size back through `Terminal.resize()`, so the shell
+  re-wraps to the width actually on screen.
+
+Scope: there is no alternate screen buffer or scroll region, so a full-screen TUI (vim) will
+not lay out correctly; a shell and its command-line tools will. The parser is tested by
+feeding synthetic byte sequences through `absorb()` — spawning a real pseudo-console needs a
+real console, which a headless test run does not have.
+
 Each slice was verified by reading the frame back from the GPU (`glReadPixels` → PPM → PNG).
 Live mouse and OS-keyboard input are wired and verified interactively.
 

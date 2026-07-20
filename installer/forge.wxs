@@ -5,7 +5,7 @@
      folder on PATH, a Start Menu shortcut launches Forge, and .ldp3 files open with it. -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Forge IDE" Manufacturer="Joao Victor Pereira Tavares"
-           Version="0.2.0.0" UpgradeCode="9a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+           Version="0.2.1.0" UpgradeCode="9a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
            Scope="perMachine" Compressed="yes">
     <MajorUpgrade DowngradeErrorMessage="A newer version of Forge is already installed." />
     <MediaTemplate EmbedCab="yes" />
