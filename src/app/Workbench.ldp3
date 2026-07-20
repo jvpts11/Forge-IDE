@@ -63,6 +63,7 @@ public bundle forge {
             private mutable int activeTerm;          // which terminal the panel shows / routes keystrokes to
             private mutable String branch;          // cached branch name (refreshed with the git status)
             private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
+            private mutable boolean fontDirty;      // set by the settings panel; the shell reloads the atlas
             private mutable boolean showMinimap;    // view preference: the code minimap on the right
             private mutable boolean renderWs;        // view preference: draw a dot at each space (whitespace)
             private mutable ArrayList<NavLoc>* navBack;  // Alt+Left history of caret locations before a jump
@@ -107,6 +108,7 @@ public bundle forge {
                 this.activeTerm = 0;
                 this.branch = "";
                 this.treeDirty = false;
+                this.fontDirty = false;
                 this.showMinimap = this.settings.minimap;
                 this.renderWs = this.settings.whitespace;
                 this.navBack = new ArrayList<NavLoc>() on heap;
@@ -2007,6 +2009,53 @@ public bundle forge {
             }
             public method minimapVisible() returns boolean {
                 return this.showMinimap;
+            }
+
+            // --- settings panel: apply a change and persist it in one step ---
+            // The font is owned by the shell's frame loop (it holds the atlas), so a change here raises a
+            // flag the loop consumes rather than reloading the atlas from under the renderer.
+            public method setFontFamily(String family) returns void {
+                if (family.length() == 0) {
+                    return;
+                }
+                this.settings.fontFamily = family;
+                this.fontDirty = true;
+                Settings.save(this.settings);
+            }
+            public method setFontSize(int px) returns void {
+                if (px < 8 || px > 32) {          // the atlas is rasterised per size; keep it sane
+                    return;
+                }
+                this.settings.fontSize = px;
+                this.fontDirty = true;
+                Settings.save(this.settings);
+            }
+            // Tab width applies to every open document, not just the active one, so the setting is not
+            // silently different per tab.
+            public method setTabWidth(int n) returns void {
+                if (n < 1 || n > 16) {
+                    return;
+                }
+                this.settings.tabWidth = n;
+                mutable int i = 0;
+                while (i < this.docs.count()) {
+                    this.docs.at(i).setTabWidth(n);
+                    i = i + 1;
+                }
+                if (this.split) {
+                    mutable int j = 0;
+                    while (j < this.docs2.count()) {
+                        this.docs2.at(j).setTabWidth(n);
+                        j = j + 1;
+                    }
+                }
+                Settings.save(this.settings);
+            }
+            // The shell consumes this once per frame and reloads the glyph atlas when it is set.
+            public method takeFontDirty() returns boolean {
+                boolean was = this.fontDirty;
+                this.fontDirty = false;
+                return was;
             }
 
             // Escape a commit message for a double-quoted shell argument (drop the quotes that would end it).

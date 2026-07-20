@@ -70,6 +70,44 @@ public bundle forge {
                 this.sel = 0;
             }
 
+            // Open the settings panel (mode 9): an editable view of what settings.txt holds. Rows are
+            // navigated with the arrows and toggled or edited with Enter; the file itself stays reachable
+            // from the last row, for anything the panel does not expose.
+            public method openSettings() returns void {
+                this.mode = 9;
+                this.query = "";
+                this.sel = 0;
+            }
+            // The settings rows, in draw order. Defined once so the renderer, the hit-test and the key
+            // handler cannot disagree about what row N is.
+            public static method settingsRowCount() returns int {
+                return 8;
+            }
+            public static method settingsRowLabel(int i) returns String {
+                if (i == 0) {
+                    return "Theme";
+                }
+                if (i == 1) {
+                    return "Font";
+                }
+                if (i == 2) {
+                    return "Font size";
+                }
+                if (i == 3) {
+                    return "Tab width";
+                }
+                if (i == 4) {
+                    return "Minimap";
+                }
+                if (i == 5) {
+                    return "Render whitespace";
+                }
+                if (i == 6) {
+                    return "Word wrap";
+                }
+                return "Edit settings file...";
+            }
+
             public method isOpen() returns boolean {
                 return this.mode != 0;
             }

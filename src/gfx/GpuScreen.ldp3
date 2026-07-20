@@ -2570,6 +2570,122 @@ public bundle forge {
                 else if (ov.mode == 8) {
                     this.drawAbout(batch, screenW, screenH);
                 }
+                else if (ov.mode == 9) {
+                    this.drawSettings(batch, ov, wb, screenW, screenH);
+                }
+            }
+
+            // --- settings panel geometry (mode 9) ---
+            // The renderer and the hit-test derive every coordinate from these, so a click always lands on
+            // the row that was drawn there.
+            public method settingsCardW() returns int {
+                return 620;
+            }
+            public method settingsCardH() returns int {
+                return 64 + Overlay.settingsRowCount() * this.settingsRowH() + 52;
+            }
+            public method settingsRowH() returns int {
+                return this.font.lineHeight() + 12;
+            }
+            public method settingsCardX(int screenW) returns int {
+                return (screenW - this.settingsCardW()) / 2;
+            }
+            public method settingsCardY(int screenH) returns int {
+                return (screenH - this.settingsCardH()) / 2;
+            }
+            // The row under the pointer, or -1 outside the list. -2 means "inside the card but not on a
+            // row", which the shell uses to keep the panel open on a stray click.
+            public method settingsRowAt(int mx, int my, int screenW, int screenH) returns int {
+                int bx = this.settingsCardX(screenW);
+                int by = this.settingsCardY(screenH);
+                if (mx < bx || mx >= bx + this.settingsCardW()
+                        || my < by || my >= by + this.settingsCardH()) {
+                    return 0 - 1;
+                }
+                int top = by + 64;
+                int idx = (my - top) / this.settingsRowH();
+                if (my < top || idx < 0 || idx >= Overlay.settingsRowCount()) {
+                    return 0 - 2;
+                }
+                return idx;
+            }
+            // The current value of row `i`, as shown on the right of the panel.
+            private method settingsValueOf(Workbench* wb, int i) returns String {
+                if (i == 0) {
+                    return wb.wantsLight() ? "Light" : "Dark";
+                }
+                if (i == 1) {
+                    return wb.settings().fontFamily;
+                }
+                if (i == 2) {
+                    return wb.settings().fontSize.toString() + " px";
+                }
+                if (i == 3) {
+                    return wb.settings().tabWidth.toString();
+                }
+                if (i == 4) {
+                    return wb.minimapVisible() ? "on" : "off";
+                }
+                if (i == 5) {
+                    return wb.settings().whitespace ? "on" : "off";
+                }
+                if (i == 6) {
+                    return wb.settings().wordWrap ? "on" : "off";
+                }
+                return "";
+            }
+
+            // The settings panel (mode 9): the editable view of what settings.txt holds. Arrows move, Enter
+            // toggles a switch or opens a prompt for a value, Esc closes. Every change is applied and saved
+            // immediately -- there is no OK button to forget to press.
+            private method drawSettings(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW,
+                                        int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = this.settingsCardW();
+                int bh = this.settingsCardH();
+                int bx = this.settingsCardX(screenW);
+                int by = this.settingsCardY(screenH);
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.45);   // dim the app behind the card
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+
+                this.font.drawText(batch, bx + 28, by + 24, "Settings", this.theme.accent.r,
+                                   this.theme.accent.g, this.theme.accent.b, 1.0);
+
+                int rowH = this.settingsRowH();
+                int top = by + 64;
+                mutable int i = 0;
+                while (i < Overlay.settingsRowCount()) {
+                    int ry = top + i * rowH;
+                    if (i == ov.sel) {
+                        batch.rect(bx + 12, ry - 2, bw - 24, rowH, this.theme.accent.r,
+                                   this.theme.accent.g, this.theme.accent.b, 0.16);
+                    }
+                    boolean isFile = i == Overlay.settingsRowCount() - 1;
+                    if (isFile) {
+                        // Separator above the escape hatch, so it reads as an action rather than a setting.
+                        batch.rect(bx + 20, ry - 8, bw - 40, 1, this.theme.divider.r, this.theme.divider.g,
+                                   this.theme.divider.b, this.theme.divider.a);
+                    }
+                    this.font.drawText(batch, bx + 28, ry + 4, Overlay.settingsRowLabel(i),
+                                       this.theme.text.r, this.theme.text.g, this.theme.text.b,
+                                       this.theme.text.a);
+                    String val = this.settingsValueOf(wb, i);
+                    if (val.length() > 0) {
+                        int vx = bx + bw - 28 - val.length() * cw;
+                        this.font.drawText(batch, vx, ry + 4, val, this.theme.accent.r, this.theme.accent.g,
+                                           this.theme.accent.b, 1.0);
+                    }
+                    i = i + 1;
+                }
+                this.font.drawText(batch, bx + 28, by + bh - 30,
+                                   "Up/Down select    Enter change    Esc close",
+                                   this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
+                                   this.theme.textDim.a);
             }
 
             // The About card (mode 8): a small centered modal window over a dimmed backdrop -- the proper

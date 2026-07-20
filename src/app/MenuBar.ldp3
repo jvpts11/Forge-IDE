@@ -65,6 +65,9 @@ public bundle forge {
                 file.sep();
                 file.add("Close Tab  Ctrl+W", "file.close");
                 file.add("Reopen Closed Tab  Ctrl+Shift+T", "file.reopenClosed");
+                file.sep();
+                file.add("Settings...", "prefs.open");
+                file.add("Keybindings...", "prefs.keys");
                 file.add("Exit", "app.quit");
                 this.menus.add(file);
 

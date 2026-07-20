@@ -1,5 +1,6 @@
 ﻿import System.Collections.ArrayList;
 import System.Text.StringBuilder;
+import gfx.Overlay;
 import app.Terminal;
 import app.TermGrid;
 import app.TermLine;
@@ -769,12 +770,12 @@ public bundle forge {
 
                 // --- command palette: registry + fuzzy filter ---
                 CommandRegistry cr = new CommandRegistry() on heap;
-                a.eqInt(cr.all().size(), 71, "cmd.count");
-                a.eqInt(cr.filter("").size(), 71, "cmd.filter-empty");
+                a.eqInt(cr.all().size(), 72, "cmd.count");
+                a.eqInt(cr.filter("").size(), 72, "cmd.filter-empty");
                 a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
                 a.eqInt(cr.filter("undo").size(), 2, "cmd.filter-undo-count");  // + "Set Breakpoint Condition" (u-n-d-o subseq)
                 a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
-                a.eqInt(cr.filter("file").size(), 11, "cmd.filter-file");   // incl. git blame/stage/unstage "... File"
+                a.eqInt(cr.filter("file").size(), 12, "cmd.filter-file");   // incl. git blame/stage/unstage "... File"
                 a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
                 a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
                 a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
@@ -1098,6 +1099,14 @@ public bundle forge {
                 a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
                 trmTrim.absorb("TAIL");
                 a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- settings panel rows: the renderer, the hit-test and the key handler all read these,
+                // so a row added to one of them without the others shows up here as a mismatch ---
+                a.eqInt(Overlay.settingsRowCount(), 8, "settings.row-count");
+                a.eqStr(Overlay.settingsRowLabel(0), "Theme", "settings.row-first");
+                a.eqStr(Overlay.settingsRowLabel(3), "Tab width", "settings.row-value");
+                a.eqStr(Overlay.settingsRowLabel(Overlay.settingsRowCount() - 1),
+                        "Edit settings file...", "settings.row-last-is-file");
 
                 // --- test explorer: pulling the method name out of a declaration line ---
                 a.eqStr(Workbench.testNameOf("public static method doubling() returns boolean {"),

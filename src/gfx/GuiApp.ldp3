@@ -408,6 +408,16 @@ public bundle forge {
                         Settings.save(wb.settings());
                     }
                     prevZoom = zplus || zminus || zreset;
+                    // The settings panel changed the font: the atlas belongs to the loop, so the panel only
+                    // raises a flag and the reload happens here, between frames.
+                    // The change always arrives with a key or click, so this frame already counts as active
+                    // and repaints -- no extra redraw flag needed.
+                    if (wb.takeFontDirty()) {
+                        fontPx = wb.settings().fontSize;
+                        screen.setFont(GuiApp.loadFont(win, fontPx, wb.settings().fontFamily));
+                        wb.active().resizeViewport(screen.paneRowsFor(win.height()),
+                                                   screen.paneColsFor(win.width()));
+                    }
                     // window resize -> re-fit the viewport
                     int w2 = win.width();
                     int h2 = win.height();
@@ -605,6 +615,16 @@ public bundle forge {
                                           boolean alt) returns void {
                 if (ov.isOpen() && ov.mode == 8) {   // click anywhere dismisses the About card
                     ov.close();
+                    return;
+                }
+                if (ov.isOpen() && ov.mode == 9) {   // settings: a row activates, outside the card closes
+                    int row = screen.settingsRowAt(mx, my, win.width(), win.height());
+                    if (row >= 0) {
+                        ov.sel = row;
+                        GuiApp.settingsActivate(ov, wb, row);
+                    } else if (row == 0 - 1) {
+                        ov.close();
+                    }
                     return;
                 }
                 if (menu.isOpen()) {
@@ -1380,6 +1400,17 @@ public bundle forge {
                     } else {
                         System.IO.Console.println("unknown command");
                     }
+                } else if (cmd.equals("settings")) {
+                    // settings [row]: open the panel, optionally selecting a row. The panel lives in the
+                    // overlay, which `cmd` cannot reach (it dispatches through the Workbench).
+                    ov.openSettings();
+                    if (arg.length() > 0) {
+                        ov.moveSel(arg.toInt());
+                    }
+                    System.IO.Console.println("ok settings sel=" + ov.sel.toString());
+                } else if (cmd.equals("settingsactivate")) {
+                    GuiApp.settingsActivate(ov, wb, ov.sel);
+                    System.IO.Console.println("ok activate");
                 } else if (cmd.equals("extractvar")) {
                     boolean ok = wb.active().extractVariable(arg);   // extractvar <name>: on the current selection
                     System.IO.Console.println("ok extract " + GuiApp.boolStr(ok));
@@ -2314,6 +2345,10 @@ public bundle forge {
                         ov.close();
                         return;
                     }
+                    if (ov.mode == 9) {
+                        GuiApp.settingsKey(ov, wb, vk);
+                        return;
+                    }
                     if (ov.mode == 2) {
                         GuiApp.findKey(ov, wb, vk, ctrl, shift, alt);
                         return;
@@ -2418,6 +2453,10 @@ public bundle forge {
                     return true;
                 }
                 if (id.equals("prefs.open")) {
+                    ov.openSettings();
+                    return true;
+                }
+                if (id.equals("prefs.file")) {   // the raw file, for anything the panel does not expose
                     GuiApp.openSettingsFile(wb);
                     return true;
                 }
@@ -2452,6 +2491,61 @@ public bundle forge {
             // Open the user preferences file (~/.forge/settings.txt) in the editor, creating it with the
             // current values first if it does not exist yet. Edits take effect on the next launch; the live
             // toggles (theme, font zoom, view options) keep the file in sync as you use the IDE.
+            // Keys in the settings panel (mode 9). Arrows move the selection; Enter flips a switch or opens
+            // a prompt for a typed value; the last row hands over to the settings file for anything the
+            // panel does not expose. Every change is applied and saved as it is made.
+            private static method settingsKey(Overlay* ov, Workbench* wb, int vk) returns void {
+                if (vk == 40) {                                  // Down
+                    if (ov.sel < Overlay.settingsRowCount() - 1) {
+                        ov.moveSel(1);
+                    }
+                    return;
+                }
+                if (vk == 38) {                                  // Up
+                    ov.moveSel(0 - 1);
+                    return;
+                }
+                if (vk == 13 || vk == 32) {                      // Enter / Space activates the row
+                    GuiApp.settingsActivate(ov, wb, ov.sel);
+                    return;
+                }
+            }
+
+            // Apply row `i`: a switch flips in place, a value opens a prompt (mode 7) that comes back
+            // through runPrompt, and the last row opens the file itself.
+            private static method settingsActivate(Overlay* ov, Workbench* wb, int i) returns void {
+                if (i == 0) {
+                    wb.toggleTheme();
+                    return;
+                }
+                if (i == 1) {
+                    ov.openPrompt("setfont", "font family: ");
+                    return;
+                }
+                if (i == 2) {
+                    ov.openPrompt("setfontsize", "font size (8-32): ");
+                    return;
+                }
+                if (i == 3) {
+                    ov.openPrompt("settabwidth", "tab width (1-16): ");
+                    return;
+                }
+                if (i == 4) {
+                    wb.toggleMinimap();
+                    return;
+                }
+                if (i == 5) {
+                    wb.toggleRenderWhitespace();
+                    return;
+                }
+                if (i == 6) {
+                    wb.toggleWrap();
+                    return;
+                }
+                ov.close();
+                GuiApp.openSettingsFile(wb);
+            }
+
             private static method openSettingsFile(Workbench* wb) returns void {
                 String path = Settings.settingsFile();
                 if (!File.exists(path)) {
@@ -2732,6 +2826,22 @@ public bundle forge {
                     if (ov.query.length() > 0) {
                         wb.gitCommit(ov.query);
                     }
+                } else if (ov.promptKind.equals("setfont")) {
+                    // Back to the panel afterwards, so several settings can be changed in one visit.
+                    wb.setFontFamily(ov.query);
+                    ov.openSettings();
+                    ov.moveSel(1);
+                    return;
+                } else if (ov.promptKind.equals("setfontsize")) {
+                    wb.setFontSize(ov.query.toInt());
+                    ov.openSettings();
+                    ov.moveSel(2);
+                    return;
+                } else if (ov.promptKind.equals("settabwidth")) {
+                    wb.setTabWidth(ov.query.toInt());
+                    ov.openSettings();
+                    ov.moveSel(3);
+                    return;
                 } else if (ov.promptKind.equals("newfile")) {
                     wb.newFileOnDisk(ov.query);
                 } else if (ov.promptKind.equals("rename")) {
