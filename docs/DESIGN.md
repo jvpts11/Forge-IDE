@@ -196,6 +196,14 @@ not lay out correctly; a shell and its command-line tools will. The parser is te
 feeding synthetic byte sequences through `absorb()` — spawning a real pseudo-console needs a
 real console, which a headless test run does not have.
 
+`Forge.exe termbench <iters>` drives the parser and the per-frame run rebuild with no window,
+so process memory can be sampled from outside (`Start-Process` + `PrivateMemorySize64`). An
+IDE stays open for hours, so this must stay flat — when it was first written it grew about a
+gigabyte per second, which is how two long-standing leaks were found (`StringBuilder` had no
+destructor, and `Memory.readString` did not mark its result owned; both fixed in the compiler).
+Rows also cache their runs and rebuild only when written to, so an idle terminal allocates
+nothing per frame.
+
 Each slice was verified by reading the frame back from the GPU (`glReadPixels` → PPM → PNG).
 Live mouse and OS-keyboard input are wired and verified interactively.
 

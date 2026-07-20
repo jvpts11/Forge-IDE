@@ -2918,6 +2918,41 @@ public bundle forge {
                 return;
             }
 
+            // Drive the terminal the way a live session does -- shell bytes in, then the per-frame run
+            // rebuild the renderer performs -- with no window, so process memory can be sampled from
+            // outside. An IDE sits open for hours, so this must be FLAT: the growth to watch for is the
+            // per-frame String churn in buildRuns and in the chunk decode.
+            public static method termbench(int iters) returns void {
+                Terminal* t = new Terminal() on heap;
+                t.resize(120, 30);
+                String esc = GuiApp.chr(27);
+                String payload = esc + "[32m" + "ok " + esc + "[0m" + "path/to/file.ldp3 "
+                                 + esc + "[1;31m" + "error" + esc + "[0m" + " message here\r\n";
+                mutable int i = 0;
+                while (i < iters) {
+                    t.absorb(payload);
+                    // The render pass: every visible line rebuilds its coloured runs each frame.
+                    TermGrid* g = t.screen();
+                    mutable int r = g.viewTop();
+                    while (r < g.lineCount()) {
+                        g.lineAt(r).buildRuns();
+                        r = r + 1;
+                    }
+                    i = i + 1;
+                }
+                System.IO.Console.println("termbench done iters=" + iters.toString()
+                                          + " lines=" + t.screen().lineCount().toString());
+                delete t;
+                return;
+            }
+            private static method chr(int code) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(cast<char>(code));
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+
             public static method shot(String path) returns void {
                 GlWindow* win = new GlWindow() on heap;
                 if (win.open("Forge", 1100, 720, 4, 6) == 0) {

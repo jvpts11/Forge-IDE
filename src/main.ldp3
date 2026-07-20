@@ -21,6 +21,16 @@ public bundle forge {
                         }
                         return;
                     }
+                    if (args[0].equals("termbench")) {
+                        // termbench <iters>: drive the terminal parser + per-frame run rebuild with no
+                        // window, so process memory can be sampled from outside.
+                        mutable int n = 200000;
+                        if (args.length() > 1) {
+                            n = args[1].toInt();
+                        }
+                        GuiApp.termbench(n);
+                        return;
+                    }
                     if (args[0].equals("shot")) {
                         GuiApp.shot("frame.ppm");
                         return;

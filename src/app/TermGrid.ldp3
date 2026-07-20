@@ -20,6 +20,7 @@ public bundle forge {
             private mutable int cols;
             private mutable ArrayList<String>* runText;   // same-attribute spans, rebuilt on demand
             private mutable ArrayList<int>* runAttr;
+            private mutable boolean runsStale;            // set by every write; cleared by buildRuns
 
             public constructor TermLine(int width) {
                 this.cols = width;
@@ -27,6 +28,7 @@ public bundle forge {
                 this.attrs = new int[width]();
                 this.runText = new ArrayList<String>() on heap;
                 this.runAttr = new ArrayList<int>() on heap;
+                this.runsStale = true;
                 this.clearWith(TermLine.defaultAttr());
             }
             public destructor ~TermLine() returns void {
@@ -74,6 +76,7 @@ public bundle forge {
                 }
                 this.chars[c] = ch;
                 this.attrs[c] = a;
+                this.runsStale = true;
             }
             public method clearWith(int a) returns void {
                 mutable int i = 0;
@@ -82,6 +85,7 @@ public bundle forge {
                     this.attrs[i] = a;
                     i = i + 1;
                 }
+                this.runsStale = true;
             }
             // Erase from `from` to the end of the row (CSI K with no parameter).
             public method clearFrom(int from, int a) returns void {
@@ -94,6 +98,7 @@ public bundle forge {
                     this.attrs[i] = a;
                     i = i + 1;
                 }
+                this.runsStale = true;
             }
             // Erase from the start of the row through `through` (CSI 1K).
             public method clearTo(int through, int a) returns void {
@@ -103,6 +108,7 @@ public bundle forge {
                     this.attrs[i] = a;
                     i = i + 1;
                 }
+                this.runsStale = true;
             }
 
             // The last column holding a non-blank, so the renderer can skip trailing padding.
@@ -120,7 +126,14 @@ public bundle forge {
 
             // Collapse the row into spans that share one attribute, so a frame draws a handful of
             // coloured runs per line instead of one quad per character.
+            // Rebuilds only when the row actually changed since the last call. Scrollback rows never
+            // change again, so a terminal sitting idle re-allocates nothing per frame -- which matters
+            // because an IDE holds this open for hours.
             public method buildRuns() returns void {
+                if (!this.runsStale) {
+                    return;
+                }
+                this.runsStale = false;
                 this.runText.clear();
                 this.runAttr.clear();
                 int last = this.lastUsedCol();
