@@ -1,0 +1,30 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // One entry in the project file tree: a path, its display name, whether it is a directory, its
+        // expand/load state, its depth, and (for a directory) its lazily-loaded children.
+        public class FileNode {
+            public mutable String path;
+            public mutable String name;
+            public mutable boolean isDir;
+            public mutable boolean expanded;
+            public mutable boolean loaded;
+            public mutable int depth;
+            public mutable ArrayList<FileNode*>* children;
+
+            public constructor FileNode(String path, String name, boolean isDir, int depth) {
+                this.path = path;
+                this.name = name;
+                this.isDir = isDir;
+                this.expanded = false;
+                this.loaded = false;
+                this.depth = depth;
+                this.children = new ArrayList<FileNode*>() on heap;
+            }
+        }
+    }
+}

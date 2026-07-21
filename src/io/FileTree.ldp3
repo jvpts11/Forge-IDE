@@ -8,27 +8,7 @@ program Forge;
 public bundle forge {
     public namespace io {
 
-        // One node of the project file tree: a file or directory, its display name, and (for directories)
-        // its children -- loaded lazily on first expand. `depth` drives indentation in the tree widget.
-        public class FileNode {
-            public mutable String path;
-            public mutable String name;
-            public mutable boolean isDir;
-            public mutable boolean expanded;
-            public mutable boolean loaded;
-            public mutable int depth;
-            public mutable ArrayList<FileNode*>* children;
-
-            public constructor FileNode(String path, String name, boolean isDir, int depth) {
-                this.path = path;
-                this.name = name;
-                this.isDir = isDir;
-                this.expanded = false;
-                this.loaded = false;
-                this.depth = depth;
-                this.children = new ArrayList<FileNode*>() on heap;
-            }
-        }
+        // FileNode (one tree entry) lives in FileNode.ldp3 in this namespace.
 
         // The project file tree rooted at a directory. Directories load their children on demand (first
         // expand), sorted directories-first then alphabetically. visible() flattens the expanded tree into
