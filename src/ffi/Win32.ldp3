@@ -1,7 +1,7 @@
 program Forge;
 
 public bundle forge {
-    public namespace gfx {
+    public namespace ffi {
 
         // Win32/CRT entry points used by the automation modes. fflush(NULL) flushes stdout after every
         // serve reply -- when stdout is a pipe (the MCP transport) the CRT fully buffers it, so without

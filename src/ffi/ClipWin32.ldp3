@@ -1,7 +1,7 @@
 program Forge;
 
 public bundle forge {
-    public namespace gfx {
+    public namespace ffi {
 
         // Win32 clipboard entry points (user32) plus the global-memory helpers (kernel32) needed to hand a
         // text buffer to the system clipboard. Declared here so the editor engine stays free of FFI.

@@ -1,5 +1,7 @@
 import System.Memory;
 
+import forge.ffi.ClipWin32;
+
 program Forge;
 
 public bundle forge {

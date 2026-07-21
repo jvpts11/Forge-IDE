@@ -3,7 +3,7 @@ import System.Memory;
 program Forge;
 
 public bundle forge {
-    public namespace gfx {
+    public namespace ffi {
 
         // Win32 shell entry points for the folder picker (shell32).
         public class Shell {

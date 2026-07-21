@@ -2,6 +2,8 @@ import forge.test.CoreTests;
 import forge.gfx.GuiApp;
 import System.IO.Console;
 
+import forge.ffi.Win32;
+
 program Forge;
 
 // Forge -- the LDP3 IDE. Entry point. With no arguments it opens the graphical editor window; `shot`

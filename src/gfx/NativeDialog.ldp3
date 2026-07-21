@@ -1,5 +1,9 @@
 import System.Memory;
 
+import forge.ffi.Shell;
+import forge.ffi.Ole;
+import forge.ffi.Comdlg;
+
 program Forge;
 
 public bundle forge {

@@ -31,6 +31,8 @@ import System.Time.Stopwatch;
 import System.Memory;
 import System.OS.Env;
 
+import forge.ffi.Win32;
+
 program Forge;
 
 public bundle forge {
