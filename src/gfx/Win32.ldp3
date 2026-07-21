@@ -1,0 +1,21 @@
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Win32/CRT entry points used by the automation modes. fflush(NULL) flushes stdout after every
+        // serve reply -- when stdout is a pipe (the MCP transport) the CRT fully buffers it, so without
+        // this the client blocks waiting for an ack stuck in the buffer. PostMessageA posts synthetic
+        // input so the real WM_CHAR/WM_KEYDOWN decode path runs offscreen (the uitest mode).
+        public class Win32 {
+            public extern stdcall static method PostMessageA(long hwnd, int msg, long wp, long lp) returns int;
+            public extern stdcall static method fflush(long stream) returns int;
+            public extern stdcall static method GetModuleFileNameA(long hModule, long buf, int size) returns int;
+            public extern stdcall static method LoadImageA(long hinst, long name, int type, int cx, int cy, int load) returns long;
+            public extern stdcall static method SendMessageA(long hwnd, int msg, long wp, long lp) returns long;
+            // Ends the process with a status code. LDP3's `main` returns void, so this is how a failing
+            // self-test reports failure to whatever ran it (build.ps1, CI) instead of exiting 0.
+            public extern stdcall static method ExitProcess(int code) returns void;
+        }
+    }
+}

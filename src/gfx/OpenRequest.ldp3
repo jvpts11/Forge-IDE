@@ -1,0 +1,17 @@
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // A one-shot request from a menu command back to the run loop to open a project folder. The
+        // loop owns the file tree, so a "File > Open Folder" click stashes the chosen path here and the
+        // loop swaps the tree on the next iteration.
+        public class OpenRequest {
+            public mutable String path;
+
+            public constructor OpenRequest() {
+                this.path = "";
+            }
+        }
+    }
+}
