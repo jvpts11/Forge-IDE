@@ -257,8 +257,32 @@ public bundle forge {
                 this.active = false;
                 this.stopped = false;
                 this.status = "stopped";
+                this.freeCallStack();
+                this.freeVariables();
                 this.callStack = new ArrayList<DebugFrame*>() on heap;
                 this.variables = new ArrayList<DebugVar*>() on heap;
+            }
+
+            // The call stack and variables lists own the frames/vars they hold (built fresh from each
+            // DAP response), so a refill must free the previous ones -- the list destructor frees only
+            // its backing array, not the pointed-to objects.
+            private method freeCallStack() returns void {
+                mutable int i = 0;
+                while (i < this.callStack.size()) {
+                    delete this.callStack.get(i);
+                    i = i + 1;
+                }
+                delete this.callStack;
+                return;
+            }
+            private method freeVariables() returns void {
+                mutable int i = 0;
+                while (i < this.variables.size()) {
+                    delete this.variables.get(i);
+                    i = i + 1;
+                }
+                delete this.variables;
+                return;
             }
 
             // ---- Message pump ----
@@ -362,6 +386,8 @@ public bundle forge {
                 return;
             }
             public method clearWatches() returns void {
+                delete this.watches;
+                delete this.watchValues;
                 this.watches = new ArrayList<String>() on heap;
                 this.watchValues = new ArrayList<String>() on heap;
                 return;
@@ -394,6 +420,7 @@ public bundle forge {
             }
 
             private method parseStackTrace(nullable Json body) returns void {
+                this.freeCallStack();
                 this.callStack = new ArrayList<DebugFrame*>() on heap;
                 nullable Json frames = body.field("stackFrames");
                 for (mutable int i = 0; i < frames.size(); i++) {
@@ -413,6 +440,7 @@ public bundle forge {
                     this.stoppedFile = top.path;
                     this.stoppedLine = top.line;
                     this.currentFrameId = top.id;
+                    delete this.pendingEval;
                     this.pendingEval = new ArrayList<int>() on heap;  // drop stale eval correlations
                     this.client.scopes(top.id);   // fetch locals for the top frame
                     this.refreshWatches();
@@ -454,6 +482,7 @@ public bundle forge {
             }
 
             private method parseVariables(nullable Json body) returns void {
+                this.freeVariables();
                 this.variables = new ArrayList<DebugVar*>() on heap;
                 nullable Json vars = body.field("variables");
                 for (mutable int i = 0; i < vars.size(); i++) {

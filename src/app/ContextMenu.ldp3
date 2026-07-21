@@ -46,6 +46,8 @@ public bundle forge {
             }
 
             private method begin(int x, int y) returns void {
+                delete this.captions;                             // free the previous menu's entries
+                delete this.ids;
                 this.captions = new ArrayList<String>() on heap;
                 this.ids = new ArrayList<String>() on heap;
                 this.targetPath = "";

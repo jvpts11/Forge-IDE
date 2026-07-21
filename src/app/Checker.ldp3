@@ -125,6 +125,7 @@ public bundle forge {
                     return;
                 }
                 this.buf = "";
+                delete this.scratch;                              // free the previous run's paths
                 this.scratch = new ArrayList<String>() on heap;
                 String dir = Paths.join(this.projectDir, ".forge");
                 if (!File.exists(dir)) {
@@ -186,6 +187,7 @@ public bundle forge {
                     File.remove(this.scratch.get(i));
                     i = i + 1;
                 }
+                delete this.scratch;                              // free the removed scratch paths
                 this.scratch = new ArrayList<String>() on heap;
                 return;
             }
