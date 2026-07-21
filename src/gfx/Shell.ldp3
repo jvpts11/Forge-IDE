@@ -1,0 +1,14 @@
+import System.Memory;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Win32 shell entry points for the folder picker (shell32).
+        public class Shell {
+            public extern stdcall static method SHBrowseForFolderA(long bi) returns long;
+            public extern stdcall static method SHGetPathFromIDListA(long pidl, address buf) returns int;
+        }
+    }
+}

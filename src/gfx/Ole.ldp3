@@ -1,0 +1,12 @@
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // OLE entry points (ole32) used to initialize COM for the shell dialogs and free their memory.
+        public class Ole {
+            public extern stdcall static method CoInitialize(long reserved) returns int;
+            public extern stdcall static method CoTaskMemFree(long p) returns void;
+        }
+    }
+}

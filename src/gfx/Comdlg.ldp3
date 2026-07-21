@@ -1,0 +1,11 @@
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Common-dialog entry point (comdlg32) for the native "Save As" file dialog.
+        public class Comdlg {
+            public extern stdcall static method GetSaveFileNameA(long ofn) returns int;
+        }
+    }
+}

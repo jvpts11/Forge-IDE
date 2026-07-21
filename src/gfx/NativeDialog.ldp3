@@ -5,18 +5,8 @@ program Forge;
 public bundle forge {
     public namespace gfx {
 
-        // Win32 shell entry points for the folder picker.
-        public class Shell {
-            public extern stdcall static method SHBrowseForFolderA(long bi) returns long;
-            public extern stdcall static method SHGetPathFromIDListA(long pidl, address buf) returns int;
-        }
-        public class Ole {
-            public extern stdcall static method CoInitialize(long reserved) returns int;
-            public extern stdcall static method CoTaskMemFree(long p) returns void;
-        }
-        public class Comdlg {
-            public extern stdcall static method GetSaveFileNameA(long ofn) returns int;
-        }
+        // The FFI shims Shell (shell32), Ole (ole32) and Comdlg (comdlg32) live in their own files in
+        // this namespace -- Shell.ldp3, Ole.ldp3, Comdlg.ldp3.
 
         // A native "choose a folder" dialog, so the user opens a project with the OS picker they know. Returns
         // the chosen directory, or "" if cancelled. Marshals a BROWSEINFOA (64 bytes on x64) by hand.
