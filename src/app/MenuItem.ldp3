@@ -1,0 +1,22 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One entry in a dropdown menu: the caption shown to the user and the command id it triggers when
+        // chosen. A separator (commandId "-") draws a divider and can't be selected.
+        public class MenuItem {
+            public mutable String caption;
+            public mutable String commandId;
+
+            public constructor MenuItem(String caption, String commandId) {
+                this.caption = caption;
+                this.commandId = commandId;
+            }
+
+            public method isSeparator() returns boolean {
+                return this.commandId.equals("-");
+            }
+        }
+    }
+}

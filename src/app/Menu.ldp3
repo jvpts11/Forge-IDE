@@ -1,0 +1,27 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // A top-level menu: a title and the list of items in its dropdown.
+        public class Menu {
+            public mutable String title;
+            public mutable ArrayList<MenuItem>* items;
+
+            public constructor Menu(String title) {
+                this.title = title;
+                this.items = new ArrayList<MenuItem>() on heap;
+            }
+
+            public method add(String caption, String commandId) returns void {
+                this.items.add(new MenuItem(caption, commandId) on heap);
+            }
+
+            public method sep() returns void {
+                this.items.add(new MenuItem("-", "-") on heap);
+            }
+        }
+    }
+}

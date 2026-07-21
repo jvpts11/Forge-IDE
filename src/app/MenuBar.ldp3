@@ -5,35 +5,7 @@ program Forge;
 public bundle forge {
     public namespace app {
 
-        // One entry in a dropdown menu: the caption shown to the user and the command id it triggers when
-        // chosen. A separator (commandId "-") draws a divider and can't be selected.
-        public class MenuItem {
-            public mutable String caption;
-            public mutable String commandId;
-            public constructor MenuItem(String caption, String commandId) {
-                this.caption = caption;
-                this.commandId = commandId;
-            }
-            public method isSeparator() returns boolean {
-                return this.commandId.equals("-");
-            }
-        }
-
-        // A top-level menu: a title and the list of items in its dropdown.
-        public class Menu {
-            public mutable String title;
-            public mutable ArrayList<MenuItem>* items;
-            public constructor Menu(String title) {
-                this.title = title;
-                this.items = new ArrayList<MenuItem>() on heap;
-            }
-            public method add(String caption, String commandId) returns void {
-                this.items.add(new MenuItem(caption, commandId) on heap);
-            }
-            public method sep() returns void {
-                this.items.add(new MenuItem("-", "-") on heap);
-            }
-        }
+        // MenuItem and Menu live in their own files in this namespace -- MenuItem.ldp3, Menu.ldp3.
 
         // The window's menu bar: File / Edit / View / Run / Help, each a dropdown of commands. Tracks which
         // menu is currently open (openIndex, -1 = none). The shell hit-tests a title click to open/switch a
