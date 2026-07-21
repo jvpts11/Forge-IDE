@@ -1,4 +1,4 @@
-import LdpOpenGL.gltext.FontAtlas;
+import opengl.gltext.FontAtlas;
 
 program Forge;
 

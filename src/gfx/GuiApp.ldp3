@@ -1,9 +1,9 @@
-import LdpOpenGL.gl.Gl;
-import LdpOpenGL.gl.Wgl;
-import LdpOpenGL.glfw.GlWindow;
-import LdpOpenGL.glfw.InputEvent;
-import LdpOpenGL.gltext.GdiFont;
-import LdpOpenGL.gltext.FontAtlas;
+import opengl.gl.Gl;
+import opengl.gl.Wgl;
+import opengl.glfw.GlWindow;
+import opengl.glfw.InputEvent;
+import opengl.gltext.GdiFont;
+import opengl.gltext.FontAtlas;
 import forge.app.Workbench;
 import forge.app.Diagnostic;
 import forge.app.DiffView;

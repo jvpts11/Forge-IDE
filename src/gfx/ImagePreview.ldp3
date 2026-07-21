@@ -1,8 +1,8 @@
 import System.IO.File;
 import System.Text.Strings;
 import System.Collections.ArrayList;
-import LdpOpenGL.gl.Gl;
-import LdpOpenGL.gltex.Texture;
+import opengl.gl.Gl;
+import opengl.gltex.Texture;
 
 program Forge;
 
