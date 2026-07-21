@@ -1,4 +1,4 @@
-import editor.TextBuffer;
+import forge.editor.TextBuffer;
 import System.Collections.ArrayList;
 
 program Forge;

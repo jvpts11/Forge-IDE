@@ -1,12 +1,12 @@
 import System.Collections.ArrayList;
-import editor.Editor;
-import editor.TextBuffer;
-import editor.Match;
-import editor.FoldState;
-import view.Viewport;
-import syntax.Highlighter;
-import syntax.Span;
-import io.Document;
+import forge.editor.Editor;
+import forge.editor.TextBuffer;
+import forge.editor.Match;
+import forge.editor.FoldState;
+import forge.view.Viewport;
+import forge.syntax.Highlighter;
+import forge.syntax.Span;
+import forge.io.Document;
 
 program Forge;
 

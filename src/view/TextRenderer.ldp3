@@ -1,10 +1,10 @@
 import System.Collections.ArrayList;
 import System.Text.StringBuilder;
 import System.Text.Strings;
-import app.Controller;
-import syntax.Highlighter;
-import syntax.Span;
-import syntax.Tok;
+import forge.app.Controller;
+import forge.syntax.Highlighter;
+import forge.syntax.Span;
+import forge.syntax.Tok;
 
 program Forge;
 

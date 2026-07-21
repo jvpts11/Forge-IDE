@@ -1,11 +1,11 @@
 import System.Collections.ArrayList;
 import System.Text.StringBuilder;
 import System.Text.Strings;
-import app.Workbench;
-import app.DocumentManager;
-import app.Controller;
-import io.FileTree;
-import io.FileNode;
+import forge.app.Workbench;
+import forge.app.DocumentManager;
+import forge.app.Controller;
+import forge.io.FileTree;
+import forge.io.FileNode;
 
 program Forge;
 

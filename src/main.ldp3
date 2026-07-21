@@ -1,5 +1,5 @@
-import test.CoreTests;
-import gfx.GuiApp;
+import forge.test.CoreTests;
+import forge.gfx.GuiApp;
 import System.IO.Console;
 
 program Forge;

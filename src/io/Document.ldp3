@@ -2,8 +2,8 @@ import System.IO.Files;
 import System.IO.File;
 import System.Collections.ArrayList;
 import System.Text.Strings;
-import editor.TextBuffer;
-import editor.History;
+import forge.editor.TextBuffer;
+import forge.editor.History;
 
 program Forge;
 

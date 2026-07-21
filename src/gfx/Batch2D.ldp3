@@ -1,6 +1,6 @@
-import gl.Gl;
-import gl.Wgl;
-import glsl.Shader;
+import LdpOpenGL.gl.Gl;
+import LdpOpenGL.gl.Wgl;
+import LdpOpenGL.glsl.Shader;
 import System.Memory;
 
 program Forge;

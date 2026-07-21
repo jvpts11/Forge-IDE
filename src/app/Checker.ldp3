@@ -3,7 +3,7 @@ import System.OS.Subprocess;
 import System.IO.File;
 import System.IO.Paths;
 import System.Text.Strings;
-import app.Diagnostic;
+import forge.app.Diagnostic;
 
 program Forge;
 

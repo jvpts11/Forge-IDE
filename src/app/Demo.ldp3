@@ -1,8 +1,8 @@
 import System.Collections.ArrayList;
 import System.IO.Console;
-import app.Workbench;
-import io.FileTree;
-import view.ScreenRenderer;
+import forge.app.Workbench;
+import forge.io.FileTree;
+import forge.view.ScreenRenderer;
 
 program Forge;
 

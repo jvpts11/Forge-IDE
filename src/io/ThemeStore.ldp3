@@ -5,9 +5,9 @@ import System.OS.Env;
 import System.Text.Strings;
 import System.Text.StringBuilder;
 import System.Collections.ArrayList;
-import gfx.Theme;
-import gfx.Color;
-import io.PluginStore;
+import forge.gfx.Theme;
+import forge.gfx.Color;
+import forge.io.PluginStore;
 
 program Forge;
 

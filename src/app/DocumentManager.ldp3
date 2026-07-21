@@ -1,7 +1,7 @@
 import System.Collections.ArrayList;
 import System.IO.Paths;
-import app.Controller;
-import io.Document;
+import forge.app.Controller;
+import forge.io.Document;
 
 program Forge;
 
