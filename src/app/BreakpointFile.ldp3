@@ -1,0 +1,21 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // The breakpoints set in one file: the lines, and a parallel list of conditions ("" = unconditional).
+        public class BreakpointFile {
+            public mutable String path;
+            public mutable ArrayList<int>* lines;
+            public mutable ArrayList<String>* conditions;
+
+            public constructor BreakpointFile(String path) {
+                this.path = path;
+                this.lines = new ArrayList<int>() on heap;
+                this.conditions = new ArrayList<String>() on heap;
+            }
+        }
+    }
+}

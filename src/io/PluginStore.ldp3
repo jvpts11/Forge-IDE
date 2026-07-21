@@ -13,36 +13,8 @@ program Forge;
 public bundle forge {
     public namespace io {
 
-        // One installed plugin: its directory, what the manifest says, and whether it is enabled.
-        public class Plugin {
-            public mutable String name;         // directory name; the identity used everywhere
-            public mutable String title;        // human name from the manifest (falls back to `name`)
-            public mutable String description;
-            public mutable String version;
-            public mutable String dir;
-            public mutable boolean enabled;
-            public constructor Plugin(String name, String dir) {
-                this.name = name;
-                this.dir = dir;
-                this.title = name;
-                this.description = "";
-                this.version = "";
-                this.enabled = true;
-            }
-        }
-
-        // One command a plugin contributes: an id, a title for the palette, and the shell command it
-        // runs. Plugins extend Forge by running processes, not by loading code into it.
-        public class PluginCommand {
-            public mutable String id;
-            public mutable String title;
-            public mutable String run;
-            public constructor PluginCommand(String id, String title, String run) {
-                this.id = id;
-                this.title = title;
-                this.run = run;
-            }
-        }
+        // Plugin and PluginCommand (the plugin model classes) live in their own files in this namespace --
+        // Plugin.ldp3, PluginCommand.ldp3.
 
         // Installed plugins, under ~/.forge/plugins/<name>/.
         //

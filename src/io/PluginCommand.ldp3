@@ -1,0 +1,20 @@
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // One command a plugin contributes: an id, a title for the palette, and the shell command it runs.
+        // Plugins extend Forge by running processes, not by loading code into it.
+        public class PluginCommand {
+            public mutable String id;
+            public mutable String title;
+            public mutable String run;
+
+            public constructor PluginCommand(String id, String title, String run) {
+                this.id = id;
+                this.title = title;
+                this.run = run;
+            }
+        }
+    }
+}

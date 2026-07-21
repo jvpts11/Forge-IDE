@@ -1,0 +1,26 @@
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // An installed plugin: its directory name (the identity used everywhere), the human title and
+        // description/version from the manifest, its directory, and whether it is enabled.
+        public class Plugin {
+            public mutable String name;
+            public mutable String title;
+            public mutable String description;
+            public mutable String version;
+            public mutable String dir;
+            public mutable boolean enabled;
+
+            public constructor Plugin(String name, String dir) {
+                this.name = name;
+                this.dir = dir;
+                this.title = name;
+                this.description = "";
+                this.version = "";
+                this.enabled = true;
+            }
+        }
+    }
+}

@@ -1,0 +1,21 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // A single debug frame's display info, as parsed from a DAP stackTrace response.
+        public class DebugFrame {
+            public mutable int id;
+            public mutable String name;
+            public mutable String path;
+            public mutable int line;
+
+            public constructor DebugFrame(int id, String name, String path, int line) {
+                this.id = id;
+                this.name = name;
+                this.path = path;
+                this.line = line;
+            }
+        }
+    }
+}
