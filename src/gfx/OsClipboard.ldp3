@@ -5,20 +5,7 @@ program Forge;
 public bundle forge {
     public namespace gfx {
 
-        // Win32 clipboard entry points (user32) plus the global-memory helpers (kernel32) needed to hand a
-        // text buffer to the system clipboard. Declared here so the editor engine stays free of FFI.
-        public class ClipWin32 {
-            public extern stdcall static method OpenClipboard(long hwnd) returns int;
-            public extern stdcall static method CloseClipboard() returns int;
-            public extern stdcall static method EmptyClipboard() returns int;
-            public extern stdcall static method SetClipboardData(int format, long hMem) returns long;
-            public extern stdcall static method GetClipboardData(int format) returns long;
-            public extern stdcall static method IsClipboardFormatAvailable(int format) returns int;
-            public extern stdcall static method GlobalAlloc(int flags, long bytes) returns long;
-            public extern stdcall static method GlobalLock(long h) returns long;
-            public extern stdcall static method GlobalUnlock(long h) returns int;
-            public extern stdcall static method GlobalSize(long h) returns long;
-        }
+        // ClipWin32 (the user32/kernel32 FFI shim) lives in ClipWin32.ldp3 in this namespace.
 
         // The real OS clipboard, so copy/cut/paste cross tabs, panes, and other applications. Text is moved
         // as CF_TEXT (ANSI); Windows synthesizes CF_UNICODETEXT for consumers that want it, and vice-versa on

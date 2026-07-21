@@ -10,15 +10,7 @@ program Forge;
 public bundle forge {
     public namespace app {
 
-        // One turn in the conversation.
-        public class ChatMessage {
-            public mutable String role;    // "user" or "assistant"
-            public mutable String text;
-            public constructor ChatMessage(String role, String text) {
-                this.role = role;
-                this.text = text;
-            }
-        }
+        // ChatMessage (one conversation turn) lives in ChatMessage.ldp3 in this namespace.
 
         // A chat panel talking to an HTTP API.
         //

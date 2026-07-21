@@ -1,0 +1,17 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One command the palette can run: a stable id (the app dispatches on it) and a human title.
+        public class Command {
+            public mutable String id;
+            public mutable String title;
+
+            public constructor Command(String id, String title) {
+                this.id = id;
+                this.title = title;
+            }
+        }
+    }
+}

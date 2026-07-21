@@ -1,0 +1,17 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One turn in an AI chat conversation: the role ("user" or "assistant") and the message text.
+        public class ChatMessage {
+            public mutable String role;
+            public mutable String text;
+
+            public constructor ChatMessage(String role, String text) {
+                this.role = role;
+                this.text = text;
+            }
+        }
+    }
+}
