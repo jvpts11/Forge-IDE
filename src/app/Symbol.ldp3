@@ -1,0 +1,17 @@
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One entry in the go-to-symbol list: a caption (the declaration as shown) and the line it sits on.
+        public class Symbol {
+            public mutable String caption;
+            public mutable int line;
+
+            public constructor Symbol(String caption, int line) {
+                this.caption = caption;
+                this.line = line;
+            }
+        }
+    }
+}

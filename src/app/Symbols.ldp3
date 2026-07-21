@@ -8,14 +8,7 @@ public bundle forge {
 
         // One navigable symbol in a file: a display label ("class GpuScreen", "method drawFrame") and the
         // 1-based line it's declared on.
-        public class Symbol {
-            public mutable String caption;
-            public mutable int line;
-            public constructor Symbol(String caption, int line) {
-                this.caption = caption;
-                this.line = line;
-            }
-        }
+        // Symbol (the go-to-symbol entry) lives in Symbol.ldp3 in this namespace.
 
         // Extracts the declarations in a buffer (namespace/bundle/class/interface/enum/record/struct/method/
         // constructor/destructor) as a flat, in-order symbol list -- the source for go-to-symbol (Ctrl+Shift+O).
