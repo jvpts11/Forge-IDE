@@ -1,0 +1,21 @@
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // An RGBA colour, each channel a 0..1 float. The whole IDE palette is built from these (see Theme).
+        public class Color {
+            public mutable float r;
+            public mutable float g;
+            public mutable float b;
+            public mutable float a;
+
+            public constructor Color(float r, float g, float b, float a) {
+                this.r = r;
+                this.g = g;
+                this.b = b;
+                this.a = a;
+            }
+        }
+    }
+}

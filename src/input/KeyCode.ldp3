@@ -1,0 +1,15 @@
+program Forge;
+
+public bundle forge {
+    public namespace input {
+
+        // The kind of a key press. CHAR means a printable character (in Key.ch); the rest are the editing
+        // and navigation keys an IDE cares about. The physical terminal/GUI layer decodes escape sequences
+        // or OS events into these; the KeyMap turns them into Controller commands.
+        public enum KeyCode {
+            CHAR, ENTER, BACKSPACE, DELETE, TAB,
+            LEFT, RIGHT, UP, DOWN,
+            HOME, END, PAGE_UP, PAGE_DOWN
+        }
+    }
+}

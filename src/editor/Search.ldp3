@@ -7,21 +7,7 @@ public bundle forge {
 
         // One hit of a search needle in the buffer: the line, the starting column, and the match length
         // (equal to the needle's length for plain text). Positions are 0-based into the buffer.
-        public class Match {
-            public mutable int row;
-            public mutable int col;
-            public mutable int length;
-            public constructor Match(int row, int col, int length) {
-                this.row = row;
-                this.col = col;
-                this.length = length;
-            }
-            // A negative row is the "no match" sentinel (findNext/findPrev return one instead of null, so
-            // callers never deref a nullable). valid() distinguishes a real hit from the sentinel.
-            public method valid() returns boolean {
-                return this.row >= 0;
-            }
-        }
+        // Match (the search-hit value class) lives in Match.ldp3 in this namespace.
 
         // Plain-text search over a TextBuffer. Case-sensitive by default; setCaseSensitive(false) folds both
         // sides to lower case. It does not own the buffer -- the Editor passes its own. Matches never span a

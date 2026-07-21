@@ -7,18 +7,7 @@ public bundle forge {
 
         // An RGBA colour, 0..1 per channel. Colours live in the Theme so the whole IDE can be re-skinned by
         // swapping one object; GpuScreen reads them through fill()/text() helpers.
-        public class Color {
-            public mutable float r;
-            public mutable float g;
-            public mutable float b;
-            public mutable float a;
-            public constructor Color(float r, float g, float b, float a) {
-                this.r = r;
-                this.g = g;
-                this.b = b;
-                this.a = a;
-            }
-        }
+        // Color (the RGBA value class) lives in Color.ldp3 in this namespace.
 
         // The colour palette for the whole IDE. Two presets: a neutral dark (the default -- no green tint)
         // and a light one. Everything GpuScreen draws pulls its colour from here, so a theme switch is one

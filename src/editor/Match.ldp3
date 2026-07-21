@@ -1,0 +1,24 @@
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // One search hit: a position and length. A negative row is the "no match" sentinel (findNext/findPrev
+        // return one instead of null, so callers never deref a nullable); valid() tells a real hit apart.
+        public class Match {
+            public mutable int row;
+            public mutable int col;
+            public mutable int length;
+
+            public constructor Match(int row, int col, int length) {
+                this.row = row;
+                this.col = col;
+                this.length = length;
+            }
+
+            public method valid() returns boolean {
+                return this.row >= 0;
+            }
+        }
+    }
+}
