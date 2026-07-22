@@ -319,6 +319,7 @@ public bundle forge {
                     if (frames % 60 == 0) {
                         int ext = wb.pollExternalChange();
                         if (ext == 1) {
+                            wb.markGitDirty();   // reloaded content -> refresh the change-bars off the hot path
                             wb.output().banner("Reloaded", "The file changed on disk and was reloaded.");
                         } else if (ext == 2) {
                             wb.output().banner("Changed on disk",
@@ -329,6 +330,9 @@ public bundle forge {
                     // checked with the unsaved buffers and the squiggles update. It never blocks a frame --
                     // pumpCheck polls a subprocess and returns immediately.
                     wb.pumpCheck(30);
+                    // Refresh the git change-bars once, off the file-open hot path: opening a file or
+                    // switching a tab only marks them stale, so the open itself spawns no git process.
+                    wb.pumpGit();
                     // periodically persist the open tabs so the session survives a crash / next launch
                     if (frames % 300 == 0) {
                         WorkspaceStore.saveSession(wb.projectRoot(), wb.documents().openPaths());
@@ -680,7 +684,7 @@ public bundle forge {
                     int ti = screen.tabAtX(wb.documents(), mx);
                     if (ti >= 0) {
                         wb.documents().setActive(ti);
-                        wb.refreshGit();
+                        wb.markGitDirty();
                     }
                     return;
                 }

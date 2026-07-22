@@ -87,6 +87,7 @@ public bundle forge {
             private mutable Peek* peek;              // inline peek-definition popup (Alt+F12)
             private mutable DiffView* diff;          // read-only git-diff view of the active file
             private mutable Checker* chk;            // live type-check: the compiler's diagnostics while you type
+            private mutable boolean gitDirty;        // gutter needs a git-diff refresh; done off the hot path
             private mutable int seenEdits;           // sum of open documents' revisions, to notice an edit
             private mutable boolean sidebarToggle;   // a palette/menu request to toggle the sidebar; the shell
                                                      // owns the screen and consumes this each frame
@@ -109,6 +110,7 @@ public bundle forge {
                 this.git = new GitStatus() on heap;
                 this.dbg = new Debugger() on heap;
                 this.chk = new Checker() on heap;
+                this.gitDirty = false;
                 this.seenEdits = 0;
                 this.sidebarToggle = false;
                 this.renameOldName = "";
@@ -604,10 +606,28 @@ public bundle forge {
             }
 
             // Recompute the active file's git change marks (called on open, save and tab switch).
-            public method refreshGit() returns void {
+            // The per-file change bars for the gutter -- one `git diff`. Split out from the branch read so
+            // opening a file (which cannot change the branch) does not pay for a second git process.
+            public method refreshGitDiff() returns void {
                 this.git.refresh(this.projectDir, this.docs.active().document().path());
-                this.branch = this.gitBranch();   // asking git costs a process, so it happens HERE,
-                                                  // with the rest of the git refresh -- never per frame
+            }
+            // A full refresh (diff + branch), for the events that can change both: a commit, a checkout, a
+            // save. NOT the hot path -- opening a file or switching a tab only marks the diff dirty (below).
+            public method refreshGit() returns void {
+                this.refreshGitDiff();
+                this.branch = this.gitBranch();   // asking git costs a process, so it happens HERE, on a
+                                                  // real git event -- never on the file-open hot path
+            }
+            // Opening a file or switching tabs must be instant: it spawns no git process, it just marks the
+            // gutter stale. pumpGit() runs the single `git diff` once, on the next frame, off the hot path.
+            public method markGitDirty() returns void {
+                this.gitDirty = true;
+            }
+            public method pumpGit() returns void {
+                if (this.gitDirty) {
+                    this.gitDirty = false;
+                    this.refreshGitDiff();
+                }
             }
             // The branch shown in the status bar: whatever the last refreshGit() read. Empty when the
             // project is not a git repository.
@@ -663,6 +683,7 @@ public bundle forge {
                 this.projectDir = dir;
                 this.projectName = Workbench.readProjectName(dir);
                 this.chk.setProjectDir(dir);
+                this.branch = this.gitBranch();   // read the branch once per project, not per file-open
             }
             public method projectRoot() returns String {
                 return this.projectDir;
@@ -1106,7 +1127,7 @@ public bundle forge {
                         if (other.documentAt(i).path().equals(path)) {
                             Controller* v = this.documents().openView(other.documentAt(i));
                             v.setTabWidth(this.settings.tabWidth);
-                            this.refreshGit();
+                            this.markGitDirty();
                             return v;
                         }
                         i = i + 1;
@@ -1114,7 +1135,7 @@ public bundle forge {
                 }
                 Controller* c = this.documents().openFile(path);
                 c.setTabWidth(this.settings.tabWidth);
-                this.refreshGit();
+                this.markGitDirty();
                 return c;
             }
             // Close tab `i`; never leave the window with no document -- open a fresh one if that was the last.
