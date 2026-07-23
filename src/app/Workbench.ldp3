@@ -32,6 +32,7 @@ import System.IO.File;
 import System.IO.Files;
 import System.OS.Process;
 import System.OS.ProcessResult;
+import System.OS.Subprocess;
 import System.Memory.Units.kilobytes;
 
 program Forge;
@@ -89,6 +90,9 @@ public bundle forge {
             private mutable Checker* chk;            // live type-check: the compiler's diagnostics while you type
             private mutable boolean gitDirty;        // gutter needs a git-diff refresh; done off the hot path
             private mutable boolean branchDirty;     // branch name needs a one-shot read off the hot path
+            private mutable Subprocess branchProc;   // async `git rev-parse` (valid while branchPending)
+            private mutable boolean branchPending;   // a branch read is in flight
+            private mutable String branchBuf;        // its stdout accumulated across frames
             private mutable int seenEdits;           // sum of open documents' revisions, to notice an edit
             private mutable boolean sidebarToggle;   // a palette/menu request to toggle the sidebar; the shell
                                                      // owns the screen and consumes this each frame
@@ -113,6 +117,8 @@ public bundle forge {
                 this.chk = new Checker() on heap;
                 this.gitDirty = false;
                 this.branchDirty = false;
+                this.branchPending = false;
+                this.branchBuf = "";
                 this.seenEdits = 0;
                 this.sidebarToggle = false;
                 this.renameOldName = "";
@@ -611,7 +617,7 @@ public bundle forge {
             // The per-file change bars for the gutter -- one `git diff`. Split out from the branch read so
             // opening a file (which cannot change the branch) does not pay for a second git process.
             public method refreshGitDiff() returns void {
-                this.git.refresh(this.projectDir, this.docs.active().document().path());
+                this.git.startRefresh(this.projectDir, this.docs.active().document().path());
             }
             // A full refresh (diff + branch), for the events that can change both: a commit, a checkout, a
             // save. NOT the hot path -- opening a file or switching a tab only marks the diff dirty (below).
@@ -628,12 +634,35 @@ public bundle forge {
             public method pumpGit() returns void {
                 if (this.branchDirty) {
                     this.branchDirty = false;
-                    this.branch = this.gitBranch();
+                    this.branchProc = Subprocess.start("git -C \"" + this.projectDir
+                                                       + "\" rev-parse --abbrev-ref HEAD");
+                    this.branchPending = this.branchProc.isValid();
+                    this.branchBuf = "";
+                }
+                if (this.branchPending) {
+                    while (this.branchProc.canRead()) {
+                        String c = this.branchProc.read();
+                        if (c.length() == 0) {
+                            break;
+                        }
+                        this.branchBuf = this.branchBuf + c;
+                    }
+                    if (!this.branchProc.isAlive() && !this.branchProc.canRead()) {
+                        String b = this.branchBuf.trim();
+                        if (b.length() == 0 || b.indexOf("fatal") >= 0 || b.indexOf(" ") >= 0) {
+                            this.branch = "";
+                        } else {
+                            this.branch = b;
+                        }
+                        this.branchProc.close();
+                        this.branchPending = false;
+                    }
                 }
                 if (this.gitDirty) {
                     this.gitDirty = false;
-                    this.refreshGitDiff();
+                    this.refreshGitDiff();   // spawns the diff in the background
                 }
+                this.git.poll();             // drain it a frame at a time; never blocks the UI
             }
             // The branch shown in the status bar: whatever the last refreshGit() read. Empty when the
             // project is not a git repository.

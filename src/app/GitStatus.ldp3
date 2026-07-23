@@ -1,24 +1,30 @@
 import System.Collections.ArrayList;
 import System.Text.Strings;
-import System.OS.Process;
-import System.OS.ProcessResult;
+import System.OS.Subprocess;
 
 program Forge;
 
 public bundle forge {
     public namespace app {
 
-        // Per-file git change status for the editor gutter. refresh() runs `git diff` for one file and parses
-        // the hunk headers into a list of (line, kind) marks: 1 = added, 2 = modified, 3 = a deletion marker
-        // (lines removed above this point). The editor draws a coloured bar per marked line, JetBrains/VS
-        // Code-style, so you see your uncommitted changes at a glance. Silent (no marks) outside a git repo.
+        // Per-file git change status for the editor gutter: a list of (line, kind) marks — 1 = added,
+        // 2 = modified, 3 = a deletion marker — parsed from `git diff` hunk headers, drawn as coloured bars
+        // JetBrains/VS Code-style. The diff runs as a BACKGROUND subprocess (startRefresh spawns it, poll()
+        // drains it a frame at a time) so opening a file never blocks the UI on a git process — the earlier
+        // synchronous refresh froze a whole frame (tens to hundreds of ms) on every file open. Silent (no
+        // marks) outside a git repo.
         public class GitStatus {
             private mutable ArrayList<int>* lines;    // 0-based line numbers with a change mark
             private mutable ArrayList<int>* kinds;    // parallel: 1 added, 2 modified, 3 deletion marker
+            private mutable Subprocess proc;          // the running `git diff` (valid only while pending)
+            private mutable boolean pending;          // a diff subprocess is in flight
+            private mutable String outbuf;            // its stdout accumulated across frames
 
             public constructor GitStatus() {
                 this.lines = new ArrayList<int>() on heap;
                 this.kinds = new ArrayList<int>() on heap;
+                this.pending = false;
+                this.outbuf = "";
             }
 
             public method clear() returns void {
@@ -26,22 +32,51 @@ public bundle forge {
                 this.kinds = new ArrayList<int>() on heap;
             }
 
-            // Recompute the marks for `filePath` as seen from `projectDir` (the repo working tree). Untracked
-            // or non-repo files simply yield no marks.
-            public method refresh(String projectDir, String filePath) returns void {
+            // Kick off a diff for `filePath` in the background; the gutter clears at once and the new marks
+            // land a frame or two later via poll(). A diff already in flight is abandoned (file changed).
+            public method startRefresh(String projectDir, String filePath) returns void {
+                if (this.pending) {
+                    this.proc.close();
+                    this.pending = false;
+                }
                 this.clear();
                 if (filePath.length() == 0) {
                     return;
                 }
                 String cmd = "git -C \"" + projectDir + "\" --no-pager diff --unified=0 -- \"" + filePath + "\"";
-                ProcessResult r = Process.run(cmd);
-                if (r.exitCode != 0) {
+                this.proc = Subprocess.start(cmd);
+                if (!this.proc.isValid()) {
                     return;
                 }
-                ArrayList<String> out = Strings.split(r.output, "\n");
+                this.outbuf = "";
+                this.pending = true;
+            }
+
+            // Drain the in-flight diff without blocking; when the process has finished and its output is fully
+            // read, parse the hunk headers into marks. Call once per frame.
+            public method poll() returns void {
+                if (!this.pending) {
+                    return;
+                }
+                while (this.proc.canRead()) {
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        break;   // EOF
+                    }
+                    this.outbuf = this.outbuf + chunk;
+                }
+                if (!this.proc.isAlive() && !this.proc.canRead()) {
+                    this.parseOutput(this.outbuf);
+                    this.proc.close();
+                    this.pending = false;
+                }
+            }
+
+            private method parseOutput(String out) returns void {
+                ArrayList<String> lns = Strings.split(out, "\n");
                 mutable int i = 0;
-                while (i < out.size()) {
-                    String ln = out.get(i);
+                while (i < lns.size()) {
+                    String ln = lns.get(i);
                     if (ln.startsWith("@@")) {
                         this.parseHunk(ln);
                     }
