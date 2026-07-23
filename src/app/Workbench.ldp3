@@ -88,6 +88,7 @@ public bundle forge {
             private mutable DiffView* diff;          // read-only git-diff view of the active file
             private mutable Checker* chk;            // live type-check: the compiler's diagnostics while you type
             private mutable boolean gitDirty;        // gutter needs a git-diff refresh; done off the hot path
+            private mutable boolean branchDirty;     // branch name needs a one-shot read off the hot path
             private mutable int seenEdits;           // sum of open documents' revisions, to notice an edit
             private mutable boolean sidebarToggle;   // a palette/menu request to toggle the sidebar; the shell
                                                      // owns the screen and consumes this each frame
@@ -111,6 +112,7 @@ public bundle forge {
                 this.dbg = new Debugger() on heap;
                 this.chk = new Checker() on heap;
                 this.gitDirty = false;
+                this.branchDirty = false;
                 this.seenEdits = 0;
                 this.sidebarToggle = false;
                 this.renameOldName = "";
@@ -624,6 +626,10 @@ public bundle forge {
                 this.gitDirty = true;
             }
             public method pumpGit() returns void {
+                if (this.branchDirty) {
+                    this.branchDirty = false;
+                    this.branch = this.gitBranch();
+                }
                 if (this.gitDirty) {
                     this.gitDirty = false;
                     this.refreshGitDiff();
@@ -683,7 +689,9 @@ public bundle forge {
                 this.projectDir = dir;
                 this.projectName = Workbench.readProjectName(dir);
                 this.chk.setProjectDir(dir);
-                this.branch = this.gitBranch();   // read the branch once per project, not per file-open
+                // Defer the git-branch read (a subprocess) off the blocking open path; pumpGit reads it once.
+                this.branch = "";
+                this.branchDirty = true;
             }
             public method projectRoot() returns String {
                 return this.projectDir;

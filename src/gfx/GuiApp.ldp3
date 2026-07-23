@@ -86,7 +86,13 @@ public bundle forge {
                 Overlay* ov = new Overlay() on heap;
                 Completion* comp = new Completion() on heap;
                 comp.loadImports(GuiApp.referencePath("imports.txt"));
-                GuiApp.refreshProjectSymbols(comp, tree);
+                // Project-wide symbol indexing (autocomplete) used to read and parse EVERY project file
+                // synchronously here, which froze startup on a large project. It is now spread across the
+                // first frames: the window appears at once and cross-file names fill in over ~1s.
+                mutable ArrayList<String>* idxFiles = tree.allFiles();
+                mutable ArrayList<String>* idxNames = new ArrayList<String>() on heap;
+                mutable int idxCursor = 0;
+                mutable boolean idxDone = false;
                 MenuBar* menu = new MenuBar() on heap;
                 ContextMenu* ctx = new ContextMenu() on heap;
                 OpenRequest* req = new OpenRequest() on heap;
@@ -124,6 +130,15 @@ public bundle forge {
                 while (win.isOpen()) {
                     frames = frames + 1;
                     win.pump();
+                    // Feed the background symbol index a few files per frame until the project is scanned.
+                    if (!idxDone) {
+                        idxCursor = GuiApp.pumpSymbols(idxFiles, idxCursor, idxNames, 8);
+                        if (idxCursor >= idxFiles.size() || idxNames.size() >= 4000) {
+                            comp.setProjectSymbols(idxNames);
+                            delete idxFiles;
+                            idxDone = true;
+                        }
+                    }
                     boolean hadEvents = win.hasEvent();   // keyboard/char/resize arrived this frame
                     if (!workspaceOpen) {
                         boolean wdown = win.keyDown(1);
@@ -2925,6 +2940,36 @@ public bundle forge {
                 comp.setProjectSymbols(names);   // ownership of `names` transfers to the completion index
                 delete files;                    // allFiles() returns a fresh list this method owns
                 return;
+            }
+
+            // Scan up to `budget` project .ldp3 files from `cursor` into `names` (deduped); returns the new
+            // cursor. The incremental counterpart of refreshProjectSymbols: the run loop calls it a few files
+            // at a time so startup never blocks on the whole-project scan.
+            private static method pumpSymbols(ArrayList<String>* files, int cursor, ArrayList<String>* names,
+                                              int budget) returns int {
+                mutable int fi = cursor;
+                mutable int processed = 0;
+                while (fi < files.size() && processed < budget && names.size() < 4000) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (path.endsWith(".ldp3")) {
+                        ArrayList<Symbol>* syms = new ArrayList<Symbol>() on heap;
+                        ArrayList<String> fileLines = Files.readLines(path);
+                        Symbols.scan(fileLines, syms);
+                        mutable int si = 0;
+                        while (si < syms.size()) {
+                            String nm = GuiApp.symbolName(syms.get(si).caption);
+                            if (nm.length() > 1 && !GuiApp.listHas(names, nm)) {
+                                names.add(nm);
+                            }
+                            si = si + 1;
+                        }
+                        delete fileLines;
+                        delete syms;
+                        processed = processed + 1;
+                    }
+                }
+                return fi;
             }
             private static method symbolName(String caption) returns String {
                 mutable int sp = 0 - 1;
