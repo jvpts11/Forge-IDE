@@ -35,9 +35,9 @@ public bundle forge {
                     + "mutable nullable sealed permits var move movable unique partitionable extern cdecl "
                     + "stdcall fastcall freestanding persistent eternal transient comptime literal fixed "
                     + "volatile cascade lazy external release reimport unimport requires ensures invariant "
-                    + "static_assert extends implements "
+                    + "demand otherwise extends implements "
                     + "bump pool stack fixedslot ring growable");   // spec 17: region flavor / growth
-                this.addAll(this.decl, "program bundle namespace class interface struct record union enum "
+                this.addAll(this.decl, "program bundle namespace class interface struct record union enum layout "
                     + "catalog byCatalog method operator constructor destructor returns import annotation "
                     + "typealias newtype region label lambda function methodref");
                 this.addAll(this.types, "void boolean char string String int8 int16 int32 int64 int uint8 "
