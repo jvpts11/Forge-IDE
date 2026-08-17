@@ -1,4 +1,4 @@
-# LDP3 build artifacts
+# Polaron build artifacts
 build-output/
 
 # installer staging + output (.msi, the staged toolchain bundle, the cached Python embeddable)
@@ -11,7 +11,8 @@ installer/.cache/
 *.exe
 *.pdb
 
-# packages pulled by `ldp3 plug`
+# libraries installed by `polaron plug`
+libraries/
 packages/
 
 # editor / OS noise
@@ -31,7 +32,8 @@ Thumbs.db
 frame.*
 
 # scratch files the test suite writes
-*.tmp.ldp3
+*.tmp.pol
+*.log
 
 # live-check scratch buffers
 .forge/

@@ -1,0 +1,2641 @@
+import forge.editor.Editor;
+import forge.syntax.Highlighter;
+import forge.syntax.Span;
+import forge.syntax.Tok;
+import forge.app.Controller;
+import forge.io.Document;
+import forge.io.Settings;
+import forge.io.ThemeStore;
+import forge.io.PluginStore;
+import forge.io.Plugin;
+import forge.io.PluginCommand;
+import forge.app.DocumentManager;
+import forge.app.CommandRegistry;
+import forge.app.OutputPanel;
+import forge.app.Diagnostic;
+import forge.app.Checker;
+import forge.app.QuickFix;
+import forge.gfx.ImagePreview;
+import forge.app.LspClient;
+import forge.app.AiChat;
+import forge.app.ChatMessage;
+import forge.app.Symbol;
+import forge.app.Symbols;
+import forge.app.GitStatus;
+import forge.input.Key;
+import forge.input.KeyMap;
+import System.Collections.ArrayList;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+import System.IO.Paths;
+import System.IO.File;
+import System.IO.Files;
+import System.OS.Process;
+import System.OS.ProcessResult;
+import System.OS.Subprocess;
+import System.Memory.Units.kilobytes;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // The application root: the open documents, the command registry, and the key map, tied together.
+        // The GUI (or terminal) shell instantiates one Workbench, feeds it key events (handleKey) and
+        // palette selections (runCommand), and renders the active document's Controller. Nothing here is
+        // graphical, so the whole application logic is unit-testable. The project file tree is a separate
+        // panel the shell owns; it is not part of the core Workbench state.
+        public class Workbench {
+            private mutable DocumentManager* docs;      // pane 0 -- always present
+            private mutable DocumentManager* docs2;     // pane 1 -- only while the editor is split
+            private mutable boolean split;              // is the editor split into two panes?
+            private mutable int pane;                   // which pane has focus (0 or 1)
+            private mutable CommandRegistry* commands;
+            private mutable KeyMap* keymap;
+            private mutable OutputPanel* out;
+            private mutable ArrayList<Diagnostic>* diags;
+            private mutable Settings* settings;      // persisted user preferences (font, tab width, theme, toggles)
+            private mutable boolean wrap;           // word wrap: a long line occupies several screen rows
+            private mutable boolean outline;        // the structure panel: the file's declarations, at a glance
+            private mutable String projectDir;      // where build/run commands execute (the project root)
+            private mutable String projectName;     // from polaron.toml, shown in the status bar
+            private mutable GitStatus* git;         // change marks for the active file's gutter
+            private mutable Debugger* dbg;          // debug session (breakpoints, stopped line, stack, vars)
+            private mutable String renameOldName;   // the identifier a pending rename prompt is renaming
+            private mutable int dbgOutConsumed;      // how many debug-output lines are already in the panel
+            private mutable boolean lightTheme;      // UI theme preference (true = light); the shell applies it
+            private mutable ArrayList<Terminal*>* terms;  // integrated terminals (each a shell behind a ConPTY)
+            // Terminals live in a pool region (spec 17): closing one returns its slot to the free-list, so
+            // opening and closing terminals reuses memory instead of churning the global heap. The
+            // ArrayList above holds pointers INTO this region as the tab-order index.
+            private mutable pool region termRegion;
+            private mutable int activeTerm;          // which terminal the panel shows / routes keystrokes to
+            private mutable String branch;          // cached branch name (refreshed with the git status)
+            private mutable boolean treeDirty;      // set by file ops; the shell rebuilds the file tree
+            private mutable boolean fontDirty;      // set by the settings panel; the shell reloads the atlas
+            private mutable AiChat* chat;           // the AI panel; its request is drained per frame
+            private mutable LspClient* lsp;         // language server: types the textual path lacks
+            private mutable String pendingExtract;  // extract-method name, awaiting the server's answer
+            private mutable ImagePreview* preview;  // render preview: an image the program wrote
+            private mutable boolean showMinimap;    // view preference: the code minimap on the right
+            private mutable boolean renderWs;        // view preference: draw a dot at each space (whitespace)
+            private mutable ArrayList<NavLoc>* navBack;  // Alt+Left history of caret locations before a jump
+            private mutable ArrayList<NavLoc>* navFwd;   // Alt+Right stack (locations popped off navBack)
+            private mutable String lastNavFile;      // the last settled caret location, to detect a "far" jump
+            private mutable int lastNavRow;
+            private mutable int lastNavCol;
+            private mutable boolean navInit;
+            private mutable Peek* peek;              // inline peek-definition popup (Alt+F12)
+            private mutable DiffView* diff;          // read-only git-diff view of the active file
+            private mutable Checker* chk;            // live type-check: the compiler's diagnostics while you type
+            private mutable boolean gitDirty;        // gutter needs a git-diff refresh; done off the hot path
+            private mutable boolean branchDirty;     // branch name needs a one-shot read off the hot path
+            // Async `git rev-parse`. Absent rather than empty between reads: there is no such thing as
+            // a subprocess that is not a process.
+            private mutable nullable Subprocess branchProc;
+            private mutable boolean branchPending;   // a branch read is in flight
+            private mutable String branchBuf;        // its stdout accumulated across frames
+            private mutable int seenEdits;           // sum of open documents' revisions, to notice an edit
+            private mutable boolean sidebarToggle;   // a palette/menu request to toggle the sidebar; the shell
+                                                     // owns the screen and consumes this each frame
+            private mutable int pendingCloseIdx;     // tab index awaiting the unsaved-changes confirm (-1 = none)
+
+            public constructor Workbench(int rows, int cols) {
+                this.docs = new DocumentManager(rows, cols) on heap;
+                this.docs2 = new DocumentManager(rows, cols) on heap;   // pane 1, empty until a split
+                this.split = false;
+                this.pane = 0;
+                this.commands = new CommandRegistry() on heap;
+                this.keymap = new KeyMap() on heap;
+                this.out = new OutputPanel() on heap;
+                this.diags = new ArrayList<Diagnostic>() on heap;
+                this.settings = Settings.load();
+                this.projectDir = ".";
+                this.outline = false;
+                this.wrap = this.settings.wordWrap;
+                this.projectName = "";
+                this.git = new GitStatus() on heap;
+                this.dbg = new Debugger() on heap;
+                this.chk = new Checker() on heap;
+                this.gitDirty = false;
+                this.branchDirty = false;
+                this.branchProc = null;
+                this.branchPending = false;
+                this.branchBuf = "";
+                this.seenEdits = 0;
+                this.sidebarToggle = false;
+                this.renameOldName = "";
+                this.dbgOutConsumed = 0;
+                this.lightTheme = this.settings.lightTheme;
+                this.termRegion = itself.allocate(16 kilobytes);
+                this.terms = new ArrayList<Terminal*>() on heap;
+                this.terms.add(new Terminal() in region this.termRegion);
+                this.activeTerm = 0;
+                this.branch = "";
+                this.treeDirty = false;
+                this.fontDirty = false;
+                this.chat = new AiChat() on heap;
+                this.lsp = new LspClient() on heap;
+                this.pendingExtract = "";
+                this.preview = new ImagePreview() on heap;
+                this.showMinimap = this.settings.minimap;
+                this.renderWs = this.settings.whitespace;
+                this.navBack = new ArrayList<NavLoc>() on heap;
+                this.navFwd = new ArrayList<NavLoc>() on heap;
+                this.lastNavFile = "";
+                this.lastNavRow = 0;
+                this.lastNavCol = 0;
+                this.navInit = false;
+                this.peek = new Peek() on heap;
+                this.diff = new DiffView() on heap;
+                this.pendingCloseIdx = 0 - 1;
+                this.docs.openNew();               // start on one empty document
+            }
+
+            // EVERYTHING THE CONSTRUCTOR TOOK, GIVEN BACK. The terminals go first and by hand: they
+            // live in the pool region, so each one's own destructor has to run before the region under
+            // them is released -- a shell behind a ConPTY that is freed without being closed leaves a
+            // process running with nobody to talk to.
+            public destructor ~Workbench() returns void {
+                for (var t in this.terms.toArray()) {
+                    delete t;
+                }
+                delete this.terms;
+                release region this.termRegion;
+                delete this.docs;
+                delete this.docs2;
+                delete this.commands;
+                delete this.keymap;
+                delete this.out;
+                delete this.diags;
+                delete this.settings;
+                delete this.git;
+                delete this.dbg;
+                delete this.chk;
+                delete this.chat;
+                delete this.lsp;
+                delete this.preview;
+                delete this.navBack;
+                delete this.navFwd;
+                delete this.peek;
+                delete this.diff;
+                return;
+            }
+
+            public method diffView() returns DiffView* {
+                return this.diff;
+            }
+            // Open the read-only, colour-coded git diff of the active file (or the whole tree if it has no path)
+            // over the editor. Reuses `git diff` directly; DiffView classifies each line.
+            public method openDiff() returns void {
+                String path = this.docs.active().document().path();
+                mutable String cmd = "git -C \"" + this.projectDir + "\" --no-pager diff";
+                if (path.length() > 0) {
+                    cmd = cmd + " -- \"" + path + "\"";
+                }
+                ProcessResult r = Process.run(cmd);
+                mutable String title = "Diff";
+                if (path.length() > 0) {
+                    title = "Diff: " + Paths.basename(path);
+                }
+                this.diff.load(title, Strings.split(r.output, "\n"));
+            }
+
+            public method peekView() returns Peek* {
+                return this.peek;
+            }
+            // Alt+F12: resolve the definition of the identifier under the caret (current file first, then the
+            // whole project) and show it inline in a peek popup instead of jumping. Returns true if found.
+            public method peekDefinition(ArrayList<String>* files) returns boolean {
+                Controller* c = this.docs.active();
+                String w = c.wordAtCaret();
+                if (w.length() == 0) {
+                    return false;
+                }
+                int localLine = Symbols.definitionLine(c, w);
+                if (localLine >= 0) {
+                    this.peek.show(c.document().path(), Paths.basename(c.document().path()),
+                                   Workbench.docLines(c), localLine);
+                    return true;
+                }
+                String activePath = c.document().path();
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (path.endsWith(".pol") && !path.equals(activePath)) {
+                        ArrayList<String> ls = Files.readLines(path);
+                        int line = Symbols.definitionLineIn(ls, w);
+                        if (line >= 0) {
+                            this.peek.show(path, Paths.basename(path), ls, line);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            // Enter while a peek is open: jump to it for real (open its file, place the caret on the decl line).
+            public method peekJump() returns void {
+                if (!this.peek.isActive()) {
+                    return;
+                }
+                String path = this.peek.fullPath;
+                int line = this.peek.defLine;
+                this.peek.clear();
+                if (path.length() > 0 && !path.equals(this.activePath())) {
+                    this.openFile(path);
+                }
+                this.docs.active().placeCaret(line, 0);
+            }
+            private static method docLines(Controller* c) returns ArrayList<String> {
+                ArrayList<String> out = new ArrayList<String>() on heap;
+                int n = c.editor().document().lineCount();
+                mutable int i = 0;
+                while (i < n) {
+                    out.add(c.editor().document().line(i));
+                    i = i + 1;
+                }
+                return out;
+            }
+
+            // Called once per frame (and before serve introspection): if the caret made a "far" jump -- a file
+            // change or a large line delta, i.e. a go-to-definition / go-to-symbol / problem / search jump rather
+            // than ordinary editing -- record where it came from so Alt+Left / Alt+Right can walk the trail.
+            public method trackNav() returns void {
+                String p = this.activePath();
+                int r = this.docs.active().editor().cursorRow();
+                int c = this.docs.active().editor().cursorCol();
+                if (!this.navInit) {
+                    this.navInit = true;
+                    this.lastNavFile = p;
+                    this.lastNavRow = r;
+                    this.lastNavCol = c;
+                    return;
+                }
+                boolean far = !p.equals(this.lastNavFile) || Workbench.absDiff(r, this.lastNavRow) >= 8;
+                if (far) {
+                    this.navBack.add(new NavLoc(this.lastNavFile, this.lastNavRow, this.lastNavCol) on heap);
+                    this.navFwd = new ArrayList<NavLoc>() on heap;
+                    while (this.navBack.size() > 200) {
+                        this.navBack.removeAt(0);
+                    }
+                }
+                this.lastNavFile = p;
+                this.lastNavRow = r;
+                this.lastNavCol = c;
+            }
+            // Alt+Left: return to the previous recorded location, pushing the current one onto the forward stack.
+            public method navGoBack() returns void {
+                if (this.navBack.size() == 0) {
+                    return;
+                }
+                this.navFwd.add(new NavLoc(this.activePath(), this.docs.active().editor().cursorRow(),
+                                           this.docs.active().editor().cursorCol()) on heap);
+                int n = this.navBack.size();
+                NavLoc* dst = this.navBack.get(n - 1);
+                this.navBack.removeAt(n - 1);
+                this.gotoNav(dst);
+            }
+            // Alt+Right: replay a location the back stack popped.
+            public method navGoForward() returns void {
+                if (this.navFwd.size() == 0) {
+                    return;
+                }
+                this.navBack.add(new NavLoc(this.activePath(), this.docs.active().editor().cursorRow(),
+                                            this.docs.active().editor().cursorCol()) on heap);
+                int n = this.navFwd.size();
+                NavLoc* dst = this.navFwd.get(n - 1);
+                this.navFwd.removeAt(n - 1);
+                this.gotoNav(dst);
+            }
+            private method gotoNav(NavLoc* loc) returns void {
+                if (loc.path.length() > 0 && !loc.path.equals(this.activePath())) {
+                    this.openFile(loc.path);
+                }
+                this.docs.active().placeCaret(loc.row, loc.col);
+                this.lastNavFile = loc.path;      // so the next trackNav does not re-record this move
+                this.lastNavRow = loc.row;
+                this.lastNavCol = loc.col;
+            }
+            private static method absDiff(int a, int b) returns int {
+                if (a >= b) {
+                    return a - b;
+                }
+                return b - a;
+            }
+
+            // The debug session. The gutter shows its breakpoints and stopped line; the shell pumps it each
+            // frame so incoming adapter events update the UI without blocking.
+            public method debugger() returns Debugger* {
+                return this.dbg;
+            }
+            // UI theme preference. The shell reads wantsLight() each frame and re-skins GpuScreen on a change.
+            public method wantsLight() returns boolean {
+                return this.lightTheme;
+            }
+            // Step to the next installed theme, wrapping around. With only the built-ins present this
+            // behaves exactly like the old dark/light toggle; every theme dropped into ~/.forge/themes
+            // joins the rotation.
+            public method toggleTheme() returns void {
+                ArrayList<String>* names = ThemeStore.available();
+                mutable int at = 0;
+                mutable int i = 0;
+                while (i < names.size()) {
+                    if (names.get(i).equals(this.settings.themeName)) {
+                        at = i;
+                    }
+                    i = i + 1;
+                }
+                String next = names.get((at + 1) % names.size());
+                delete names;
+                this.setTheme(next);
+            }
+            // Select a theme by name and persist it. lightTheme is kept in step so the older paths that
+            // still ask "is it light?" (the welcome screen, the workspace store) stay correct.
+            public method setTheme(String name) returns void {
+                this.settings.themeName = name;
+                this.lightTheme = name.equals("Light");
+                this.settings.lightTheme = this.lightTheme;
+                Settings.save(this.settings);
+            }
+            public method themeName() returns String {
+                return this.settings.themeName;
+            }
+            public method aiChat() returns AiChat* {
+                return this.chat;
+            }
+            public method language() returns LspClient* {
+                return this.lsp;
+            }
+
+            // --- extract method -----------------------------------------------------------------
+            // The signature depends on types, so the server decides it. Asking is asynchronous: this
+            // records the name and fires the request, and applyPendingExtract() finishes the job on a
+            // later frame when the answer lands.
+            public method beginExtractMethod(String name) returns void {
+                if (name.length() == 0 || !this.documents().hasActive()) {
+                    return;
+                }
+                if (!this.lsp.isRunning()) {
+                    this.out.banner("Extract Method",
+                                    "the language server is not running, and the signature cannot be "
+                                    + "worked out without it");
+                    return;
+                }
+                int[] rows = this.active().editor().selectedLineRange();
+                int first = rows[0];
+                int last = rows[1];
+                delete rows;
+                if (first < 0) {
+                    this.out.banner("Extract Method", "select the lines to extract first");
+                    return;
+                }
+                this.syncLanguageServer();
+                String path = this.documents().active().document().path();
+                this.pendingExtract = name;
+                this.lsp.askExtract("file:///" + path, first + 1, last + 1);   // server is 1-based
+                return;
+            }
+            // Called each frame: applies the extraction once the server has answered.
+            public method applyPendingExtract() returns void {
+                if (this.pendingExtract.length() == 0 || !this.lsp.extractIsReady()) {
+                    return;
+                }
+                String name = this.pendingExtract;
+                this.pendingExtract = "";
+                if (!this.lsp.extractSucceeded()) {
+                    this.out.banner("Extract Method", this.lsp.extractWhyNot());
+                    return;
+                }
+                boolean ok = this.active().editor().extractMethod(name, this.lsp.extractParamList(),
+                                                                  this.lsp.extractArgList(),
+                                                                  this.lsp.extractReturnType(),
+                                                                  this.lsp.extractReturnVar());
+                this.active().edited();
+                if (!ok) {
+                    this.out.banner("Extract Method", "the edit could not be applied");
+                }
+                return;
+            }
+            // --- hover ---------------------------------------------------------------------------
+            // Ask the server what the identifier under the caret is. The answer lands on a later
+            // frame; read it with hoverAtCaret().
+            public method askHoverAtCaret() returns void {
+                if (!this.lsp.isRunning() || !this.documents().hasActive()) {
+                    return;
+                }
+                this.syncLanguageServer();
+                String path = this.documents().active().document().path();
+                this.lsp.askHover("file:///" + path, this.active().editor().cursorRow(),
+                                  this.active().editor().cursorCol());
+                return;
+            }
+            // The best hover available right now. The server states a full typed signature, which
+            // Forge's own lookup cannot; when it has not answered -- or has nothing to say about this
+            // name -- fall back to the declaration line rather than showing an empty box.
+            public method hoverAtCaret() returns String {
+                if (this.lsp.hoverIsReady() && this.lsp.hoverInfo().length() > 0) {
+                    return this.lsp.hoverInfo();
+                }
+                return this.active().hoverInfo(this.active().editor().cursorRow(),
+                                               this.active().editor().cursorCol());
+            }
+
+            // Keep the server's copy of the active file current. Cheap when nothing is open, and the
+            // server only ever sees what is already on screen.
+            public method syncLanguageServer() returns void {
+                if (!this.lsp.isRunning() || !this.documents().hasActive()) {
+                    return;
+                }
+                String path = this.documents().active().document().path();
+                if (path.length() == 0) {
+                    return;
+                }
+                this.lsp.syncDocument("file:///" + path,
+                                      this.documents().active().editor().document().text());
+                return;
+            }
+            public method renderPreview() returns ImagePreview* {
+                return this.preview;
+            }
+
+            // --- plugins ---
+            // What is installed, with its state and description, as a navigable list.
+            public method showPlugins() returns void {
+                ArrayList<Plugin*>* plugins = PluginStore.installed();
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < plugins.size()) {
+                    Plugin* p = plugins.get(i);
+                    i = i + 1;
+                    mutable String row = p.enabled ? "  on   " : "  off  ";
+                    row = row + p.title;
+                    if (p.version.length() > 0) {
+                        row = row + "  " + p.version;
+                    }
+                    if (p.description.length() > 0) {
+                        row = row + "  --  " + p.description;
+                    }
+                    body.add(row);
+                    navFiles.add(p.dir + "/plugin.txt");    // clicking a row opens its manifest
+                    navLines.add(0);
+                }
+                if (body.size() == 0) {
+                    body.add("(no plugins installed -- use \"Plugins: Install from GitHub\")");
+                    navFiles.add("");
+                    navLines.add(0 - 1);
+                }
+                this.out.showNavigable("Plugins", body, navFiles, navLines);
+                mutable int f = 0;
+                while (f < plugins.size()) {
+                    delete plugins.get(f);
+                    f = f + 1;
+                }
+                delete plugins;
+                return;
+            }
+            // Clone a plugin repository and report what happened. A clone fails for many ordinary
+            // reasons (no network, typo, already installed), so the git output is shown rather than
+            // swallowed.
+            public method installPlugin(String source) returns void {
+                this.out.banner("Plugins", PluginStore.install(source));
+                return;
+            }
+            public method updatePlugin(String name) returns void {
+                this.out.banner("Plugins", PluginStore.update(name));
+                return;
+            }
+            // Run a command contributed by a plugin, by its prefixed id. False when no plugin owns that
+            // id, so the caller falls through to the built-in commands.
+            public method runPluginCommand(String id) returns boolean {
+                ArrayList<PluginCommand*>* cmds = PluginStore.commands();
+                mutable boolean ran = false;
+                mutable int i = 0;
+                while (i < cmds.size()) {
+                    PluginCommand* c = cmds.get(i);
+                    if (!ran && c.id.equals(id)) {
+                        this.runShell(c.title, c.run);
+                        ran = true;
+                    }
+                    i = i + 1;
+                }
+                mutable int f = 0;
+                while (f < cmds.size()) {
+                    delete cmds.get(f);
+                    f = f + 1;
+                }
+                delete cmds;
+                return ran;
+            }
+            // The live user preferences (font, tab width, theme, view toggles); persisted on change.
+            public method settings() returns Settings* {
+                return this.settings;
+            }
+
+            // The integrated terminal. The shell toggles/focuses it, pumps its output each frame, and routes
+            // keystrokes to it while it is focused.
+            // The terminal the panel currently shows and routes keystrokes to.
+            public method terminal() returns Terminal* {
+                return this.terms.get(this.activeTerm);
+            }
+            public method terminalCount() returns int {
+                return this.terms.size();
+            }
+            public method activeTerminalIndex() returns int {
+                return this.activeTerm;
+            }
+            public method toggleTerminal() returns void {
+                Terminal* t = this.terms.get(this.activeTerm);
+                t.setCwd(this.projectDir);
+                t.toggle();
+            }
+            // Switch the panel to terminal `i` (keeping the panel open on it).
+            public method setActiveTerminal(int i) returns void {
+                if (i < 0 || i >= this.terms.size()) {
+                    return;
+                }
+                this.activeTerm = i;
+                Terminal* t = this.terms.get(i);
+                t.setCwd(this.projectDir);
+                t.openPanel();
+                t.focus();
+            }
+            // Open a brand-new terminal running `shell` ("cmd.exe" / "powershell.exe") and make it active.
+            public method newShell(String shell) returns void {
+                Terminal* t = new Terminal() in region this.termRegion;
+                t.setShell(shell);
+                t.setCwd(this.projectDir);
+                this.terms.add(t);
+                this.activeTerm = this.terms.size() - 1;
+                t.openPanel();
+                t.focus();
+            }
+            // The default new-terminal (Ctrl+Shift+`): a cmd shell.
+            public method newTerminal() returns void {
+                this.newShell("cmd.exe");
+            }
+            // Rename an open terminal (its tab label). Empty resets to the default "Terminal N".
+            public method renameTerminal(int i, String name) returns void {
+                if (i < 0 || i >= this.terms.size()) {
+                    return;
+                }
+                this.terms.get(i).setLabel(name);
+            }
+            // The tab label for terminal `i`: the user's name if set, else "Terminal <N>".
+            public method terminalLabel(int i) returns String {
+                if (i < 0 || i >= this.terms.size()) {
+                    return "";
+                }
+                String custom = this.terms.get(i).name();
+                if (custom.length() > 0) {
+                    return custom;
+                }
+                return "Terminal " + (i + 1).toString();
+            }
+            public method closeActiveTerminal() returns void {
+                this.closeTerminal(this.activeTerm);
+            }
+            // Close a SPECIFIC terminal by index. With more than one open, drop just that one and keep
+            // showing a neighbour; with only one, hide the panel (keeping the terminal so it reopens with
+            // its scrollback). Fixes "the x closed every terminal": only terminal `i` goes.
+            public method closeTerminal(int i) returns void {
+                if (i < 0 || i >= this.terms.size()) {
+                    return;
+                }
+                if (this.terms.size() <= 1) {
+                    this.terms.get(0).close();   // last one: just hide the panel
+                    return;
+                }
+                Terminal* t = this.terms.get(i);
+                this.terms.removeAt(i);
+                t.close();   // terminate the shell subprocess before freeing the terminal
+                delete t from region this.termRegion;   // reclaim the terminal's pool slot (spec 17)
+                // Keep the active index pointing at the same terminal it did before the removal.
+                if (this.activeTerm > i) {
+                    this.activeTerm = this.activeTerm - 1;
+                }
+                if (this.activeTerm >= this.terms.size()) {
+                    this.activeTerm = this.terms.size() - 1;
+                }
+                Terminal* n = this.terms.get(this.activeTerm);
+                n.setCwd(this.projectDir);
+                n.openPanel();
+                n.focus();
+            }
+            // Stream every terminal's output each frame so a background shell's pipe never stalls.
+            public method pumpTerminals() returns void {
+                mutable int i = 0;
+                while (i < this.terms.size()) {
+                    this.terms.get(i).pump();
+                    i = i + 1;
+                }
+            }
+            // Move any new output the debugged program produced into the Debug Console panel. Called each
+            // frame right after pump(), so the program's stdout streams in live.
+            public method drainDebugOutput() returns void {
+                ArrayList<String>* out = this.dbg.outputView();
+                while (this.dbgOutConsumed < out.size()) {
+                    this.out.appendLine(out.get(this.dbgOutConsumed));
+                    this.dbgOutConsumed = this.dbgOutConsumed + 1;
+                }
+            }
+            // The active document's on-disk path (matched against breakpoints and the debugger's stopped file).
+            public method activePath() returns String {
+                return this.docs.active().document().path();
+            }
+
+            // Recompute the active file's git change marks (called on open, save and tab switch).
+            // The per-file change bars for the gutter -- one `git diff`. Split out from the branch read so
+            // opening a file (which cannot change the branch) does not pay for a second git process.
+            public method refreshGitDiff() returns void {
+                this.git.startRefresh(this.projectDir, this.docs.active().document().path());
+            }
+            // A full refresh (diff + branch), for the events that can change both: a commit, a checkout, a
+            // save. NOT the hot path -- opening a file or switching a tab only marks the diff dirty (below).
+            public method refreshGit() returns void {
+                this.refreshGitDiff();
+                this.branch = this.gitBranch();   // asking git costs a process, so it happens HERE, on a
+                                                  // real git event -- never on the file-open hot path
+            }
+            // Opening a file or switching tabs must be instant: it spawns no git process, it just marks the
+            // gutter stale. pumpGit() runs the single `git diff` once, on the next frame, off the hot path.
+            public method markGitDirty() returns void {
+                this.gitDirty = true;
+            }
+            public method pumpGit() returns void {
+                if (this.branchDirty) {
+                    this.branchDirty = false;
+                    this.branchProc = Subprocess.start("git -C \"" + this.projectDir
+                                                       + "\" rev-parse --abbrev-ref HEAD");
+                    this.branchPending = this.branchProc.isValid();
+                    this.branchBuf = "";
+                }
+                if (this.branchPending) {
+                    while (this.branchProc.canRead()) {
+                        String c = this.branchProc.read();
+                        if (c.length() == 0) {
+                            break;
+                        }
+                        this.branchBuf = this.branchBuf + c;
+                    }
+                    if (!this.branchProc.isAlive() && !this.branchProc.canRead()) {
+                        String b = this.branchBuf.trim();
+                        if (b.length() == 0 || b.indexOf("fatal") >= 0 || b.indexOf(" ") >= 0) {
+                            this.branch = "";
+                        } else {
+                            this.branch = b;
+                        }
+                        this.branchProc.close();
+                        this.branchPending = false;
+                    }
+                }
+                if (this.gitDirty) {
+                    this.gitDirty = false;
+                    this.refreshGitDiff();   // spawns the diff in the background
+                }
+                this.git.poll();             // drain it a frame at a time; never blocks the UI
+            }
+            // The branch shown in the status bar: whatever the last refreshGit() read. Empty when the
+            // project is not a git repository.
+            public method currentBranch() returns String {
+                return this.branch;
+            }
+            public method gitStatus() returns GitStatus* {
+                return this.git;
+            }
+
+            // Point build/run and the project label at a workspace directory. Reads its polaron.toml (if any)
+            // for the program name, so the shell knows which project it's driving.
+            // The structure panel (Ctrl+F12): every declaration of the open file, in order, with the one
+            // holding the caret highlighted. Click a row to jump to it.
+            // Word wrap (Alt+Z): a view preference, so it holds across tabs -- the document is untouched.
+            public method wrapEnabled() returns boolean {
+                return this.wrap;
+            }
+            public method toggleWrap() returns void {
+                this.wrap = !this.wrap;
+                this.settings.wordWrap = this.wrap;
+                Settings.save(this.settings);
+                return;
+            }
+            public method outlineOpen() returns boolean {
+                return this.outline;
+            }
+            public method toggleOutline() returns void {
+                this.outline = !this.outline;
+                return;
+            }
+            // The declarations of the active file, in source order.
+            public method outlineSymbols() returns ArrayList<Symbol>* {
+                return Symbols.list(this.docs.active());
+            }
+            // Which of them holds the caret: the last one declared at or above the caret's line (-1 = none).
+            // Symbol.line is 1-based (it is written to be shown), the caret's row is 0-based.
+            public method outlineCurrent() returns int {
+                ArrayList<Symbol>* syms = this.outlineSymbols();
+                int row = this.docs.active().editor().cursorRow() + 1;
+                mutable int best = 0 - 1;
+                mutable int i = 0;
+                while (i < syms.size()) {
+                    if (syms.get(i).line <= row) {
+                        best = i;
+                    }
+                    i = i + 1;
+                }
+                delete syms;
+                return best;
+            }
+            public method setProjectDir(String dir) returns void {
+                this.projectDir = dir;
+                this.projectName = Workbench.readProjectName(dir);
+                this.chk.setProjectDir(dir);
+                // Defer the git-branch read (a subprocess) off the blocking open path; pumpGit reads it once.
+                this.branch = "";
+                this.branchDirty = true;
+            }
+            public method projectRoot() returns String {
+                return this.projectDir;
+            }
+            public method projectLabel() returns String {
+                return this.projectName;
+            }
+            public method hasProject() returns boolean {
+                return File.exists(Paths.join(this.projectDir, "polaron.toml"));
+            }
+            // Pull `name = "..."` out of the [program]/[library] section of an polaron.toml, or "" if absent.
+            private static method readProjectName(String dir) returns String {
+                String toml = Paths.join(dir, "polaron.toml");
+                if (!File.exists(toml)) {
+                    return "";
+                }
+                ArrayList<String> ls = Files.readLines(toml);
+                mutable int i = 0;
+                while (i < ls.size()) {
+                    String t = ls.get(i).trim();
+                    if (t.startsWith("name") && t.indexOf("=") >= 0) {
+                        String v = t.substring(t.indexOf("=") + 1, t.length()).trim();
+                        return Workbench.unquote(v);
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+            private static method unquote(String s) returns String {
+                mutable String v = s;
+                if (v.length() >= 2 && v.charAt(0) == '"' && v.charAt(v.length() - 1) == '"') {
+                    v = v.substring(1, v.length() - 1);
+                }
+                return v;
+            }
+
+            // --- live type-checking (see app.Checker) ---
+            // Called once per frame. An edit anywhere restarts a debounce; when typing has been still for
+            // `delayFrames`, the project is type-checked with the UNSAVED buffers, and its diagnostics
+            // replace the ones on screen. Nothing here blocks: the check is a subprocess being polled.
+            public method pumpCheck(int delayFrames) returns boolean {
+                if (this.projectDir.length() == 0 || !this.hasProject()) {
+                    return false;
+                }
+                int now = this.editStamp();
+                if (now != this.seenEdits) {
+                    this.seenEdits = now;
+                    this.chk.touch();
+                }
+                ArrayList<String>* paths = new ArrayList<String>() on heap;
+                ArrayList<String>* texts = new ArrayList<String>() on heap;
+                this.collectDirty(paths, texts);
+                boolean done = this.chk.pump(paths, texts, delayFrames);
+                delete paths;
+                delete texts;
+                if (done) {
+                    this.diags = this.chk.diagnostics();
+                }
+                return done;
+            }
+            public method checker() returns Checker* {
+                return this.chk;
+            }
+            // How many open documents have unsaved changes -- the buffers a check has to overlay.
+            public method unsavedCount() returns int {
+                ArrayList<String>* paths = new ArrayList<String>() on heap;
+                ArrayList<String>* texts = new ArrayList<String>() on heap;
+                this.collectDirty(paths, texts);
+                int n = paths.size();
+                delete paths;
+                delete texts;
+                return n;
+            }
+            // A number that changes whenever ANY open document changes: the sum of their revisions. It does
+            // not matter what it is, only that an edit moves it -- and that a document edited through the
+            // other pane moves it too, since both views share the one document.
+            private method editStamp() returns int {
+                mutable int sum = 0;
+                mutable int p = 0;
+                while (p < 2) {
+                    DocumentManager* dm = this.documentsOf(p);
+                    mutable int i = 0;
+                    while (i < dm.count()) {
+                        sum = sum + dm.documentAt(i).revision();
+                        i = i + 1;
+                    }
+                    p = p + 1;
+                    if (!this.split) {
+                        p = 2;
+                    }
+                }
+                return sum;
+            }
+            // Every open document that has unsaved changes AND lives in a file, as (path, text) pairs. The
+            // same document open in both panes is one buffer, so it is collected once.
+            private method collectDirty(ArrayList<String>* paths, ArrayList<String>* texts) returns void {
+                mutable int p = 0;
+                while (p < 2) {
+                    DocumentManager* dm = this.documentsOf(p);
+                    mutable int i = 0;
+                    while (i < dm.count()) {
+                        Document* d = dm.documentAt(i);
+                        if (d.isModified() && d.path().length() > 0 && !Workbench.listHas(paths, d.path())) {
+                            paths.add(d.path());
+                            texts.add(d.buffer().text());
+                        }
+                        i = i + 1;
+                    }
+                    p = p + 1;
+                    if (!this.split) {
+                        p = 2;
+                    }
+                }
+                return;
+            }
+            private static method listHas(ArrayList<String>* xs, String x) returns boolean {
+                mutable int i = 0;
+                while (i < xs.size()) {
+                    if (xs.get(i).equals(x)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+
+            // Poll the active file for an external change (git checkout, another editor). Returns 0 = no
+            // change; 1 = changed and reloaded (the buffer had no unsaved edits); 2 = changed but the buffer
+            // is dirty, so it was NOT reloaded -- the shell warns and the user reverts explicitly. Called on
+            // a timer by the shell (not every frame) since it stats the file.
+            public method pollExternalChange() returns int {
+                Controller* c = this.active();
+                if (!c.externallyChanged()) {
+                    return 0;
+                }
+                if (c.document().isModified()) {
+                    return 2;
+                }
+                c.reloadFromDisk();
+                return 1;
+            }
+            // Explicitly re-read the active file from disk, discarding unsaved edits (Revert File).
+            public method revertActive() returns void {
+                this.active().reloadFromDisk();
+                return;
+            }
+
+            // A palette/menu request to toggle the sidebar. The shell owns the screen, so it consumes this
+            // each frame (Ctrl+B toggles the screen directly; the palette entry goes through here).
+            public method renderWhitespace() returns boolean {
+                return this.renderWs;
+            }
+            public method toggleRenderWhitespace() returns void {
+                this.renderWs = !this.renderWs;
+                this.settings.whitespace = this.renderWs;
+                Settings.save(this.settings);
+                return;
+            }
+            public method requestSidebarToggle() returns void {
+                this.sidebarToggle = true;
+                return;
+            }
+            public method takeSidebarToggle() returns boolean {
+                boolean v = this.sidebarToggle;
+                this.sidebarToggle = false;
+                return v;
+            }
+
+            // Reopen the most-recently-closed tab (Ctrl+Shift+T), in the active pane. Returns the reopened
+            // path, or "" when there is nothing to reopen.
+            public method reopenClosedTab() returns String {
+                String path = this.documents().popClosed();
+                if (path.length() == 0) {
+                    return "";
+                }
+                this.openFile(path);
+                return path;
+            }
+
+            // --- diagnostics: the compiler's errors/warnings, shown inline ---
+            public method diagnostics() returns ArrayList<Diagnostic>* {
+                return this.diags;
+            }
+            // Is there a fix Alt+Enter can apply on the active file's caret line? Drives the lightbulb hint.
+            public method hasQuickFixAtCaret() returns boolean {
+                return this.fixableDiagAtCaret() >= 0;
+            }
+            // The message of the fixable diagnostic on the caret line ("" if none) -- shown next to the
+            // lightbulb so you see what Alt+Enter would do before pressing it.
+            public method quickFixHint() returns String {
+                int i = this.fixableDiagAtCaret();
+                if (i < 0) {
+                    return "";
+                }
+                Diagnostic* d = this.diags.get(i);
+                return "Change '" + QuickFix.flaggedName(d.message) + "' to '"
+                    + QuickFix.suggestion(d.message) + "'";
+            }
+            // Apply the quick fix on the caret line, if any. Returns a description, or "" if none applied.
+            public method applyQuickFixAtCaret() returns String {
+                int i = this.fixableDiagAtCaret();
+                if (i < 0) {
+                    return "";
+                }
+                Diagnostic* d = this.diags.get(i);
+                String bad = QuickFix.flaggedName(d.message);
+                String good = QuickFix.suggestion(d.message);
+                if (this.active().applyQuickFix(d.line - 1, d.col - 1, bad, good)) {
+                    return "Changed '" + bad + "' to '" + good + "'";
+                }
+                return "";
+            }
+            // The index of a fixable diagnostic on the active file's caret line, or -1. A diagnostic names a
+            // file basename; only the active file's diagnostics apply to its caret.
+            private method fixableDiagAtCaret() returns int {
+                if (!this.hasProject()) {
+                    return 0 - 1;
+                }
+                String base = Paths.basename(this.active().document().path());
+                int row = this.active().caretRow();
+                mutable int i = 0;
+                while (i < this.diags.size()) {
+                    Diagnostic* d = this.diags.get(i);
+                    if (d.line - 1 == row && d.file.equals(base) && QuickFix.isFixable(d.message)) {
+                        return i;
+                    }
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Show the compiler's full why/fix/prevent for the coded diagnostic on the caret line, in the
+            // output panel (`polaron explain <code>`). This is how the rich explanation the compiler writes for
+            // the terminal reaches the IDE. Returns false when the caret is not on a coded diagnostic.
+            public method explainDiagnosticAtCaret() returns boolean {
+                int i = this.codedDiagAtCaret();
+                if (i < 0) {
+                    return false;
+                }
+                Diagnostic* d = this.diags.get(i);
+                ProcessResult r = Process.run(this.chk.toolPath() + " explain " + d.code);
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String> lines = Strings.split(r.output, "\n");
+                mutable int li = 0;
+                while (li < lines.size()) {
+                    body.add(lines.get(li));
+                    li = li + 1;
+                }
+                this.out.showLines("Explain " + d.code + " -- " + d.message, body);
+                return true;
+            }
+            // The index of a coded diagnostic on the active file's caret line, or -1.
+            private method codedDiagAtCaret() returns int {
+                if (!this.hasProject()) {
+                    return 0 - 1;
+                }
+                String base = Paths.basename(this.active().document().path());
+                int row = this.active().caretRow();
+                mutable int i = 0;
+                while (i < this.diags.size()) {
+                    Diagnostic* d = this.diags.get(i);
+                    if (d.line - 1 == row && d.file.equals(base) && d.hasCode()) {
+                        return i;
+                    }
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            public method errorCount() returns int {
+                return this.countBySeverity(0);
+            }
+            public method warningCount() returns int {
+                return this.countBySeverity(1);
+            }
+            private method countBySeverity(int sev) returns int {
+                mutable int c = 0;
+                mutable int i = 0;
+                while (i < this.diags.size()) {
+                    if (this.diags.get(i).severity == sev) {
+                        c = c + 1;
+                    }
+                    i = i + 1;
+                }
+                return c;
+            }
+            // Build the project and parse the compiler output into inline diagnostics. Merge stderr into
+            // stdout (2>&1) because the compiler writes its errors to stderr, which Process.run drops.
+            public method diagnose() returns void {
+                this.runShell("Build", "polaron build 2>&1");
+                ArrayList<Diagnostic>* ds = new ArrayList<Diagnostic>() on heap;
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < this.out.lineCount()) {
+                    String raw = this.out.line(i);
+                    Diagnostic* d = Workbench.parseLine(raw);
+                    if (d.line > 0) {
+                        ds.add(d);
+                        int m = raw.indexOf(".pol:");
+                        String rel = raw.substring(0, m + 5);
+                        mutable String sev = "error";
+                        if (d.severity == 1) {
+                            sev = "warning";
+                        }
+                        body.add(d.file + ":" + d.line.toString() + ":" + d.col.toString() + "  "
+                                 + sev + ": " + d.message);
+                        navFiles.add(Paths.join(this.projectDir, rel));
+                        navLines.add(d.line - 1);
+                    }
+                    i = i + 1;
+                }
+                this.diags = ds;
+                // When the build reported problems, replace the raw log with a clickable Problems list;
+                // clicking a row jumps to that file and line. A clean build keeps the raw success output.
+                if (ds.size() > 0) {
+                    this.out.showNavigable(ds.size().toString() + " problems", body, navFiles, navLines);
+                }
+            }
+            // Parse `path.pol:LINE:COL: severity: message`; returns a sentinel (line < 0) if it doesn't match.
+            private static method parseLine(String s) returns Diagnostic* {
+                int m = s.indexOf(".pol:");
+                if (m < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                String path = s.substring(0, m + 5);
+                String rest = s.substring(m + 6, s.length());
+                int c1 = rest.indexOf(":");
+                if (c1 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                String rest2 = rest.substring(c1 + 1, rest.length());
+                int c2 = rest2.indexOf(":");
+                if (c2 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                String rest3 = rest2.substring(c2 + 1, rest2.length()).trim();
+                int c3 = rest3.indexOf(":");
+                if (c3 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                mutable int sev = 0;
+                if (rest3.substring(0, c3).trim().equals("warning")) {
+                    sev = 1;
+                }
+                return new Diagnostic(Paths.basename(path), rest.substring(0, c1).toInt(),
+                                      rest2.substring(0, c2).toInt(), sev,
+                                      rest3.substring(c3 + 1, rest3.length()).trim()) on heap;
+            }
+
+            // The ACTIVE pane's tabs. Every existing caller keeps meaning what it meant: "the editor the
+            // user is in". That is what made the split cheap -- the 100-odd call sites did not move.
+            public method documents() returns DocumentManager* {
+                if (this.split && this.pane == 1) {
+                    return this.docs2;
+                }
+                return this.docs;
+            }
+            public method documentsOf(int which) returns DocumentManager* {
+                if (which == 1) {
+                    return this.docs2;
+                }
+                return this.docs;
+            }
+            public method isSplit() returns boolean {
+                return this.split;
+            }
+            // Is a file at this path open in any pane with unsaved edits? The file tree uses this to mark
+            // modified files (a dirty dot), matching the dot on the editor tab.
+            public method isPathModified(String path) returns boolean {
+                if (this.pathModifiedIn(this.docs, path)) {
+                    return true;
+                }
+                if (this.split && this.pathModifiedIn(this.docs2, path)) {
+                    return true;
+                }
+                return false;
+            }
+            private method pathModifiedIn(DocumentManager* dm, String path) returns boolean {
+                mutable int i = 0;
+                while (i < dm.count()) {
+                    Document* d = dm.at(i).document();
+                    if (d.isModified() && d.path().equals(path)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+            public method activePane() returns int {
+                return this.pane;
+            }
+            public method focusPane(int which) returns void {
+                if (which == 1 && !this.split) {
+                    return;
+                }
+                this.pane = which;
+                return;
+            }
+            // Split the editor in two, showing the current file on both sides: one document, two views,
+            // each with its own caret and scroll. Splitting again closes the split (a toggle).
+            public method toggleSplit() returns void {
+                if (this.split) {
+                    this.split = false;
+                    this.pane = 0;
+                    return;
+                }
+                this.split = true;
+                this.pane = 1;
+                this.docs2.openView(this.docs.active().document());
+                return;
+            }
+            // Move the focused file to the other pane (opening the split if it is closed).
+            public method moveToOtherPane() returns void {
+                Document* d = this.documents().active().document();
+                if (!this.split) {
+                    this.split = true;
+                    this.docs2.openView(d);
+                    this.pane = 1;
+                    return;
+                }
+                int from = this.pane;
+                int to = 1 - from;
+                this.documentsOf(to).openView(d);
+                this.documentsOf(from).close(this.documentsOf(from).activeIndex());
+                this.pane = to;
+                return;
+            }
+            public method registry() returns CommandRegistry* {
+                return this.commands;
+            }
+            public method active() returns Controller* {
+                return this.documents().active();
+            }
+            // Open a file in the ACTIVE pane. If the OTHER pane already has it, the same document is
+            // shared rather than read twice -- two buffers of one file is how an editor loses your work.
+            public method openFile(String path) returns Controller* {
+                if (this.split) {
+                    DocumentManager* other = this.documentsOf(1 - this.pane);
+                    mutable int i = 0;
+                    while (i < other.count()) {
+                        if (other.documentAt(i).path().equals(path)) {
+                            Controller* v = this.documents().openView(other.documentAt(i));
+                            v.setTabWidth(this.settings.tabWidth);
+                            this.markGitDirty();
+                            return v;
+                        }
+                        i = i + 1;
+                    }
+                }
+                Controller* c = this.documents().openFile(path);
+                c.setTabWidth(this.settings.tabWidth);
+                this.markGitDirty();
+                return c;
+            }
+            // Close tab `i`; never leave the window with no document -- open a fresh one if that was the last.
+            public method closeTab(int i) returns void {
+                this.docs.close(i);
+                if (this.docs.count() == 0) {
+                    this.docs.openNew();
+                }
+            }
+            public method closeActiveTab() returns void {
+                this.closeTab(this.docs.activeIndex());
+            }
+            public method activeTabIndex() returns int {
+                return this.docs.activeIndex();
+            }
+            // Mark the active document read-only (used when opening the bundled stdlib reference).
+            public method markActiveReadOnly() returns void {
+                this.docs.active().document().setReadOnly(true);
+            }
+            // --- unsaved-changes guard on close (the shell drives the confirm prompt) ---
+            // Whether the tab at index i (pane 0) has unsaved edits, so a close should be confirmed first.
+            public method tabModified(int i) returns boolean {
+                if (i < 0 || i >= this.docs.count()) {
+                    return false;
+                }
+                return this.docs.at(i).document().isModified();
+            }
+            // Whether the tab at index i is backed by a file on disk (so "save" is unambiguous). An
+            // untitled buffer has no path, so the confirm only offers discard/cancel for it.
+            public method tabHasPath(int i) returns boolean {
+                if (i < 0 || i >= this.docs.count()) {
+                    return false;
+                }
+                return this.docs.at(i).document().path().length() > 0;
+            }
+            public method tabName(int i) returns String {
+                if (i < 0 || i >= this.docs.count()) {
+                    return "";
+                }
+                return this.docs.title(i);
+            }
+            public method saveTab(int i) returns void {
+                if (i < 0 || i >= this.docs.count()) {
+                    return;
+                }
+                this.docs.at(i).save();
+            }
+            public method setPendingClose(int i) returns void {
+                this.pendingCloseIdx = i;
+            }
+            public method pendingClose() returns int {
+                return this.pendingCloseIdx;
+            }
+            // Close every tab except the active one (the tab bar's "Close Others" context action).
+            public method closeOtherTabs() returns void {
+                String keep = this.docs.active().document().path();
+                mutable int guard = 0;
+                while (this.docs.count() > 1 && guard < 200) {
+                    guard = guard + 1;
+                    mutable int victim = 0 - 1;
+                    mutable int i = 0;
+                    while (i < this.docs.count()) {
+                        if (i != this.docs.activeIndex()) {
+                            victim = i;
+                        }
+                        i = i + 1;
+                    }
+                    if (victim < 0) {
+                        return;
+                    }
+                    this.docs.close(victim);
+                }
+                if (keep.length() > 0) {
+                    this.openFile(keep);
+                }
+            }
+
+            // Find all references to the identifier under the caret in the active file and list them in the
+            // output panel (whole-word matches). Returns the number found.
+            public method findReferences() returns int {
+                Controller* c = this.docs.active();
+                String w = c.wordAtCaret();
+                if (w.length() == 0) {
+                    return 0;
+                }
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                String path = c.document().path();
+                mutable int count = 0;
+                int total = c.editor().document().lineCount();
+                mutable int row = 0;
+                while (row < total) {
+                    String line = c.editor().document().line(row);
+                    int here = Workbench.countWholeWord(line, w);
+                    if (here > 0) {
+                        body.add("  L" + (row + 1).toString() + ":  " + line.trim());
+                        navFiles.add(path);
+                        navLines.add(row);
+                        count = count + here;
+                    }
+                    row = row + 1;
+                }
+                this.out.showNavigable(count.toString() + " references to '" + w + "'", body,
+                                       navFiles, navLines);
+                return count;
+            }
+            // Cross-file find-all-references: whole-word occurrences of the identifier under the caret across
+            // every project .pol file, listed in the output panel as a navigable result. `files` is the
+            // project's file list (the shell passes the file tree's). Returns the total count.
+            public method findReferencesAcross(ArrayList<String>* files) returns int {
+                Controller* c = this.docs.active();
+                String w = c.wordAtCaret();
+                if (w.length() == 0) {
+                    return 0;
+                }
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int count = 0;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (path.endsWith(".pol")) {
+                        count = count + this.scanRefs(Files.readLines(path), path, w, body, navFiles, navLines);
+                    }
+                }
+                this.out.showNavigable(count.toString() + " references to '" + w + "' (workspace)", body,
+                                       navFiles, navLines);
+                return count;
+            }
+            private method scanRefs(ArrayList<String> lines, String path, String w, ArrayList<String>* body,
+                                    ArrayList<String>* navFiles, ArrayList<int>* navLines) returns int {
+                String base = Paths.basename(path);
+                mutable int total = 0;
+                mutable int row = 0;
+                while (row < lines.size()) {
+                    String line = lines.get(row);
+                    int here = Workbench.countWholeWord(line, w);
+                    if (here > 0) {
+                        body.add(base + ":" + (row + 1).toString() + "  " + line.trim());
+                        navFiles.add(path);
+                        navLines.add(row);
+                        total = total + here;
+                    }
+                    row = row + 1;
+                }
+                return total;
+            }
+            // Every task marker left in the project, as one navigable list (see markerIn for the four the
+            // scanner knows). Only COMMENTS are scanned: a marker inside a string literal is not a task, and
+            // that is what keeps the panel trustworthy. (This comment deliberately spells none of them out --
+            // otherwise the scanner would report its own documentation.)
+            public method showTodos(ArrayList<String>* files) returns int {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                Highlighter* hl = new Highlighter() on heap;
+                mutable int count = 0;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".pol")) {
+                        continue;
+                    }
+                    String base = Paths.basename(path);
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String line = lines.get(row);
+                        int at = Workbench.todoAt(line, hl);
+                        if (at >= 0) {
+                            body.add(base + ":" + (row + 1).toString() + "  "
+                                     + line.substring(at, line.length()).trim());
+                            navFiles.add(path);
+                            navLines.add(row);
+                            count = count + 1;
+                        }
+                        row = row + 1;
+                    }
+                }
+                delete hl;
+                if (count == 0) {
+                    body.add("no task markers left in the project");
+                }
+                this.out.showNavigable("Tasks -- " + count.toString() + " marker(s)", body, navFiles,
+                                       navLines);
+                return count;
+            }
+            // Where the first task marker starts on this line, or -1. It must sit in a COMMENT: the
+            // highlighter already knows which spans are comments, so this reuses that answer instead of
+            // guessing with a second, weaker parser.
+            private static method todoAt(String line, Highlighter* hl) returns int {
+                mutable int best = 0 - 1;
+                ArrayList<Span> spans = hl.tokenize(line);
+                mutable int i = 0;
+                while (i < spans.size()) {
+                    if (spans.get(i).kind == Tok.COMMENT) {
+                        String text = line.substring(spans.get(i).start, spans.get(i).end);
+                        int rel = Workbench.markerIn(text);
+                        if (rel >= 0) {
+                            int abs = spans.get(i).start + rel;
+                            if (best < 0 || abs < best) {
+                                best = abs;
+                            }
+                        }
+                    }
+                    i = i + 1;
+                }
+                return best;
+            }
+            private static method markerIn(String text) returns int {
+                mutable int best = 0 - 1;
+                best = Workbench.earlier(best, text.indexOf("TODO"));
+                best = Workbench.earlier(best, text.indexOf("FIXME"));
+                best = Workbench.earlier(best, text.indexOf("HACK"));
+                best = Workbench.earlier(best, text.indexOf("XXX"));
+                return best;
+            }
+            private static method earlier(int best, int candidate) returns int {
+                if (candidate < 0) {
+                    return best;
+                }
+                if (best < 0 || candidate < best) {
+                    return candidate;
+                }
+                return best;
+            }
+            // Every diagnostic from the last build, as one navigable list: severity, where, and what.
+            // The compiler reports a file by basename, so each one is resolved against the project's files
+            // to get a path the panel can jump to. This is the view you keep open while you fix a build.
+            public method showProblems() returns int {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                ArrayList<String>* files = this.projectFiles();
+                mutable int i = 0;
+                while (i < this.diags.size()) {
+                    mutable String kind = "error";
+                    if (!this.diags.get(i).isError()) {
+                        kind = "warning";
+                    }
+                    // Show the stable code (Polaron-NNNN) right on the severity, mirroring the compiler's own
+                    // "error[Polaron-0101]:" format, so it is cross-referable with `polaron explain` / Ctrl+F1.
+                    if (this.diags.get(i).hasCode()) {
+                        kind = kind + "[" + this.diags.get(i).code + "]";
+                    }
+                    body.add(kind + "  " + this.diags.get(i).file + ":"
+                             + this.diags.get(i).line.toString() + ":"
+                             + this.diags.get(i).col.toString() + "  " + this.diags.get(i).message);
+                    navFiles.add(this.resolveBasename(files, this.diags.get(i).file));
+                    navLines.add(this.diags.get(i).line - 1);
+                    i = i + 1;
+                }
+                if (this.diags.size() == 0) {
+                    body.add("no problems -- the last build was clean");
+                }
+                String caption = this.errorCount().toString() + " error(s), "
+                                 + this.warningCount().toString() + " warning(s)";
+                this.out.showNavigable("Problems -- " + caption, body, navFiles, navLines);
+                return this.diags.size();
+            }
+            private method resolveBasename(ArrayList<String>* files, String base) returns String {
+                mutable int i = 0;
+                while (i < files.size()) {
+                    if (Paths.basename(files.get(i)).equals(base)) {
+                        return files.get(i);
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+            // Replace every occurrence of `needle` with `replacement` across the project's searchable
+            // files, on disk. An open document is reloaded so the editor never shows stale text. Returns
+            // the number of occurrences replaced.
+            public method replaceInFiles(ArrayList<String>* files, String needle,
+                                         String replacement) returns int {
+                if (needle.length() == 0) {
+                    return 0;
+                }
+                mutable String activePath = "";
+                if (this.docs.hasActive()) {
+                    activePath = this.docs.active().document().path();
+                }
+                mutable int total = 0;
+                mutable int touched = 0;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".pol") && !path.endsWith(".toml") && !path.endsWith(".md")) {
+                        continue;
+                    }
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int hits = 0;
+                    ArrayList<String>* out = new ArrayList<String>() on heap;
+                    mutable int li = 0;
+                    while (li < lines.size()) {
+                        String line = lines.get(li);
+                        hits = hits + Strings.count(line, needle);
+                        out.add(Strings.replace(line, needle, replacement));
+                        li = li + 1;
+                    }
+                    if (hits > 0) {
+                        if (path.equals(activePath)) {
+                            // The open document is the source of truth for its own file: replace through
+                            // the editor, so the change is undoable and the view is never stale.
+                            this.docs.active().replaceAll(needle, replacement);
+                            this.docs.active().save();
+                        } else {
+                            Files.writeLines(path, out);
+                        }
+                        total = total + hits;
+                        touched = touched + 1;
+                    }
+                    delete out;
+                }
+                this.out.banner("Replace in Files", "Replaced " + total.toString()
+                    + " occurrence(s) of '" + needle + "' in " + touched.toString() + " file(s).");
+                return total;
+            }
+            // Every project .pol file, by a fresh recursive walk of the project root (independent of the
+            // visual tree's expand state) -- powers workspace refactors like cross-file rename.
+            // --- Polaron-native tool windows: navigable inventories of the program's regions, persistents,
+            // and bundles, scanned from the source (and the manifest for dependency bundles). These are the
+            // language's distinctive constructs; clicking a row jumps to the declaration. (Live arena/leak
+            // stats would come from runtime introspection -- a later enhancement on top of this inventory.)
+            private static method isIdentCh(char c) returns boolean {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_';
+            }
+            // True if `word` occurs in `line` as a whole word (not as part of a longer identifier).
+            private static method hasWord(String line, String word) returns boolean {
+                int n = line.length();
+                int m = word.length();
+                if (m == 0) {
+                    return false;
+                }
+                mutable int i = 0;
+                while (i + m <= n) {
+                    mutable boolean matched = true;
+                    mutable int j = 0;
+                    while (j < m) {
+                        if (line.charAt(i + j) != word.charAt(j)) {
+                            matched = false;
+                            j = m;
+                        } else {
+                            j = j + 1;
+                        }
+                    }
+                    if (matched) {
+                        boolean leftOk = i == 0 || !Workbench.isIdentCh(line.charAt(i - 1));
+                        boolean rightOk = i + m >= n || !Workbench.isIdentCh(line.charAt(i + m));
+                        if (leftOk && rightOk) {
+                            return true;
+                        }
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+            // Scan every project .pol file for source lines mentioning `needle` (as a whole word, outside
+            // line comments) and show them as a navigable list under `caption`.
+            private method scanDecls(ArrayList<String>* files, String needle, String caption) returns void {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".pol")) {
+                        continue;
+                    }
+                    String base = Paths.basename(path);
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String t = lines.get(row).trim();
+                        if (!t.startsWith("//") && Workbench.hasWord(t, needle)) {
+                            body.add(base + ":" + (row + 1).toString() + "  " + t);
+                            navFiles.add(path);
+                            navLines.add(row);
+                        }
+                        row = row + 1;
+                    }
+                }
+                if (body.size() == 0) {
+                    body.add("(none found)");
+                    navFiles.add("");
+                    navLines.add(0 - 1);
+                }
+                this.out.showNavigable(caption, body, navFiles, navLines);
+                return;
+            }
+            public method showRegions(ArrayList<String>* files) returns void {
+                this.scanDecls(files, "region", "Regions");
+                return;
+            }
+            public method showPersistents(ArrayList<String>* files) returns void {
+                this.scanDecls(files, "persistent", "Persistents");
+                return;
+            }
+            // The project's test methods, each with the result of the run that just happened. Scanning the
+            // sources gives the FULL list -- including tests that never ran because an earlier one crashed
+            // the harness -- while `polaron test` reports `PASS <name>` / `FAIL <name>`, matched back by name.
+            // A test the run never reported keeps a `?`, which is how a crashed harness stays visible.
+            public method showTests(ArrayList<String>* files) returns void {
+                ArrayList<String>* names = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".pol")) {
+                        continue;
+                    }
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String t = lines.get(row).trim();
+                        if (t.equals("@Test") || t.equals("[Test]")) {
+                            // The method header follows the annotation, possibly after further annotations.
+                            mutable int look = row + 1;
+                            while (look < lines.size() && look < row + 5) {
+                                String name = Workbench.testNameOf(lines.get(look));
+                                if (name.length() > 0) {
+                                    names.add(name);
+                                    navFiles.add(path);
+                                    navLines.add(look);
+                                    break;
+                                }
+                                look = look + 1;
+                            }
+                        }
+                        row = row + 1;
+                    }
+                }
+                if (names.size() == 0) {
+                    ArrayList<String>* empty = new ArrayList<String>() on heap;
+                    empty.add("(no @Test methods in this project)");
+                    ArrayList<String>* ef = new ArrayList<String>() on heap;
+                    ef.add("");
+                    ArrayList<int>* el = new ArrayList<int>() on heap;
+                    el.add(0 - 1);
+                    this.out.showNavigable("Tests", empty, ef, el);
+                    delete names;
+                    delete navFiles;
+                    delete navLines;
+                    return;
+                }
+                // Run the harness and collect the reported outcome per test name.
+                ProcessResult r = Process.run("cd /d \"" + this.projectDir + "\" && polaron test 2>&1");
+                ArrayList<String> outLines = Strings.split(r.output, "\n");
+                ArrayList<String>* ranNames = new ArrayList<String>() on heap;
+                ArrayList<String>* ranHow = new ArrayList<String>() on heap;
+                mutable int oi = 0;
+                while (oi < outLines.size()) {
+                    String ln = outLines.get(oi).trim();
+                    oi = oi + 1;
+                    if (ln.startsWith("PASS ")) {
+                        ranNames.add(ln.substring(5, ln.length()).trim());
+                        ranHow.add("pass");
+                    } else if (ln.startsWith("FAIL ")) {
+                        ranNames.add(ln.substring(5, ln.length()).trim());
+                        ranHow.add("fail");
+                    }
+                }
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int passed = 0;
+                mutable int failed = 0;
+                mutable int missing = 0;
+                mutable int i = 0;
+                while (i < names.size()) {
+                    String n = names.get(i);
+                    mutable String mark = "  ?    ";
+                    mutable int k = 0;
+                    while (k < ranNames.size()) {
+                        if (ranNames.get(k).equals(n)) {
+                            if (ranHow.get(k).equals("pass")) {
+                                mark = "  ok   ";
+                            } else {
+                                mark = "  FAIL ";
+                            }
+                            break;
+                        }
+                        k = k + 1;
+                    }
+                    if (mark.equals("  ok   ")) {
+                        passed = passed + 1;
+                    } else if (mark.equals("  FAIL ")) {
+                        failed = failed + 1;
+                    } else {
+                        missing = missing + 1;
+                    }
+                    body.add(mark + n + "   (" + Paths.basename(navFiles.get(i)) + ":"
+                             + (navLines.get(i) + 1).toString() + ")");
+                    i = i + 1;
+                }
+                mutable String caption = "Tests -- " + passed.toString() + " passed, "
+                                         + failed.toString() + " failed";
+                if (missing > 0) {
+                    caption = caption + ", " + missing.toString() + " not reported";
+                }
+                this.out.showNavigable(caption, body, navFiles, navLines);
+                delete names;
+                delete ranNames;
+                delete ranHow;
+                return;
+            }
+            // The method name in a declaration line, or "" when the line is not a method header.
+            public static method testNameOf(String line) returns String {
+                int m = line.indexOf("method ");
+                if (m < 0) {
+                    return "";
+                }
+                int start = m + 7;
+                int paren = line.indexOf("(");
+                if (paren <= start) {
+                    return "";
+                }
+                return line.substring(start, paren).trim();
+            }
+            // The program's bundles: dependency bundles from polaron.toml first, then each `bundle` declaration.
+            public method showBundles(ArrayList<String>* files) returns void {
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                String toml = Paths.join(this.projectDir, "polaron.toml");
+                if (File.exists(toml)) {
+                    ArrayList<String> tl = Strings.split(File.readAll(toml), "\n");
+                    mutable boolean inDeps = false;
+                    mutable int i = 0;
+                    while (i < tl.size()) {
+                        String t = tl.get(i).trim();
+                        i = i + 1;
+                        if (t.startsWith("[")) {
+                            inDeps = t.equals("[dependencies]");
+                        } else if (inDeps && t.length() > 0 && !t.startsWith("#")) {
+                            body.add("dep: " + t);
+                            navFiles.add(toml);
+                            navLines.add(i - 1);
+                        }
+                    }
+                }
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.endsWith(".pol")) {
+                        continue;
+                    }
+                    String base = Paths.basename(path);
+                    ArrayList<String> lines = Files.readLines(path);
+                    mutable int row = 0;
+                    while (row < lines.size()) {
+                        String t = lines.get(row).trim();
+                        if (!t.startsWith("//") && Workbench.hasWord(t, "bundle")) {
+                            body.add(base + ":" + (row + 1).toString() + "  " + t);
+                            navFiles.add(path);
+                            navLines.add(row);
+                        }
+                        row = row + 1;
+                    }
+                }
+                if (body.size() == 0) {
+                    body.add("(no bundles found)");
+                    navFiles.add("");
+                    navLines.add(0 - 1);
+                }
+                this.out.showNavigable("Bundles", body, navFiles, navLines);
+                return;
+            }
+
+            public method projectFiles() returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                this.walkProject(this.projectDir, out, 0);
+                return out;
+            }
+            private method walkProject(String dir, ArrayList<String>* out, int depth) returns void {
+                if (depth > 10 || out.size() > 4000) {
+                    return;
+                }
+                ArrayList<String> entries = Files.listDir(dir);
+                mutable int i = 0;
+                while (i < entries.size()) {
+                    String name = entries.get(i);
+                    i = i + 1;
+                    if (!Workbench.ignoredEntry(name)) {
+                        String full = Paths.join(dir, name);
+                        if (File.isDir(full)) {
+                            this.walkProject(full, out, depth + 1);
+                        } else if (full.endsWith(".pol")) {
+                            out.add(full);
+                        }
+                    }
+                }
+                return;
+            }
+            private static method ignoredEntry(String name) returns boolean {
+                return name.equals(".git") || name.equals("build-output") || name.equals(".vscode")
+                    || name.equals(".forge") || name.equals("node_modules") || name.equals(".vs")
+                    || name.endsWith(".tmp") || name.endsWith(".ppm");
+            }
+
+            // Workspace-wide rename (Shift+F6): rename every whole-word occurrence of `oldName` to `newName`
+            // across the project, skipping matches inside strings/chars/comments (via the highlighter) and
+            // substring hits inside longer identifiers. The active file is renamed in its live buffer (one
+            // undo step); other files are rewritten on disk. Returns the total occurrences changed.
+            public method renameSymbolAcross(String oldName, String newName) returns int {
+                if (oldName.length() == 0 || newName.length() == 0) {
+                    return 0;
+                }
+                String activePath = this.docs.active().document().path();
+                Highlighter* hl = new Highlighter() on heap;
+                mutable int total = this.docs.active().renameSymbol(oldName, newName);
+                ArrayList<String>* files = this.projectFiles();
+                mutable int fi = 0;
+                while (fi < files.size()) {
+                    String path = files.get(fi);
+                    fi = fi + 1;
+                    if (!path.equals(activePath)) {
+                        total = total + Workbench.renameInFile(path, oldName, newName, hl);
+                    }
+                }
+                this.treeDirty = true;
+                return total;
+            }
+            private static method renameInFile(String path, String oldName, String newName, Highlighter* hl)
+                    returns int {
+                ArrayList<String> lines = Files.readLines(path);
+                mutable int changed = 0;
+                ArrayList<String> out = new ArrayList<String>() on heap;
+                int m = oldName.length();
+                mutable int r = 0;
+                while (r < lines.size()) {
+                    String line = lines.get(r);
+                    r = r + 1;
+                    ArrayList<Span> spans = hl.tokenize(line);
+                    StringBuilder rb = new StringBuilder() on heap;
+                    int n = line.length();
+                    mutable int i = 0;
+                    while (i < n) {
+                        mutable boolean matched = false;
+                        if (i + m <= n && line.substring(i, i + m).equals(oldName)) {
+                            boolean leftOk = i == 0 || !Workbench.isIdentChar(line.charAt(i - 1));
+                            boolean rightOk = i + m == n || !Workbench.isIdentChar(line.charAt(i + m));
+                            if (leftOk && rightOk && !Workbench.inStringOrComment(spans, i)) {
+                                rb.append(newName);
+                                i = i + m;
+                                changed = changed + 1;
+                                matched = true;
+                            }
+                        }
+                        if (!matched) {
+                            rb.appendChar(line.charAt(i));
+                            i = i + 1;
+                        }
+                    }
+                    out.add(rb.toString());
+                }
+                if (changed > 0) {
+                    Files.writeLines(path, out);
+                }
+                return changed;
+            }
+            private static method inStringOrComment(ArrayList<Span> spans, int col) returns boolean {
+                mutable int i = 0;
+                while (i < spans.size()) {
+                    Span sp = spans.get(i);
+                    if (col >= sp.start && col < sp.end) {
+                        return sp.kind == Tok.STRING || sp.kind == Tok.CHAR || sp.kind == Tok.COMMENT;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+            private static method countWholeWord(String line, String w) returns int {
+                int m = w.length();
+                int n = line.length();
+                mutable int count = 0;
+                mutable int i = 0;
+                while (i + m <= n) {
+                    if (line.substring(i, i + m).equals(w)) {
+                        boolean leftOk = i == 0 || !Workbench.isIdentChar(line.charAt(i - 1));
+                        boolean rightOk = i + m == n || !Workbench.isIdentChar(line.charAt(i + m));
+                        if (leftOk && rightOk) {
+                            count = count + 1;
+                            i = i + m;
+                        } else {
+                            i = i + 1;
+                        }
+                    } else {
+                        i = i + 1;
+                    }
+                }
+                return count;
+            }
+            private static method isIdentChar(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
+            public method output() returns OutputPanel* {
+                return this.out;
+            }
+            // Run a shell command on the project and show its output in the bottom panel.
+            // Run a shell command in the project directory (so `polaron build`/`polaron run` drive the open project,
+            // not whatever directory Forge was launched from).
+            public method runShell(String caption, String cmd) returns void {
+                this.out.run(caption, "cd /d \"" + this.projectDir + "\" && " + cmd);
+            }
+
+            // Open the source of call-stack frame `idx` (from the debug panel) and put the caret on its line.
+            public method jumpToStackFrame(int idx) returns void {
+                ArrayList<DebugFrame*>* stack = this.dbg.callStackView();
+                if (idx < 0 || idx >= stack.size()) {
+                    return;
+                }
+                DebugFrame* fr = stack.get(idx);
+                if (fr.path.length() > 0 && File.exists(fr.path)) {
+                    Controller* c = this.openFile(fr.path);
+                    if (fr.line > 0) {
+                        c.placeCaret(fr.line - 1, 0);
+                    }
+                }
+            }
+
+            // Jump to the next (forward) or previous problem in the active file from the last build, wrapping
+            // around, and show its message. F8 / Shift+F8.
+            public method nextProblem(boolean forward) returns void {
+                if (this.diags.size() == 0) {
+                    this.out.banner("Problems", "No problems -- build the project (Run > Build) to check.");
+                    return;
+                }
+                String base = Paths.basename(this.docs.active().document().path());
+                ArrayList<int>* lines = new ArrayList<int>() on heap;
+                ArrayList<String>* msgs = new ArrayList<String>() on heap;
+                for (mutable int i = 0; i < this.diags.size(); i++) {
+                    Diagnostic d = this.diags.get(i);
+                    if (Paths.basename(d.file).equals(base)) {
+                        lines.add(d.line);
+                        msgs.add(d.message);
+                    }
+                }
+                if (lines.size() == 0) {
+                    this.out.banner("Problems", "No problems in this file.");
+                    return;
+                }
+                int cur = this.docs.active().editor().cursorRow() + 1;   // 1-based
+                mutable int target = -1;
+                mutable int bestLine = 0;
+                for (mutable int i = 0; i < lines.size(); i++) {
+                    int l = lines.get(i);
+                    mutable boolean cand = false;
+                    if (forward) {
+                        cand = l > cur && (target < 0 || l < bestLine);
+                    } else {
+                        cand = l < cur && (target < 0 || l > bestLine);
+                    }
+                    if (cand) {
+                        target = i;
+                        bestLine = l;
+                    }
+                }
+                if (target < 0) {
+                    // wrap: the first problem going forward, or the last going backward
+                    for (mutable int i = 0; i < lines.size(); i++) {
+                        int l = lines.get(i);
+                        if (target < 0 || (forward && l < bestLine) || (!forward && l > bestLine)) {
+                            target = i;
+                            bestLine = l;
+                        }
+                    }
+                }
+                int ln = lines.get(target);
+                this.docs.active().placeCaret(ln - 1, 0);
+                this.out.banner("Problem", "Line " + ln.toString() + ": " + msgs.get(target));
+            }
+
+            // Symbol rename (Shift+F6): the shell stashes the identifier under the caret here, then applies the
+            // new name to every whole-word occurrence when the prompt is confirmed.
+            public method setRenameTarget(String w) returns void {
+                this.renameOldName = w;
+            }
+            public method renameTargetName() returns String {
+                return this.renameOldName;
+            }
+            public method renameSymbol(String oldName, String newName) returns int {
+                if (newName.length() == 0 || oldName.equals(newName)) {
+                    return 0;
+                }
+                return this.docs.active().renameSymbol(oldName, newName);
+            }
+
+            // Format the active file in place with `polaron fmt`, then reload it (Shift+Alt+F). The caret line is
+            // kept; formatting never changes meaning, so undo of the whole reformat is one step.
+            public method formatDocument() returns void {
+                Controller* c = this.docs.active();
+                String path = c.document().path();
+                if (path.length() == 0) {
+                    this.out.banner("Format", "Save the file to disk first, then format it.");
+                    return;
+                }
+                c.save();
+                int row = c.editor().cursorRow();
+                Process.run("polaron fmt \"" + path + "\"");
+                c.openFile(path);
+                if (row < c.lineCount()) {
+                    c.placeCaret(row, 0);
+                }
+                this.refreshGit();
+            }
+
+            // Build the current project with debug info (polaron build --debug) and start a debug session on the
+            // resulting exe. Breakpoints already set in the gutter are sent on launch. F5 when idle.
+            public method startDebugging() returns void {
+                if (this.dbg.isActive()) {
+                    return;
+                }
+                if (!this.hasProject()) {
+                    this.out.banner("Debug", "Open an polaron.toml project first -- there is nothing to debug.");
+                    return;
+                }
+                ProcessResult br = Process.run("cd /d \"" + this.projectDir + "\" && polaron build --debug 2>&1");
+                if (!br.success()) {
+                    this.out.banner("Debug build failed", br.output);
+                    return;
+                }
+                String exe = Paths.join(this.projectDir, Paths.join("build-output", this.projectName + ".exe"));
+                if (!File.exists(exe)) {
+                    this.out.banner("Debug", "Built executable not found: " + exe);
+                    return;
+                }
+                String dap = Debugger.findLldbDap();
+                if (this.dbg.start(dap, exe)) {
+                    this.dbgOutConsumed = 0;
+                    this.out.showLines("Debug Console", new ArrayList<String>() on heap);
+                } else {
+                    this.out.banner("Debug", "Could not start the debug adapter (" + dap + "). Is lldb-dap installed?");
+                }
+            }
+
+            // --- source control: drive git on the project directory, straight from the IDE ---
+            // Show the working-tree status as a navigable list (click a row to open that file).
+            // --- branches: which one you are on, and switching to another ---
+            // The branch is read from git, not cached at startup: a checkout made in the terminal (or by
+            // another tool) shows up here the next time the status bar asks.
+            public method gitBranch() returns String {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" rev-parse --abbrev-ref HEAD 2>&1");
+                String b = r.output.trim();
+                if (b.length() == 0 || b.indexOf("fatal") >= 0 || b.indexOf(" ") >= 0) {
+                    return "";   // not a git repository (or a detached HEAD we cannot name)
+                }
+                return b;
+            }
+            // Every local branch, with the current one first.
+            public method gitBranches() returns ArrayList<String>* {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" branch --format=%(refname:short) 2>&1");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                String current = this.gitBranch();
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                if (current.length() > 0) {
+                    out.add(current);
+                }
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String b = raw.get(i).trim();
+                    i = i + 1;
+                    if (b.length() == 0 || b.equals(current) || b.indexOf("fatal") >= 0) {
+                        continue;
+                    }
+                    out.add(b);
+                }
+                return out;
+            }
+            // Check out `branch`. A dirty tree makes git refuse; its complaint is shown as-is, because a
+            // silent no-op here would be the worst possible outcome.
+            public method gitCheckout(String branch) returns void {
+                if (branch.length() == 0) {
+                    return;
+                }
+                this.runShell("Checkout", "git -C \"" + this.projectDir + "\" checkout "
+                              + Workbench.shellEscape(branch));
+                this.refreshGit();
+                this.treeDirty = true;
+                return;
+            }
+            public method gitStatusView() returns void {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir + "\" status --porcelain");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                ArrayList<String>* navFiles = new ArrayList<String>() on heap;
+                ArrayList<int>* navLines = new ArrayList<int>() on heap;
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String line = raw.get(i);
+                    if (line.length() > 3) {
+                        String rel = line.substring(3, line.length());
+                        body.add(line);
+                        navFiles.add(Paths.join(this.projectDir, rel));
+                        navLines.add(0);
+                    }
+                    i = i + 1;
+                }
+                if (body.size() == 0) {
+                    body.add("(clean -- no changes)");
+                }
+                this.out.showNavigable("Source Control", body, navFiles, navLines);
+            }
+            // Stage everything and commit with `msg` (the common "commit all" flow), then refresh the gutter.
+            public method gitCommit(String msg) returns void {
+                String safe = Workbench.shellEscape(msg);
+                this.runShell("Commit", "git add -A && git commit -m \"" + safe + "\"");
+                this.refreshGit();
+            }
+            public method gitPush() returns void {
+                this.runShell("Push", "git push");
+            }
+            // Show the colour-coded diff of the active file over the editor (Git > Diff Current File).
+            public method gitDiff() returns void {
+                this.openDiff();
+            }
+            // Pull from the tracked upstream; the tree may change, so mark it dirty and refresh the gutter.
+            public method gitPull() returns void {
+                this.runShell("Pull", "git pull");
+                this.refreshGit();
+                this.treeDirty = true;
+                return;
+            }
+            public method gitFetch() returns void {
+                this.runShell("Fetch", "git fetch --all");
+                this.refreshGit();
+                return;
+            }
+            // The recent history (last 50 commits, one line each) in the output panel.
+            public method gitLog() returns void {
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" --no-pager log --oneline -50 2>&1");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String ln = raw.get(i);
+                    if (ln.trim().length() > 0) {
+                        body.add(ln);
+                    }
+                    i = i + 1;
+                }
+                if (body.size() == 0) {
+                    body.add("(no history)");
+                }
+                this.out.showLines("Git Log", body);
+                return;
+            }
+            // Line-by-line authorship of the active file (git blame) in the output panel.
+            public method gitBlame() returns void {
+                String path = this.activePath();
+                if (path.length() == 0) {
+                    this.out.banner("Blame", "Open a file first.");
+                    return;
+                }
+                ProcessResult r = Process.run("git -C \"" + this.projectDir
+                                              + "\" --no-pager blame \"" + path + "\" 2>&1");
+                ArrayList<String> raw = Strings.split(r.output, "\n");
+                ArrayList<String>* body = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < raw.size()) {
+                    String ln = raw.get(i);
+                    if (ln.length() > 0) {
+                        body.add(ln);
+                    }
+                    i = i + 1;
+                }
+                if (body.size() == 0) {
+                    body.add("(no blame -- is the file tracked?)");
+                }
+                this.out.showLines("Blame: " + Paths.basename(path), body);
+                return;
+            }
+            // Stage / unstage just the active file (per-file, unlike the commit-all flow).
+            public method gitStageActive() returns void {
+                String path = this.activePath();
+                if (path.length() == 0) {
+                    return;
+                }
+                this.runShell("Stage", "git add \"" + path + "\"");
+                this.refreshGit();
+                return;
+            }
+            public method gitUnstageActive() returns void {
+                String path = this.activePath();
+                if (path.length() == 0) {
+                    return;
+                }
+                this.runShell("Unstage", "git reset HEAD \"" + path + "\"");
+                this.refreshGit();
+                return;
+            }
+            // --- file operations (the shell rebuilds the tree when treeDirty is set) ---
+            // Create an empty file at `rel` (relative to the project) and open it.
+            public method newFileOnDisk(String rel) returns void {
+                if (rel.length() == 0) {
+                    return;
+                }
+                String full = Paths.join(this.projectDir, rel);
+                if (!File.exists(full)) {
+                    File.writeAll(full, "");
+                }
+                this.openFile(full);
+                this.treeDirty = true;
+            }
+            // Rename the active file to `newName` in its own directory, and reopen it under the new name.
+            public method renameActiveFile(String newName) returns void {
+                if (newName.length() == 0) {
+                    return;
+                }
+                String old = this.docs.active().document().path();
+                if (old.length() == 0) {
+                    return;
+                }
+                String dir = Paths.dirname(old);
+                String dest = Paths.join(dir, newName);
+                File.rename(old, dest);
+                this.openFile(dest);
+                this.treeDirty = true;
+            }
+            // Delete the active file from disk (after a typed confirmation in the shell), close its tab, and
+            // mark the tree for a rebuild.
+            public method deleteActiveFile() returns void {
+                String path = this.docs.active().document().path();
+                if (path.length() == 0) {
+                    return;
+                }
+                File.remove(path);
+                this.closeActiveTab();
+                this.treeDirty = true;
+            }
+            // Insert a code-template snippet at the caret, indented to the current line's leading whitespace so
+            // the body lands at the right nesting. Returns false for an unknown id.
+            public method insertSnippet(String id) returns boolean {
+                Controller* c = this.docs.active();
+                int row = c.editor().cursorRow();
+                String cur = c.editor().document().line(row);
+                String ind = Workbench.leadingWhite(cur);
+                String body = Workbench.snippetBody(id, ind);
+                if (body.length() == 0) {
+                    return false;
+                }
+                c.insertText(body);
+                return true;
+            }
+            private static method leadingWhite(String s) returns String {
+                mutable int i = 0;
+                while (i < s.length() && (s.charAt(i) == ' ' || s.charAt(i) == '\t')) {
+                    i = i + 1;
+                }
+                return s.substring(0, i);
+            }
+            // The body for a snippet id. The first line is inserted where the caret sits (assumed at the
+            // indent); continuation lines carry `ind` plus their own nesting.
+            private static method snippetBody(String id, String ind) returns String {
+                String nl = "\n";
+                if (id.equals("snippet.class")) {
+                    return "public class Name {" + nl
+                        + ind + "    public constructor Name() {" + nl
+                        + ind + "    }" + nl
+                        + ind + "}";
+                }
+                if (id.equals("snippet.method")) {
+                    return "public method name() returns void {" + nl
+                        + ind + "}";
+                }
+                if (id.equals("snippet.forLoop")) {
+                    return "for (mutable int i = 0; i < n; i++) {" + nl
+                        + ind + "}";
+                }
+                if (id.equals("snippet.main")) {
+                    return "public static method main(string[] args) returns void {" + nl
+                        + ind + "}";
+                }
+                return "";
+            }
+            public method treeNeedsRefresh() returns boolean {
+                if (this.treeDirty) {
+                    this.treeDirty = false;
+                    return true;
+                }
+                return false;
+            }
+            public method toggleMinimap() returns void {
+                this.showMinimap = !this.showMinimap;
+                this.settings.minimap = this.showMinimap;
+                Settings.save(this.settings);
+            }
+            public method minimapVisible() returns boolean {
+                return this.showMinimap;
+            }
+
+            // --- settings panel: apply a change and persist it in one step ---
+            // The font is owned by the shell's frame loop (it holds the atlas), so a change here raises a
+            // flag the loop consumes rather than reloading the atlas from under the renderer.
+            public method setFontFamily(String family) returns void {
+                if (family.length() == 0) {
+                    return;
+                }
+                this.settings.fontFamily = family;
+                this.fontDirty = true;
+                Settings.save(this.settings);
+            }
+            public method setFontSize(int px) returns void {
+                if (px < 8 || px > 32) {          // the atlas is rasterised per size; keep it sane
+                    return;
+                }
+                this.settings.fontSize = px;
+                this.fontDirty = true;
+                Settings.save(this.settings);
+            }
+            // Tab width applies to every open document, not just the active one, so the setting is not
+            // silently different per tab.
+            public method setTabWidth(int n) returns void {
+                if (n < 1 || n > 16) {
+                    return;
+                }
+                this.settings.tabWidth = n;
+                mutable int i = 0;
+                while (i < this.docs.count()) {
+                    this.docs.at(i).setTabWidth(n);
+                    i = i + 1;
+                }
+                if (this.split) {
+                    mutable int j = 0;
+                    while (j < this.docs2.count()) {
+                        this.docs2.at(j).setTabWidth(n);
+                        j = j + 1;
+                    }
+                }
+                Settings.save(this.settings);
+            }
+            // The shell consumes this once per frame and reloads the glyph atlas when it is set.
+            public method takeFontDirty() returns boolean {
+                boolean was = this.fontDirty;
+                this.fontDirty = false;
+                return was;
+            }
+
+            // Escape a commit message for a double-quoted shell argument (drop the quotes that would end it).
+            private static method shellEscape(String s) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                mutable int i = 0;
+                while (i < s.length()) {
+                    char c = s.charAt(i);
+                    if (c != '"') {
+                        sb.appendChar(c);
+                    }
+                    i = i + 1;
+                }
+                return sb.toString();
+            }
+
+            // Feed a decoded key to the active document's editor. Returns whether it was handled.
+            public method handleKey(Key* k) returns boolean {
+                if (!this.docs.hasActive()) {
+                    return false;
+                }
+                return this.keymap.dispatch(this.docs.active(), k);
+            }
+
+            // Run a palette command by id. Handles the argument-free commands; commands that need input
+            // (open/save-as a path, find/replace a term) are dispatched by the shell with their arguments,
+            // so this returns false for them. Returns whether the id was handled here.
+            public method runCommand(String id) returns boolean {
+                if (id.equals("file.new")) {
+                    this.docs.openNew();
+                    return true;
+                }
+                if (!this.docs.hasActive()) {
+                    return false;
+                }
+                Controller* c = this.docs.active();
+                if (id.equals("file.save")) {
+                    c.save();
+                    return true;
+                }
+                if (id.equals("edit.undo")) {
+                    c.undo();
+                    return true;
+                }
+                if (id.equals("edit.redo")) {
+                    c.redo();
+                    return true;
+                }
+                if (id.equals("edit.selectAll")) {
+                    c.selectAll();
+                    return true;
+                }
+                if (id.equals("edit.duplicateLine")) {
+                    c.duplicateLine();
+                    return true;
+                }
+                if (id.equals("edit.joinLines")) {
+                    c.joinLines();
+                    return true;
+                }
+                if (id.equals("edit.sortLines")) {
+                    c.sortSelectedLines();
+                    return true;
+                }
+                if (id.equals("view.problems")) {
+                    this.showProblems();
+                    return true;
+                }
+                if (id.equals("view.whitespace")) {
+                    this.toggleRenderWhitespace();
+                    return true;
+                }
+                if (id.equals("file.revert")) {
+                    this.revertActive();
+                    return true;
+                }
+                if (id.equals("view.sidebar")) {
+                    this.requestSidebarToggle();
+                    return true;
+                }
+                if (id.equals("file.reopenClosed")) {
+                    if (this.reopenClosedTab().length() == 0) {
+                        this.out.banner("Reopen Tab", "No recently closed tab to reopen.");
+                    }
+                    return true;
+                }
+                if (id.equals("diag.explain")) {
+                    if (!this.explainDiagnosticAtCaret()) {
+                        this.out.banner("Explain", "Put the caret on a coded diagnostic first.");
+                    }
+                    return true;
+                }
+                if (id.equals("view.split")) {
+                    this.toggleSplit();
+                    return true;
+                }
+                if (id.equals("view.moveToOtherPane")) {
+                    this.moveToOtherPane();
+                    return true;
+                }
+                if (id.equals("view.wrap")) {
+                    this.toggleWrap();
+                    return true;
+                }
+                if (id.equals("view.outline")) {
+                    this.toggleOutline();
+                    return true;
+                }
+                if (id.equals("view.todos")) {
+                    ArrayList<String>* files = this.projectFiles();
+                    this.showTodos(files);
+                    delete files;
+                    return true;
+                }
+                if (id.equals("edit.upperCase")) {
+                    c.transformCase(true);
+                    return true;
+                }
+                if (id.equals("edit.lowerCase")) {
+                    c.transformCase(false);
+                    return true;
+                }
+                if (id.equals("edit.matchBracket")) {
+                    c.goToMatchingBracket();
+                    return true;
+                }
+                if (id.equals("edit.addNextOccurrence")) {
+                    c.selectNextOccurrence();
+                    return true;
+                }
+                if (id.equals("edit.selectAllOccurrences")) {
+                    c.selectAllOccurrences();
+                    return true;
+                }
+                if (id.equals("edit.expandSelection")) {
+                    c.expandSelection();
+                    return true;
+                }
+                if (id.equals("edit.shrinkSelection")) {
+                    c.shrinkSelection();
+                    return true;
+                }
+                if (id.equals("nav.back")) {
+                    this.navGoBack();
+                    return true;
+                }
+                if (id.equals("nav.forward")) {
+                    this.navGoForward();
+                    return true;
+                }
+                if (id.startsWith("snippet.")) {
+                    return this.insertSnippet(id);
+                }
+                if (id.equals("run.build")) {
+                    this.diagnose();
+                    return true;
+                }
+                if (id.equals("run.program")) {
+                    this.runShell("Run", "polaron run");
+                    return true;
+                }
+                if (id.equals("run.test")) {
+                    this.runShell("Tests", "polaron test");
+                    return true;
+                }
+                if (id.equals("view.output")) {
+                    this.out.toggle();
+                    return true;
+                }
+                if (id.equals("view.minimap")) {
+                    this.toggleMinimap();
+                    return true;
+                }
+                if (id.equals("view.theme")) {
+                    this.toggleTheme();
+                    return true;
+                }
+                if (id.equals("view.terminal")) {
+                    this.toggleTerminal();
+                    return true;
+                }
+                if (id.equals("git.branch")) {
+                    this.out.showLines("Branches", this.gitBranches());
+                    return true;
+                }
+                if (id.equals("git.status")) {
+                    this.gitStatusView();
+                    return true;
+                }
+                if (id.equals("git.push")) {
+                    this.gitPush();
+                    return true;
+                }
+                if (id.equals("git.diff")) {
+                    this.gitDiff();
+                    return true;
+                }
+                if (id.equals("git.pull")) {
+                    this.gitPull();
+                    return true;
+                }
+                if (id.equals("git.fetch")) {
+                    this.gitFetch();
+                    return true;
+                }
+                if (id.equals("git.log")) {
+                    this.gitLog();
+                    return true;
+                }
+                if (id.equals("git.blame")) {
+                    this.gitBlame();
+                    return true;
+                }
+                if (id.equals("git.stage")) {
+                    this.gitStageActive();
+                    return true;
+                }
+                if (id.equals("git.unstage")) {
+                    this.gitUnstageActive();
+                    return true;
+                }
+                if (id.equals("view.regions")) {
+                    ArrayList<String>* rf = this.projectFiles();
+                    this.showRegions(rf);
+                    delete rf;
+                    return true;
+                }
+                if (id.equals("view.bundles")) {
+                    ArrayList<String>* bf = this.projectFiles();
+                    this.showBundles(bf);
+                    delete bf;
+                    return true;
+                }
+                if (id.equals("view.persistents")) {
+                    ArrayList<String>* pf = this.projectFiles();
+                    this.showPersistents(pf);
+                    delete pf;
+                    return true;
+                }
+                if (id.startsWith("plugin.")) {   // contributed by a plugin, not built in
+                    return this.runPluginCommand(id);
+                }
+                if (id.equals("plugins.list")) {
+                    this.showPlugins();
+                    return true;
+                }
+                if (id.equals("view.tests")) {
+                    ArrayList<String>* tf = this.projectFiles();
+                    this.showTests(tf);
+                    delete tf;
+                    return true;
+                }
+                if (id.equals("edit.format")) {
+                    this.formatDocument();
+                    return true;
+                }
+                if (id.equals("debug.start")) {
+                    if (this.dbg.isActive()) {
+                        this.dbg.continueRun();
+                    } else {
+                        this.startDebugging();
+                    }
+                    return true;
+                }
+                if (id.equals("debug.stepOver")) {
+                    this.dbg.stepOver();
+                    return true;
+                }
+                if (id.equals("debug.stepInto")) {
+                    this.dbg.stepInto();
+                    return true;
+                }
+                if (id.equals("debug.stepOut")) {
+                    this.dbg.stepOut();
+                    return true;
+                }
+                if (id.equals("debug.stop")) {
+                    this.dbg.stop();
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+}

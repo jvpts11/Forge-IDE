@@ -1,0 +1,272 @@
+import System.Collections.ArrayList;
+import System.OS.Subprocess;
+import System.Json.Json;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // A Debug Adapter Protocol client speaking to lldb-dap over a persistent subprocess. Each message is
+        // framed with a Content-Length header (DAP's transport); requests carry an incrementing seq; incoming
+        // responses and events are parsed and handed back to the Debugger session. poll() is non-blocking: it
+        // drains only the bytes the child already wrote, so the IDE render loop never stalls waiting on I/O.
+        public class DapClient {
+            // Absent rather than empty until a session starts: there is no such thing as a subprocess
+            // that is not a process.
+            private mutable nullable Subprocess proc;
+            private mutable int seq;
+            private mutable String inbuf;
+            private mutable boolean running;
+
+            public constructor DapClient() {
+                this.proc = null;
+                this.seq = 1;
+                this.inbuf = "";
+                this.running = false;
+            }
+
+            // Launch the adapter (lldb-dap). Returns true if the child started.
+            public method start(String dapCommand) returns boolean {
+                this.proc = Subprocess.start(dapCommand);
+                this.running = this.proc.isValid();
+                return this.running;
+            }
+
+            public method isRunning() returns boolean {
+                if (!this.running) {
+                    return false;
+                }
+                return this.proc.isAlive();
+            }
+
+            // ---- Outgoing: build + frame + send ----
+
+            private method nextSeq() returns int {
+                int s = this.seq;
+                this.seq = this.seq + 1;
+                return s;
+            }
+
+            private method newRequest(String command) returns Json {
+                Json req = Json.object();
+                req.put("seq", Json.ofNum(cast<long>(this.nextSeq())));
+                req.put("type", Json.ofStr("request"));
+                req.put("command", Json.ofStr(command));
+                return req;
+            }
+
+            private method sendFrame(Json request) returns void {
+                if (!this.running) {
+                    return;
+                }
+                String payload = request.toString();
+                int len = payload.length();
+                mutable String frame = "Content-Length: ";
+                frame = frame + len.toString();
+                frame = frame + "\r\n\r\n";
+                frame = frame + payload;
+                this.proc.write(frame);
+            }
+
+            // initialize: negotiate capabilities (lines/columns are 1-based, like DWARF).
+            public method initialize() returns void {
+                Json req = this.newRequest("initialize");
+                Json args = Json.object();
+                args.put("clientID", Json.ofStr("forge"));
+                args.put("adapterID", Json.ofStr("lldb-dap"));
+                args.put("linesStartAt1", Json.ofBool(true));
+                args.put("columnsStartAt1", Json.ofBool(true));
+                args.put("pathFormat", Json.ofStr("path"));
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            // launch: run the target exe under the debugger, stopping at entry so breakpoints can be set first.
+            public method launch(String exePath, boolean stopOnEntry) returns void {
+                Json req = this.newRequest("launch");
+                Json args = Json.object();
+                args.put("program", Json.ofStr(exePath));
+                args.put("stopOnEntry", Json.ofBool(stopOnEntry));
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            // setBreakpoints: replace the breakpoints for one source file with the given 1-based lines. A
+            // non-empty conditions[i] makes line i a conditional breakpoint (the adapter only stops when the
+            // expression is true). `conditions` is parallel to `lines`; a shorter list means "no condition".
+            public method setBreakpoints(String sourcePath, ArrayList<int>* lines,
+                                         ArrayList<String>* conditions) returns void {
+                Json req = this.newRequest("setBreakpoints");
+                Json args = Json.object();
+                Json src = Json.object();
+                src.put("path", Json.ofStr(sourcePath));
+                args.put("source", src);
+                Json arr = Json.array();
+                for (mutable int i = 0; i < lines.size(); i++) {
+                    Json bp = Json.object();
+                    bp.put("line", Json.ofNum(cast<long>(lines.get(i))));
+                    if (i < conditions.size() && conditions.get(i).length() > 0) {
+                        bp.put("condition", Json.ofStr(conditions.get(i)));
+                    }
+                    arr.add(bp);
+                }
+                args.put("breakpoints", arr);
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            // evaluate: compute `expr` in the context of frame `frameId`. `context` is "watch", "repl"
+            // (the debug console), or "hover". The result comes back as an evaluate response.
+            public method evaluate(String expr, int frameId, String context) returns void {
+                Json req = this.newRequest("evaluate");
+                Json args = Json.object();
+                args.put("expression", Json.ofStr(expr));
+                args.put("frameId", Json.ofNum(cast<long>(frameId)));
+                args.put("context", Json.ofStr(context));
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            // configurationDone: tell the adapter breakpoints are set; execution may proceed.
+            public method configurationDone() returns void {
+                this.sendFrame(this.newRequest("configurationDone"));
+            }
+
+            private method threadRequest(String command, int threadId) returns void {
+                Json req = this.newRequest(command);
+                Json args = Json.object();
+                args.put("threadId", Json.ofNum(cast<long>(threadId)));
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            public method resume(int threadId) returns void {
+                this.threadRequest("continue", threadId);
+            }
+            public method stepOver(int threadId) returns void {
+                this.threadRequest("next", threadId);
+            }
+            public method stepIn(int threadId) returns void {
+                this.threadRequest("stepIn", threadId);
+            }
+            public method stepOut(int threadId) returns void {
+                this.threadRequest("stepOut", threadId);
+            }
+            public method pause(int threadId) returns void {
+                this.threadRequest("pause", threadId);
+            }
+
+            public method stackTrace(int threadId) returns void {
+                Json req = this.newRequest("stackTrace");
+                Json args = Json.object();
+                args.put("threadId", Json.ofNum(cast<long>(threadId)));
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            public method scopes(int frameId) returns void {
+                Json req = this.newRequest("scopes");
+                Json args = Json.object();
+                args.put("frameId", Json.ofNum(cast<long>(frameId)));
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            public method variables(int variablesReference) returns void {
+                Json req = this.newRequest("variables");
+                Json args = Json.object();
+                args.put("variablesReference", Json.ofNum(cast<long>(variablesReference)));
+                req.put("arguments", args);
+                this.sendFrame(req);
+            }
+
+            public method threads() returns void {
+                this.sendFrame(this.newRequest("threads"));
+            }
+
+            // disconnect + tear the adapter down.
+            public method disconnect() returns void {
+                this.sendFrame(this.newRequest("disconnect"));
+                if (this.running) {
+                    this.proc.closeInput();
+                    this.proc.close();
+                }
+                this.running = false;
+            }
+
+            // ---- Incoming: drain, deframe, parse ----
+
+            // Pull whatever the adapter has already written into the input buffer (never blocks).
+            private method drain() returns void {
+                while (this.running && this.proc.canRead()) {
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        return;   // EOF
+                    }
+                    this.inbuf = this.inbuf + chunk;
+                }
+            }
+
+            // Read the Content-Length value out of a header block ("Content-Length: N"); -1 if not present.
+            private method parseContentLength(String header) returns int {
+                int at = header.indexOf("Content-Length:");
+                if (at < 0) {
+                    return -1;
+                }
+                mutable int i = at + 15;   // past "Content-Length:"
+                while (i < header.length() && header.charAt(i) == ' ') {
+                    i = i + 1;
+                }
+                mutable int n = 0;
+                mutable boolean any = false;
+                while (i < header.length()) {
+                    char c = header.charAt(i);
+                    if (c < '0' || c > '9') {
+                        i = header.length();   // stop at the first non-digit
+                    } else {
+                        n = n * 10 + (cast<int>(c) - cast<int>('0'));
+                        any = true;
+                        i = i + 1;
+                    }
+                }
+                if (!any) {
+                    return -1;
+                }
+                return n;
+            }
+
+            // poll: drain the pipe and return every complete DAP message now available, parsed. Empty if none
+            // is complete yet. The caller (Debugger) dispatches each by "type"/"command"/"event".
+            public method poll() returns ArrayList<Json*>* {
+                this.drain();
+                mutable ArrayList<Json*>* out = new ArrayList<Json*>() on heap;
+                mutable boolean more = true;
+                while (more) {
+                    int sep = this.inbuf.indexOf("\r\n\r\n");
+                    if (sep < 0) {
+                        more = false;
+                    } else {
+                        String header = this.inbuf.substring(0, sep);
+                        int len = this.parseContentLength(header);
+                        int bodyStart = sep + 4;
+                        if (len < 0) {
+                            // Malformed header: drop up to and including the separator and resynchronise.
+                            this.inbuf = this.inbuf.substring(bodyStart, this.inbuf.length());
+                        } else {
+                            if (this.inbuf.length() < bodyStart + len) {
+                                more = false;   // body not fully arrived yet
+                            } else {
+                                String body = this.inbuf.substring(bodyStart, bodyStart + len);
+                                this.inbuf = this.inbuf.substring(bodyStart + len, this.inbuf.length());
+                                Json msg = Json.parse(body);
+                                out.add(msg);
+                            }
+                        }
+                    }
+                }
+                return out;
+            }
+        }
+    }
+}

@@ -1,0 +1,66 @@
+import forge.test.CoreTests;
+import forge.gfx.GuiApp;
+import System.IO.Console;
+
+import forge.ffi.Win32;
+
+program Forge;
+
+// Forge -- the Polaron IDE. Entry point. With no arguments it opens the graphical editor window; `shot`
+// renders one frame to frame.ppm for offscreen verification; `test` runs the headless editor-core
+// self-check (400+ checks). See docs/DESIGN.md.
+public bundle forge {
+    public namespace app {
+        public class Main {
+            public static method main(string[] args) returns void {
+                if (args.length() > 0) {
+                    if (args[0].equals("test")) {
+                        // Exit non-zero when a check fails, so a failing self-test actually fails the
+                        // build instead of printing into a green log that nobody re-reads.
+                        int failures = CoreTests.run();
+                        if (failures > 0) {
+                            Win32.ExitProcess(1);
+                        }
+                        return;
+                    }
+                    if (args[0].equals("termbench")) {
+                        // termbench <iters>: drive the terminal parser + per-frame run rebuild with no
+                        // window, so process memory can be sampled from outside.
+                        mutable int n = 200000;
+                        if (args.length() > 1) {
+                            n = args[1].toInt();
+                        }
+                        GuiApp.termbench(n);
+                        return;
+                    }
+                    if (args[0].equals("shot")) {
+                        GuiApp.shot("frame.ppm");
+                        return;
+                    }
+                    if (args[0].equals("uitest")) {
+                        GuiApp.uitest("frame.ppm");
+                        return;
+                    }
+                    if (args[0].equals("serve")) {
+                        GuiApp.serve();
+                        return;
+                    }
+                    if (args[0].equals("dap-selftest")) {
+                        // dap-selftest <lldb-dap> <program.exe> <source> <line>: headless end-to-end debug check.
+                        if (args.length() < 5) {
+                            System.IO.Console.println("usage: dap-selftest <lldb-dap> <program.exe> <source> <line>");
+                            return;
+                        }
+                        DapSelfTest.run(args[1], args[2], args[3], args[4].toInt());
+                        return;
+                    }
+                    // any other argument is a file or project directory to open
+                    GuiApp.run(args[0]);
+                    return;
+                }
+                GuiApp.run("");
+                return;
+            }
+        }
+    }
+}

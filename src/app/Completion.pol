@@ -1,0 +1,244 @@
+import forge.app.Controller;
+import System.Collections.ArrayList;
+import System.IO.File;
+import System.IO.Files;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // Inline autocomplete: as you type an identifier, it collects the Polaron keywords and the words
+        // already in the buffer that start with the current prefix, and offers them in a popup. Accepting
+        // inserts the rest of the chosen word. Pure model state; GuiApp drives it and GpuScreen draws it.
+        public class Completion {
+            public mutable boolean active;
+            public mutable String prefix;
+            public mutable ArrayList<String>* items;
+            public mutable int sel;
+            private mutable ArrayList<String>* keywords;
+            private mutable ArrayList<String>* imports;   // importable qualified names (stdlib + project)
+            private mutable ArrayList<String>* projectSymbols;  // declaration names across the whole project
+
+            public constructor Completion() {
+                this.active = false;
+                this.prefix = "";
+                this.items = new ArrayList<String>() on heap;
+                this.sel = 0;
+                this.keywords = Completion.keywordList();
+                this.imports = new ArrayList<String>() on heap;
+                this.projectSymbols = new ArrayList<String>() on heap;
+            }
+
+            // Replace the workspace symbol index (class/method/enum names from every project file). The shell
+            // rebuilds this on project open and after each save, so cross-file names are offered as you type
+            // without re-scanning the whole project on every keystroke.
+            public method setProjectSymbols(ArrayList<String>* names) returns void {
+                this.projectSymbols = names;
+            }
+
+            // Load the importable qualified names (one per line) that `import` completion offers -- generated
+            // from the real stdlib prelude at build time. Silently no-ops if the file isn't present.
+            public method loadImports(String path) returns void {
+                if (!File.exists(path)) {
+                    return;
+                }
+                ArrayList<String> ls = Files.readLines(path);
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < ls.size()) {
+                    if (ls.get(i).length() > 0) {
+                        out.add(ls.get(i));
+                    }
+                    i = i + 1;
+                }
+                this.imports = out;
+            }
+
+            public method dismiss() returns void {
+                this.active = false;
+            }
+            public method moveSel(int delta) returns void {
+                if (!this.active) {
+                    return;
+                }
+                mutable int s = this.sel + delta;
+                if (s < 0) {
+                    s = this.items.size() - 1;
+                }
+                if (s >= this.items.size()) {
+                    s = 0;
+                }
+                this.sel = s;
+            }
+
+            private method isWordChar(char c) returns boolean {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_';
+            }
+
+            // Recompute the suggestion list from the caret's word prefix. Deactivates when there is no prefix
+            // of at least two characters.
+            public method update(Controller* c) returns void {
+                int row = c.editor().cursorRow();
+                int col = c.editor().cursorCol();
+                String line = c.editor().document().line(row);
+                // On an `import` line, complete the whole dotted path against the known importable names.
+                String upto = line.substring(0, col);
+                if (upto.trim().startsWith("import")) {
+                    this.updateImports(upto);
+                    return;
+                }
+                mutable int start = col;
+                while (start > 0 && this.isWordChar(line.charAt(start - 1))) {
+                    start = start - 1;
+                }
+                String pre = line.substring(start, col);
+                this.prefix = pre;
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                // a word preceded by '.' is a member access: offer the buffer's member names
+                boolean member = start > 0 && line.charAt(start - 1) == '.';
+                if (member) {
+                    ArrayList<String>* members = Members.list(c);
+                    mutable int mi = 0;
+                    while (mi < members.size()) {
+                        String m = members.get(mi);
+                        if (m.startsWith(pre) && !m.equals(pre)) {
+                            out.add(m);
+                        }
+                        mi = mi + 1;
+                    }
+                } else {
+                    if (col - start < 2) {
+                        this.active = false;
+                        return;
+                    }
+                    // keywords first
+                    mutable int i = 0;
+                    while (i < this.keywords.size()) {
+                        String kw = this.keywords.get(i);
+                        if (kw.startsWith(pre) && !kw.equals(pre)) {
+                            out.add(kw);
+                        }
+                        i = i + 1;
+                    }
+                    // then identifiers already in the buffer (deduped, excluding the prefix itself)
+                    this.collectIdentifiers(c, pre, out);
+                    // then declaration names from across the whole project (classes/methods/enums)
+                    mutable int pj = 0;
+                    while (pj < this.projectSymbols.size() && out.size() < 200) {
+                        String s = this.projectSymbols.get(pj);
+                        if (s.length() > pre.length() && s.startsWith(pre) && !this.has(out, s)) {
+                            out.add(s);
+                        }
+                        pj = pj + 1;
+                    }
+                }
+                if (out.size() == 0) {
+                    this.active = false;
+                    return;
+                }
+                this.items = out;
+                this.sel = 0;
+                this.active = true;
+            }
+
+            // Complete an `import` statement: match the dotted path typed after the keyword against the
+            // importable names. The prefix is the whole path (so accept inserts the rest of the qualified
+            // name), and matching is case-insensitive on the last segment for convenience.
+            private method updateImports(String upto) returns void {
+                String t = upto.trim();
+                mutable String path = "";
+                if (t.length() > 6) {
+                    path = t.substring(6, t.length()).trim();
+                }
+                // text after "import"
+                this.prefix = path;
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                mutable int i = 0;
+                while (i < this.imports.size() && out.size() < 40) {
+                    String imp = this.imports.get(i);
+                    if (imp.startsWith(path) && !imp.equals(path)) {
+                        out.add(imp);
+                    }
+                    i = i + 1;
+                }
+                if (out.size() == 0) {
+                    this.active = false;
+                    return;
+                }
+                this.items = out;
+                this.sel = 0;
+                this.active = true;
+            }
+
+            // Scan the buffer for word runs beginning with `pre` and add each once.
+            private method collectIdentifiers(Controller* c, String pre, ArrayList<String>* out) returns void {
+                int n = c.editor().document().lineCount();
+                mutable int r = 0;
+                while (r < n) {
+                    String line = c.editor().document().line(r);
+                    int len = line.length();
+                    mutable int i = 0;
+                    while (i < len) {
+                        if (this.isWordChar(line.charAt(i))) {
+                            mutable int j = i;
+                            while (j < len && this.isWordChar(line.charAt(j))) {
+                                j = j + 1;
+                            }
+                            String word = line.substring(i, j);
+                            if (word.length() > pre.length() && word.startsWith(pre) && !this.has(out, word)) {
+                                out.add(word);
+                            }
+                            i = j;
+                        } else {
+                            i = i + 1;
+                        }
+                    }
+                    r = r + 1;
+                }
+            }
+            private method has(ArrayList<String>* xs, String w) returns boolean {
+                mutable int i = 0;
+                while (i < xs.size()) {
+                    if (xs.get(i).equals(w)) {
+                        return true;
+                    }
+                    i = i + 1;
+                }
+                return false;
+            }
+
+            // Accept the selected suggestion: insert the part of the word after the prefix.
+            public method accept(Controller* c) returns void {
+                if (!this.active || this.sel < 0 || this.sel >= this.items.size()) {
+                    this.active = false;
+                    return;
+                }
+                String chosen = this.items.get(this.sel);
+                String suffix = chosen.substring(this.prefix.length(), chosen.length());
+                mutable int j = 0;
+                while (j < suffix.length()) {
+                    c.insertChar(suffix.charAt(j));
+                    j = j + 1;
+                }
+                this.active = false;
+            }
+
+            private static method keywordList() returns ArrayList<String>* {
+                ArrayList<String>* k = new ArrayList<String>() on heap;
+                k.add("program"); k.add("bundle"); k.add("namespace"); k.add("public"); k.add("private");
+                k.add("protected"); k.add("internal"); k.add("class"); k.add("interface"); k.add("enum");
+                k.add("struct"); k.add("record"); k.add("union"); k.add("method"); k.add("constructor");
+                k.add("destructor"); k.add("static"); k.add("abstract"); k.add("override"); k.add("mutable");
+                k.add("return"); k.add("returns"); k.add("void"); k.add("boolean"); k.add("char");
+                k.add("String"); k.add("string"); k.add("if"); k.add("else"); k.add("while"); k.add("for");
+                k.add("foreach"); k.add("switch"); k.add("match"); k.add("break"); k.add("continue");
+                k.add("new"); k.add("delete"); k.add("this"); k.add("super"); k.add("extends");
+                k.add("implements"); k.add("heap"); k.add("stack"); k.add("cast"); k.add("true");
+                k.add("false"); k.add("null"); k.add("import"); k.add("defer"); k.add("using");
+                return k;
+            }
+        }
+    }
+}

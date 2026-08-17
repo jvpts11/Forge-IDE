@@ -1,0 +1,3246 @@
+import forge.gfx.Batch2D;
+import forge.gfx.Font;
+import forge.gfx.Overlay;
+import forge.gfx.ImagePreview;
+import forge.io.ThemeStore;
+import forge.app.Controller;
+import forge.app.Workbench;
+import forge.app.Debugger;
+import forge.app.DebugFrame;
+import forge.app.DebugVar;
+import forge.app.Terminal;
+import forge.app.ChatMessage;
+import forge.app.AiChat;
+import forge.app.TermGrid;
+import forge.app.TermLine;
+import forge.app.DocumentManager;
+import forge.app.Command;
+import forge.app.CommandRegistry;
+import forge.app.OutputPanel;
+import forge.app.Diagnostic;
+import forge.app.Completion;
+import forge.app.MenuBar;
+import forge.app.Menu;
+import forge.app.MenuItem;
+import forge.app.Breadcrumbs;
+import forge.io.FileTree;
+import forge.io.FileNode;
+import forge.syntax.Tok;
+import forge.syntax.Span;
+import forge.syntax.Highlighter;
+import forge.app.Peek;
+import forge.app.DiffView;
+import forge.app.ContextMenu;
+import forge.editor.Match;
+import System.Collections.ArrayList;
+import System.IO.Paths;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // Draws the whole IDE frame on the GPU -- the graphical counterpart of ScreenRenderer. It composes a
+        // tab bar, a project tree panel, and the editor pane (gutter + line numbers + token-coloured code +
+        // current-line highlight + selection + caret), all from live Workbench + FileTree state through
+        // Batch2D quads. It owns no model state; the caller passes the Workbench each frame.
+        public class GpuScreen {
+            private mutable Font* font;
+            private mutable int gutterChars;
+            private mutable int topPad;
+            private mutable int treeW;
+            private mutable int treeWSaved;    // the tree width to restore when the sidebar is shown again
+            private mutable float panelFrac;   // terminal/output panel height as a fraction of the window
+            private mutable boolean caretOn;   // caret visibility for blink (the live loop toggles it)
+            private mutable Theme* theme;      // the whole colour palette; swap to re-skin the IDE
+            private mutable Highlighter* hl;   // tokenises peek-popup lines (from files that aren't open)
+
+            public constructor GpuScreen(Font* font) {
+                this.font = font;
+                this.gutterChars = 6;
+                this.topPad = 6;
+                this.treeW = 230;
+                this.treeWSaved = 230;
+                this.panelFrac = 0.4;
+                this.caretOn = true;
+                this.theme = Theme.makeDark();
+                this.hl = new Highlighter() on heap;
+            }
+
+            public method colors() returns Theme* {
+                return this.theme;
+            }
+            // TAKES THE THEME, and frees the one it replaces -- the screen is its only holder, and a
+            // theme is twenty-eight colours plus a 256-entry terminal palette. Swapping without this
+            // leaked one of those on every theme change.
+            public method setTheme(Theme* t) returns void {
+                if (t == this.theme) {
+                    return;
+                }
+                delete this.theme;
+                this.theme = t;
+            }
+            // Sync the palette to the workbench's theme preference. Cheap: only rebuilds the Theme when the
+            // light/dark choice actually changed, so it is safe to call every frame.
+            // Rebuild the palette when the chosen theme changed. Comparing by NAME (not just dark/light)
+            // is what lets installed themes work: two themes can share a base preset and still differ.
+            public method applyThemeFor(Workbench* wb) returns void {
+                String want = wb.settings().themeName;
+                if (!this.theme.name.equals(want)) {
+                    this.setTheme(ThemeStore.build(want));
+                }
+            }
+
+            // The live loop toggles this to blink the caret; shot/serve leave it on so the caret always shows.
+            public method setCaretOn(boolean visible) returns void {
+                this.caretOn = visible;
+            }
+
+            public method fontTexture() returns int {
+                return this.font.texture();
+            }
+            // Swap the glyph atlas -- used by zoom to change the font size.
+            public method setFont(Font* f) returns void {
+                this.font = f;
+            }
+            public method gutterPx() returns int {
+                return this.gutterChars * this.font.advance() + 16;
+            }
+            public method menuH() returns int {
+                return this.font.lineHeight() + 8;
+            }
+            public method tabH() returns int {
+                return this.font.lineHeight() + 12;
+            }
+            public method crumbH() returns int {
+                return this.font.lineHeight() + 6;
+            }
+            public method statusH() returns int {
+                return this.font.lineHeight() + 8;
+            }
+            // Pixel y where the tab bar / tree / breadcrumb bar begin, below the menu bar.
+            public method contentTop() returns int {
+                return this.menuH() + this.tabH();
+            }
+            // Pixel y where the editor code begins, below the breadcrumb bar.
+            public method editorTop() returns int {
+                return this.contentTop() + this.crumbH();
+            }
+            public method treeWidth() returns int {
+                return this.treeW;
+            }
+            // The single place that decides "is the mouse over editable TEXT" -- used for the I-beam cursor.
+            // It excludes everything that is NOT text: the tree, the line-number gutter (a click there folds),
+            // the minimap and the overview-ruler / vertical-scrollbar strip on the right, the horizontal
+            // scrollbar at the bottom, the breadcrumb bar above, and the status bar below. Everything it
+            // excludes keeps the arrow.
+            public method overText(Workbench* wb, int screenW, int screenH, int mx, int my) returns boolean {
+                int left = this.textOx();                       // right of tree + gutter
+                mutable int right = screenW - 12;               // overview ruler / vertical scrollbar strip
+                if (wb.minimapVisible()) {
+                    right = screenW - this.minimapW() - 14;     // the minimap sits just left of the ruler
+                }
+                int topY = this.editorTop();                    // below the breadcrumb bar
+                int botY = screenH - this.statusH() - this.hscrollH();   // above the status + h-scrollbar
+                return mx >= left && mx < right && my >= topY && my < botY;
+            }
+            // Hide or show the file-tree sidebar (Ctrl+B). treeWidth() is the single source every layout and
+            // hit-test reads, so setting it to 0 collapses the tree and the editor reclaims the width; the
+            // last width is remembered so showing it again restores the same size.
+            public method toggleTree() returns void {
+                if (this.treeW > 0) {
+                    this.treeWSaved = this.treeW;
+                    this.treeW = 0;
+                } else {
+                    this.treeW = this.treeWSaved;
+                }
+                return;
+            }
+            // Resize the sidebar to `w` (from a divider drag), clamped so it stays usable and always leaves
+            // room for the editor. `screenW` bounds the maximum so the editor keeps at least ~360px.
+            public method setTreeWidth(int w, int screenW) returns void {
+                mutable int nw = w;
+                if (nw < 140) {
+                    nw = 140;
+                }
+                int maxW = screenW - 360;
+                if (maxW > 140 && nw > maxW) {
+                    nw = maxW;
+                }
+                this.treeW = nw;
+                this.treeWSaved = nw;
+                return;
+            }
+            // Is the point on the draggable tree/editor divider (a few px around the sidebar's right edge,
+            // over the content area)? Drives both the resize-drag and the double-arrow cursor.
+            public method onTreeDivider(int mx, int my, int screenH) returns boolean {
+                if (this.treeW <= 0) {
+                    return false;
+                }
+                return my >= this.contentTop() && my < screenH - this.statusH()
+                    && mx >= this.treeW - 3 && mx <= this.treeW + 3;
+            }
+            public method treeVisible() returns boolean {
+                return this.treeW > 0;
+            }
+            public method charW() returns int {
+                return this.font.advance();
+            }
+            public method lineH() returns int {
+                return this.font.lineHeight();
+            }
+            // Pixel origin of the code text (for mouse hit-testing).
+            public method textOx() returns int {
+                return this.treeW + this.gutterPx() + 6;
+            }
+            public method textOy() returns int {
+                return this.editorTop() + this.topPad;
+            }
+            // Which tab index is under pixel x in the tab bar (-1 if none) -- mirrors drawTabBar's layout.
+            public method tabAtX(DocumentManager* docs, int mx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    int tw = (this.tabLabel(docs.title(i)).length() + 4) * cw;
+                    if (mx >= x && mx < x + tw) {
+                        return i;
+                    }
+                    x = x + tw;
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Which tab's close (x) control is under pixel x (-1 if none) -- mirrors drawTabBar's layout.
+            public method tabCloseAtX(DocumentManager* docs, int mx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    int tw = (this.tabLabel(docs.title(i)).length() + 4) * cw;
+                    int xx = x + tw - 2 * cw;
+                    if (mx >= xx && mx < xx + 2 * cw) {
+                        return i;
+                    }
+                    x = x + tw;
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Which tree row is under pixel y (may be out of range; the caller checks against visible()).
+            public method treeRowAtY(int my) returns int {
+                return (my - (this.contentTop() + 6)) / this.font.lineHeight();
+            }
+            // Viewport rows/cols that fit the editor pane of a pixel window (window minus chrome).
+            public method paneRowsFor(int screenH) returns int {
+                return (screenH - this.editorTop() - this.statusH() - this.topPad) / this.font.lineHeight();
+            }
+            public method paneColsFor(int screenW) returns int {
+                return (screenW - this.treeW - this.gutterPx() - 8) / this.font.advance();
+            }
+
+            // Compose the full IDE frame.
+            public method drawWorkbench(Batch2D* batch, Workbench* wb, FileTree* tree, Overlay* ov,
+                                        int mx, int my, int screenW, int screenH) returns void {
+                int mh = this.menuH();
+                int tabh = this.tabH();
+                int ctop = mh + tabh;
+                int etop = ctop + this.crumbH();
+                int tw = this.treeW;
+                int sh = this.statusH();
+                // chrome panel backgrounds
+                batch.rect(0, mh, screenW, tabh, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);             // tab bar
+                batch.rect(0, ctop, tw, screenH - ctop, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);      // tree panel
+                batch.rect(tw, ctop, 1, screenH - ctop, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // tree/editor divider
+                if (this.treeVisible() && mx >= tw - 3 && mx <= tw + 3 && my >= ctop && my < screenH - sh) {
+                    batch.rect(tw - 1, ctop, 3, screenH - ctop - sh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);   // draggable-divider hint
+                }
+                boolean termOpen = wb.terminal().isOpen();
+                mutable int panelH = 0;
+                if (termOpen) {
+                    panelH = this.terminalPanelHeight(screenH);
+                } else {
+                    panelH = this.outputPanelHeight(wb.output(), screenH);
+                }
+                int ow = this.outlineWidth(wb);
+                if (this.treeVisible()) {
+                    this.drawTree(batch, wb, tree, ctop, screenH - sh, mx, my);
+                }
+                int editorW = screenW - tw - ow;
+                int editorH = screenH - etop - sh - panelH;
+                if (wb.isSplit()) {
+                    // Two panes, side by side. Each keeps its own tabs and its own view of a file; a file
+                    // open in both is ONE document, so an edit on either side shows on the other.
+                    int halfW = editorW / 2;
+                    this.drawTabBar(batch, wb.documentsOf(0), mh, tabh, mx, my);
+                    // The breadcrumb band is shared: the left half shows the focused scope, the right half
+                    // is where the second pane's own tab strip goes -- so it is drawn BEFORE the panes.
+                    this.drawBreadcrumbs(batch, wb, tw, ctop, halfW);
+                    this.drawPaneEditor(batch, wb, ov, 0, mx, my, tw, etop, halfW, editorH);
+                    this.drawPaneEditor(batch, wb, ov, 1, mx, my, tw + halfW, etop, editorW - halfW, editorH);
+                    batch.rect(tw + halfW, etop, 1, editorH, this.theme.divider.r, this.theme.divider.g,
+                               this.theme.divider.b, this.theme.divider.a);
+                } else {
+                    this.drawTabBar(batch, wb.documents(), mh, tabh, mx, my);
+                    this.drawBreadcrumbs(batch, wb, tw, ctop, editorW);
+                    this.drawEditor(batch, wb, ov, mx, my, tw, etop, editorW, editorH);
+                }
+                if (ow > 0) {
+                    this.drawOutline(batch, wb, screenW - ow, ctop, ow, screenH - ctop - sh, mx, my);
+                }
+                if (wb.diffView().isActive()) {
+                    this.drawDiff(batch, wb, tw, etop, screenW - tw, screenH - etop - sh);
+                }
+                if (wb.peekView().isActive()) {
+                    this.drawPeek(batch, wb, tw, etop, screenW - tw, screenH - etop - sh - panelH);
+                }
+                if (termOpen) {
+                    this.drawTerminal(batch, wb, tw, screenH - sh - panelH, screenW - tw, panelH, mx, my);
+                } else if (panelH > 0) {
+                    this.drawOutputPanel(batch, wb.output(), tw, screenH - sh - panelH, screenW - tw, panelH, mx, my);
+                }
+                if (wb.debugger().isActive()) {
+                    this.drawDebugPanel(batch, wb.debugger(), screenW, screenH);
+                }
+                this.drawStatusBar(batch, wb, screenW, screenH, sh);
+            }
+
+            // --- structure panel (Ctrl+F12): the file's declarations, in order, caret-aware ---
+            public method outlineWidth(Workbench* wb) returns int {
+                if (!wb.outlineOpen()) {
+                    return 0;
+                }
+                return 260;
+            }
+            public method outlineTop() returns int {
+                return this.menuH() + this.tabH() + 6 + this.font.lineHeight();   // below the caption
+            }
+            // Which outline row is under pixel y (-1 = none). Mirrors drawOutline's layout exactly.
+            public method outlineRowAt(int my) returns int {
+                int ch = this.font.lineHeight();
+                if (my < this.outlineTop()) {
+                    return 0 - 1;
+                }
+                return (my - this.outlineTop()) / ch;
+            }
+            private method drawOutline(Batch2D* batch, Workbench* wb, int ox, int oy, int w, int h,
+                                       int mx, int my) returns void {
+                batch.rect(ox, oy, w, h, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b,
+                           this.theme.panel.a);
+                batch.rect(ox, oy, 1, h, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b,
+                           this.theme.divider.a);
+                int ch = this.font.lineHeight();
+                this.font.drawText(batch, ox + 10, oy + 4, "STRUCTURE", this.theme.textDim.r,
+                                   this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                ArrayList<Symbol>* syms = wb.outlineSymbols();
+                int current = wb.outlineCurrent();
+                mutable int i = 0;
+                mutable int y = this.outlineTop();
+                while (i < syms.size() && y + ch <= oy + h) {
+                    String caption = syms.get(i).caption;
+                    boolean hover = mx >= ox && mx < ox + w && my >= y && my < y + ch;
+                    if (i == current) {
+                        batch.rect(ox + 1, y, w - 1, ch, this.theme.selection.r, this.theme.selection.g,
+                                   this.theme.selection.b, this.theme.selection.a);
+                    } else if (hover) {
+                        batch.rect(ox + 1, y, w - 1, ch, this.theme.hover.r, this.theme.hover.g,
+                                   this.theme.hover.b, this.theme.hover.a);
+                    }
+                    // A method sits inside a type, which sits inside a namespace: indent by kind, so the
+                    // shape of the file is visible at a glance rather than spelled out.
+                    mutable int indent = 0;
+                    if (GpuScreen.outlineIsMember(caption)) {
+                        indent = 16;
+                    }
+                    // A colored kind swatch before the name (types amber, methods blue, enums green, ...),
+                    // so the structure reads by color at a glance -- the way an IDE outline should.
+                    Color* kc = this.outlineKindColor(caption);
+                    int sw = ch - 8;
+                    batch.rect(ox + 10 + indent, y + 4, sw, sw, kc.r, kc.g, kc.b, 0.9);
+                    this.font.drawText(batch, ox + 10 + indent + sw + 6, y, caption, this.theme.text.r,
+                                       this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    y = y + ch;
+                    i = i + 1;
+                }
+                delete syms;
+                return;
+            }
+            // A member (method/constructor/destructor) as opposed to a container (namespace/class/...).
+            private static method outlineIsMember(String caption) returns boolean {
+                return caption.startsWith("method") || caption.startsWith("constructor")
+                       || caption.startsWith("destructor");
+            }
+            // The swatch color for an outline row, keyed on its leading kind word. Reuses the syntax palette
+            // so the outline and the code agree on what a type/function/constant looks like.
+            private method outlineKindColor(String caption) returns Color* {
+                if (caption.startsWith("method") || caption.startsWith("constructor")
+                        || caption.startsWith("destructor")) {
+                    return this.theme.tFunc;
+                }
+                if (caption.startsWith("enum")) {
+                    return this.theme.tConstant;
+                }
+                if (caption.startsWith("interface")) {
+                    return this.theme.tType;
+                }
+                if (caption.startsWith("namespace") || caption.startsWith("bundle")
+                        || caption.startsWith("program")) {
+                    return this.theme.textDim;
+                }
+                if (caption.startsWith("field") || caption.startsWith("property")) {
+                    return this.theme.tSelf;
+                }
+                // class / record / struct / union and anything else: a type name.
+                return this.theme.tTypeName;
+            }
+
+            // Layout of the debug side panel, shared by drawing and click hit-testing.
+            public method debugPanelWidth() returns int {
+                return 320;
+            }
+            public method debugPanelX(int screenW) returns int {
+                return screenW - this.debugPanelWidth();
+            }
+            // Screen y of the first call-stack row (below the "DEBUG --" header and the "CALL STACK" label).
+            public method debugStackTop() returns int {
+                return this.menuH() + this.tabH() + this.crumbH() + 16 + 2 * this.font.lineHeight();
+            }
+            // The call-stack frame index at a click, or -1 if the click isn't on a frame -- so clicking a
+            // frame can jump the editor to its source line.
+            public method debugFrameAt(int mx, int my, int screenW, Debugger* dbg) returns int {
+                if (!dbg.isActive() || mx < this.debugPanelX(screenW)) {
+                    return -1;
+                }
+                int ch = this.font.lineHeight();
+                int top = this.debugStackTop();
+                mutable int n = dbg.callStackView().size();
+                if (n > 12) {
+                    n = 12;
+                }
+                if (my < top || my >= top + n * ch) {
+                    return -1;
+                }
+                return (my - top) / ch;
+            }
+
+            // The debug side panel (shown only during a session): the status, the call stack and the current
+            // frame's local variables, updated as the adapter reports stopped/stackTrace/variables.
+            private method drawDebugPanel(Batch2D* batch, Debugger* dbg, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int pw = this.debugPanelWidth();
+                int px = this.debugPanelX(screenW);
+                int py = this.menuH() + this.tabH() + this.crumbH();
+                int ph = screenH - py - this.statusH();
+                batch.rect(px, py, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 0.97);
+                batch.rect(px, py, 1, ph, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
+                mutable int y = py + 8;
+                this.font.drawText(batch, px + 10, y, "DEBUG -- " + dbg.statusText(), this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                y = y + ch + 6;
+                this.font.drawText(batch, px + 10, y, "CALL STACK", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                y = y + ch + 2;
+                ArrayList<DebugFrame*>* stack = dbg.callStackView();
+                mutable int i = 0;
+                while (i < stack.size() && i < 12) {
+                    DebugFrame* fr = stack.get(i);
+                    this.font.drawText(batch, px + 16, y, fr.name + " :" + fr.line.toString(), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    y = y + ch;
+                    i = i + 1;
+                }
+                y = y + 10;
+                this.font.drawText(batch, px + 10, y, "VARIABLES", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                y = y + ch + 2;
+                ArrayList<DebugVar*>* vars = dbg.variablesView();
+                mutable int j = 0;
+                while (j < vars.size() && y < py + ph - ch) {
+                    DebugVar* v = vars.get(j);
+                    this.font.drawText(batch, px + 16, y, v.name, this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, this.theme.modified.a);
+                    this.font.drawText(batch, px + 16 + (v.name.length() + 1) * cw, y, "= " + v.value, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    y = y + ch;
+                    j = j + 1;
+                }
+                // WATCH expressions (Debug: Add Watch) and the debug console's last result (Debug: Evaluate)
+                ArrayList<String>* watches = dbg.watchesView();
+                if (watches.size() > 0 || dbg.lastEvalResult().length() > 0) {
+                    y = y + 10;
+                    this.font.drawText(batch, px + 10, y, "WATCH", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                    y = y + ch + 2;
+                    ArrayList<String>* wvals = dbg.watchValuesView();
+                    mutable int w = 0;
+                    while (w < watches.size() && y < py + ph - ch) {
+                        String wexpr = watches.get(w);
+                        mutable String wval = "";
+                        if (w < wvals.size()) {
+                            wval = wvals.get(w);
+                        }
+                        this.font.drawText(batch, px + 16, y, wexpr, this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, this.theme.modified.a);
+                        this.font.drawText(batch, px + 16 + (wexpr.length() + 1) * cw, y, "= " + wval, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                        y = y + ch;
+                        w = w + 1;
+                    }
+                    String le = dbg.lastEvalResult();
+                    if (le.length() > 0 && y < py + ph - ch) {
+                        y = y + 6;
+                        this.font.drawText(batch, px + 10, y, "> " + le, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                    }
+                }
+            }
+
+            // The breadcrumb bar above the editor: the caret's scope trail (bundle > namespace > class >
+            // method), the last segment brightest -- so you always see where in the structure you are.
+            private method drawBreadcrumbs(Batch2D* batch, Workbench* wb, int ox, int oy, int pw) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int h = this.crumbH();
+                batch.rect(ox, oy, pw, h, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(ox, oy + h - 1, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // bottom hairline
+                int ty = oy + (h - ch) / 2;
+                ArrayList<String>* trail = Breadcrumbs.trail(wb.active());
+                if (trail.size() == 0) {
+                    this.font.drawText(batch, ox + 12, ty, "(top level)", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                    delete trail;
+                    return;
+                }
+                mutable int x = ox + 12;
+                mutable int i = 0;
+                while (i < trail.size()) {
+                    boolean last = i == trail.size() - 1;
+                    String seg = trail.get(i);
+                    mutable float r = 0.502;
+                    mutable float g = 0.588;
+                    mutable float b = 0.584;
+                    if (last) {
+                        r = 0.804;
+                        g = 0.851;
+                        b = 0.843;
+                    }
+                    this.font.drawText(batch, x, ty, seg, r, g, b, 1.0);
+                    x = x + (seg.length() + 1) * cw;
+                    if (!last) {
+                        this.font.drawText(batch, x, ty, ">", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                        x = x + 2 * cw;
+                    }
+                    i = i + 1;
+                }
+                delete trail;
+            }
+
+            // Which breadcrumb segment is under pixel x, or -1. Mirrors drawBreadcrumbs's advancing layout
+            // (segment then " > "), so a click resolves to the same segment that was drawn there.
+            public method crumbAtX(Workbench* wb, int ox, int mx) returns int {
+                int cw = this.font.advance();
+                ArrayList<String>* trail = Breadcrumbs.trail(wb.active());
+                mutable int x = ox + 12;
+                mutable int i = 0;
+                while (i < trail.size()) {
+                    String seg = trail.get(i);
+                    int segW = seg.length() * cw;
+                    if (mx >= x && mx < x + segW) {
+                        return i;
+                    }
+                    x = x + (seg.length() + 1) * cw;
+                    if (i != trail.size() - 1) {
+                        x = x + 2 * cw;
+                    }
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+
+            // The start screen shown when no project is open: the Forge banner, the New Project / Open Folder /
+            // Open Project actions, and the list of recent projects to click. Layout is mirrored by welcomeHit.
+            // btnX(k)/btnW give the three action buttons a shared geometry both methods use.
+            private method welcomeX0(int screenW) returns int {
+                return screenW / 2 - 260;
+            }
+            private method welcomeBtnW() returns int {
+                return 168;
+            }
+            private method welcomeBtnX(int screenW, int k) returns int {
+                return this.welcomeX0(screenW) + k * (this.welcomeBtnW() + 12);
+            }
+            public method drawWelcome(Batch2D* batch, ArrayList<String>* recent, int mx, int my,
+                                      int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(0, 0, screenW, screenH, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, this.theme.bg.a);
+                int x0 = this.welcomeX0(screenW);
+                int hover = this.welcomeHit(mx, my, recent.size(), screenW);
+                // banner: an amber flame chip + the wordmark
+                batch.rect(x0, 84, 16, 16, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, x0 + 28, 88, "Forge", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, x0 + 28 + 6 * cw, 88, "the Polaron IDE", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                this.font.drawText(batch, x0 + 28, 88 + ch + 4, "Start a project, or reopen a recent one.",
+                                   0.502, 0.588, 0.584, 1.0);
+                int btnH = ch + 20;
+                int btnW = this.welcomeBtnW();
+                int btnY = 160;
+                this.welcomeButton(batch, this.welcomeBtnX(screenW, 0), btnY, btnW, btnH, "+ New Project",
+                                   hover == 0 - 1);
+                this.welcomeButton(batch, this.welcomeBtnX(screenW, 1), btnY, btnW, btnH, "Open Folder...",
+                                   hover == 0 - 2);
+                this.welcomeButton(batch, this.welcomeBtnX(screenW, 2), btnY, btnW, btnH, "Open Project...",
+                                   hover == 0 - 3);
+                // recent list
+                int hdrY = btnY + btnH + 30;
+                this.font.drawText(batch, x0, hdrY, "RECENT PROJECTS", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                int rowH = ch + 10;
+                int listTop = hdrY + ch + 10;
+                int listW = btnW * 3 + 24;
+                mutable int i = 0;
+                while (i < recent.size() && i < 12) {
+                    int ry = listTop + i * rowH;
+                    if (hover == i) {
+                        batch.rect(x0 - 4, ry - 3, listW + 8, rowH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.14);
+                    }
+                    String path = recent.get(i);
+                    String name = Paths.basename(path);
+                    this.font.drawText(batch, x0 + 4, ry, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    this.font.drawText(batch, x0 + 4 + (name.length() + 2) * cw, ry, path,
+                                       0.376, 0.478, 0.475, 1.0);
+                    i = i + 1;
+                }
+                if (recent.size() == 0) {
+                    this.font.drawText(batch, x0 + 4, listTop, "(none yet -- create or open a project to begin)",
+                                       0.376, 0.478, 0.475, 1.0);
+                }
+            }
+            private method welcomeButton(Batch2D* batch, int x, int y, int w, int h, String caption,
+                                         boolean hover) returns void {
+                mutable float bg = 0.063;
+                if (hover) {
+                    bg = 0.114;
+                }
+                batch.rect(x, y, w, h, bg, 0.106, 0.114, 1.0);
+                batch.rect(x, y, 3, h, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, x + 14, y + 10, caption, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+            }
+            // Which welcome control is under (mx, my): -1 = New Project, -2 = Open Folder, -3 = Open Project,
+            // 0..n = a recent index, -10 = nothing.
+            public method welcomeHit(int mx, int my, int recentCount, int screenW) returns int {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int x0 = this.welcomeX0(screenW);
+                int btnH = ch + 20;
+                int btnW = this.welcomeBtnW();
+                int btnY = 160;
+                if (my >= btnY && my < btnY + btnH) {
+                    mutable int k = 0;
+                    while (k < 3) {
+                        int bx = this.welcomeBtnX(screenW, k);
+                        if (mx >= bx && mx < bx + btnW) {
+                            return 0 - 1 - k;
+                        }
+                        k = k + 1;
+                    }
+                    return 0 - 10;
+                }
+                int hdrY = btnY + btnH + 30;
+                int rowH = ch + 10;
+                int listTop = hdrY + ch + 10;
+                int listW = btnW * 3 + 24;
+                if (mx >= x0 && mx < x0 + listW && my >= listTop) {
+                    int idx = (my - listTop) / rowH;
+                    if (idx >= 0 && idx < recentCount) {
+                        return idx;
+                    }
+                }
+                return 0 - 10;
+            }
+
+            // The top menu bar (File / Edit / View / Run / Help). Drawn on top of the frame so the open menu's
+            // title can highlight; the dropdown itself is drawn separately by drawMenuDropdown.
+            public method drawMenuBar(Batch2D* batch, MenuBar* mb, Workbench* wb, int mx, int my,
+                                      int screenW) returns void {
+                int cw = this.font.advance();
+                int mh = this.menuH();
+                batch.rect(0, 0, screenW, mh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(0, mh - 1, screenW, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);      // bottom hairline
+                int ty = (mh - this.font.lineHeight()) / 2;
+                mutable int x = 8;
+                mutable int i = 0;
+                while (i < mb.count()) {
+                    String t = mb.title(i);
+                    int tw = (t.length() + 2) * cw;
+                    boolean isOpen = mb.openIndex == i;
+                    mutable float r = 0.706;
+                    mutable float g = 0.769;
+                    mutable float b = 0.761;
+                    if (isOpen) {
+                        batch.rect(x, 0, tw, mh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                        r = 0.918; g = 0.706; b = 0.392;
+                    }
+                    this.font.drawText(batch, x + cw, ty, t, r, g, b, 1.0);
+                    x = x + tw;
+                    i = i + 1;
+                }
+                // Right side: Build + Run toolbar buttons, and (further left) the project label.
+                int rbx = this.runButtonX(screenW);
+                int bbx = this.buildButtonX(screenW);
+                boolean overBuild = my >= 0 && my < mh && mx >= bbx && mx < bbx + this.toolBtnW();
+                boolean overRun = my >= 0 && my < mh && mx >= rbx && mx < rbx + this.toolBtnW();
+                mutable float bb = 0.10;
+                if (overBuild) {
+                    bb = 0.18;
+                }
+                batch.rect(bbx, 4, this.toolBtnW(), mh - 8, bb, 0.13, 0.14, 1.0);
+                this.drawBorder(batch, bbx, 4, this.toolBtnW(), mh - 8, 0.38, 0.43, 0.43, overBuild ? 0.9 : 0.55);
+                this.font.drawText(batch, bbx + cw, ty, "Build", this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                mutable float rb = 0.10;
+                if (overRun) {
+                    rb = 0.18;
+                }
+                batch.rect(rbx, 4, this.toolBtnW(), mh - 8, rb, 0.13, 0.14, 1.0);
+                this.drawBorder(batch, rbx, 4, this.toolBtnW(), mh - 8, 0.38, 0.43, 0.43, overRun ? 0.9 : 0.55);
+                // a small green play triangle
+                int triX = rbx + cw;
+                int triY = mh / 2;
+                batch.rect(triX, triY - 5, 2, 10, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                batch.rect(triX + 2, triY - 4, 2, 8, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                batch.rect(triX + 4, triY - 3, 2, 6, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                batch.rect(triX + 6, triY - 1, 2, 2, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                this.font.drawText(batch, rbx + cw + 12, ty, "Run", this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                String proj = wb.projectLabel();
+                if (proj.length() > 0) {
+                    int px = bbx - (proj.length() + 3) * cw;
+                    this.font.drawText(batch, px, ty, proj, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                }
+            }
+            private method toolBtnW() returns int {
+                return 7 * this.font.advance();
+            }
+            public method runButtonX(int screenW) returns int {
+                return screenW - this.toolBtnW() - 10;
+            }
+            public method buildButtonX(int screenW) returns int {
+                return this.runButtonX(screenW) - this.toolBtnW() - 6;
+            }
+            // Which menu-bar toolbar button is under (mx, my): 1 = Run, 0 = Build, -1 = none.
+            public method toolButtonAt(int mx, int my, int screenW) returns int {
+                int mh = this.menuH();
+                if (my < 0 || my >= mh) {
+                    return 0 - 1;
+                }
+                int rbx = this.runButtonX(screenW);
+                if (mx >= rbx && mx < rbx + this.toolBtnW()) {
+                    return 1;
+                }
+                int bbx = this.buildButtonX(screenW);
+                if (mx >= bbx && mx < bbx + this.toolBtnW()) {
+                    return 0;
+                }
+                return 0 - 1;
+            }
+
+            // The open menu's dropdown, anchored under its title. Does nothing if no menu is open.
+            public method drawMenuDropdown(Batch2D* batch, MenuBar* mb, int mx, int my) returns void {
+                if (!mb.isOpen()) {
+                    return;
+                }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int mh = this.menuH();
+                Menu* m = mb.openMenu();
+                int x = this.menuTitleX(mb, mb.openIndex);
+                int dw = this.dropdownWidth(m, cw);
+                int rowH = ch + 6;
+                mutable int dh = 6;
+                mutable int i = 0;
+                while (i < m.items.size()) {
+                    if (m.items.get(i).isSeparator()) {
+                        dh = dh + 7;
+                    } else {
+                        dh = dh + rowH;
+                    }
+                    i = i + 1;
+                }
+                batch.rect(x, mh, dw, dh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(x, mh, dw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int y = mh + 3;
+                i = 0;
+                while (i < m.items.size()) {
+                    MenuItem* it = m.items.get(i);
+                    if (it.isSeparator()) {
+                        batch.rect(x + 6, y + 3, dw - 12, 1, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                        y = y + 7;
+                    } else {
+                        boolean hover = mx >= x && mx < x + dw && my >= y - 1 && my < y - 1 + rowH;
+                        if (hover) {
+                            batch.rect(x + 2, y - 1, dw - 4, rowH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
+                        }
+                        this.font.drawText(batch, x + cw, y + 3, it.caption, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                        y = y + rowH;
+                    }
+                    i = i + 1;
+                }
+            }
+
+            // The right-click context menu, drawn at the click point (nudged back on-screen if it would spill
+            // past the right/bottom edge). Same visual language as the menu-bar dropdown: panel fill, an amber
+            // top rule, hairline separators, and a hover band.
+            public method drawContextMenu(Batch2D* batch, ContextMenu* ctx, int mx, int my, int screenW,
+                                          int screenH) returns void {
+                if (!ctx.isActive()) {
+                    return;
+                }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int rowH = ch + 6;
+                int w = this.contextWidth(ctx, cw);
+                int h = this.contextHeight(ctx, rowH);
+                int x = this.contextX(ctx, screenW, w);
+                int y = this.contextY(ctx, screenH, h);
+                batch.rect(x, y, w, h, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(x, y, w, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int ry = y + 3;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    if (ctx.isSeparator(i)) {
+                        batch.rect(x + 6, ry + 3, w - 12, 1, this.theme.textFaint.r, this.theme.textFaint.g,
+                                   this.theme.textFaint.b, this.theme.textFaint.a);
+                        ry = ry + 7;
+                    } else {
+                        boolean hover = mx >= x && mx < x + w && my >= ry - 1 && my < ry - 1 + rowH;
+                        if (hover) {
+                            batch.rect(x + 2, ry - 1, w - 4, rowH, this.theme.accent.r, this.theme.accent.g,
+                                       this.theme.accent.b, 0.18);
+                        }
+                        this.font.drawText(batch, x + cw, ry + 3, ctx.captionAt(i), this.theme.text.r,
+                                           this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                        ry = ry + rowH;
+                    }
+                    i = i + 1;
+                }
+                return;
+            }
+            // The index of the context-menu item at (mx, my), or -1 (also -1 over a separator or outside).
+            public method contextItemAt(ContextMenu* ctx, int mx, int my, int screenW, int screenH) returns int {
+                if (!ctx.isActive()) {
+                    return 0 - 1;
+                }
+                int cw = this.font.advance();
+                int rowH = this.font.lineHeight() + 6;
+                int w = this.contextWidth(ctx, cw);
+                int h = this.contextHeight(ctx, rowH);
+                int x = this.contextX(ctx, screenW, w);
+                int y = this.contextY(ctx, screenH, h);
+                if (mx < x || mx >= x + w || my < y || my >= y + h) {
+                    return 0 - 1;
+                }
+                mutable int ry = y + 3;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    if (ctx.isSeparator(i)) {
+                        if (my >= ry && my < ry + 7) {
+                            return 0 - 1;
+                        }
+                        ry = ry + 7;
+                    } else {
+                        if (my >= ry - 1 && my < ry - 1 + rowH) {
+                            return i;
+                        }
+                        ry = ry + rowH;
+                    }
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Is (mx, my) inside the context popup at all? (A click outside just dismisses it.)
+            public method contextHit(ContextMenu* ctx, int mx, int my, int screenW, int screenH) returns boolean {
+                if (!ctx.isActive()) {
+                    return false;
+                }
+                int cw = this.font.advance();
+                int rowH = this.font.lineHeight() + 6;
+                int w = this.contextWidth(ctx, cw);
+                int h = this.contextHeight(ctx, rowH);
+                int x = this.contextX(ctx, screenW, w);
+                int y = this.contextY(ctx, screenH, h);
+                return mx >= x && mx < x + w && my >= y && my < y + h;
+            }
+            private method contextWidth(ContextMenu* ctx, int cw) returns int {
+                mutable int maxc = 14;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    int len = ctx.captionAt(i).length();
+                    if (len > maxc) {
+                        maxc = len;
+                    }
+                    i = i + 1;
+                }
+                return (maxc + 3) * cw;
+            }
+            private method contextHeight(ContextMenu* ctx, int rowH) returns int {
+                mutable int h = 6;
+                mutable int i = 0;
+                while (i < ctx.count()) {
+                    if (ctx.isSeparator(i)) {
+                        h = h + 7;
+                    } else {
+                        h = h + rowH;
+                    }
+                    i = i + 1;
+                }
+                return h;
+            }
+            private method contextX(ContextMenu* ctx, int screenW, int w) returns int {
+                mutable int x = ctx.x;
+                if (x + w > screenW) {
+                    x = screenW - w;
+                }
+                if (x < 0) {
+                    x = 0;
+                }
+                return x;
+            }
+            private method contextY(ContextMenu* ctx, int screenH, int h) returns int {
+                mutable int y = ctx.y;
+                if (y + h > screenH) {
+                    y = screenH - h;
+                }
+                if (y < 0) {
+                    y = 0;
+                }
+                return y;
+            }
+
+            private method dropdownWidth(Menu* m, int cw) returns int {
+                mutable int maxc = 12;
+                mutable int i = 0;
+                while (i < m.items.size()) {
+                    int l = m.items.get(i).caption.length();
+                    if (l > maxc) {
+                        maxc = l;
+                    }
+                    i = i + 1;
+                }
+                return (maxc + 4) * cw;
+            }
+
+            // x pixel where menu title `idx` begins (mirrors drawMenuBar's layout).
+            public method menuTitleX(MenuBar* mb, int idx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 8;
+                mutable int i = 0;
+                while (i < idx) {
+                    x = x + (mb.title(i).length() + 2) * cw;
+                    i = i + 1;
+                }
+                return x;
+            }
+            // Which menu title is under pixel x in the bar (-1 if none). Only meaningful when my < menuH().
+            public method menuTitleAtX(MenuBar* mb, int mx) returns int {
+                int cw = this.font.advance();
+                mutable int x = 8;
+                mutable int i = 0;
+                while (i < mb.count()) {
+                    int tw = (mb.title(i).length() + 2) * cw;
+                    if (mx >= x && mx < x + tw) {
+                        return i;
+                    }
+                    x = x + tw;
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+            // Which dropdown item is under pixel (mx, my) for the open menu (-1 if none or on a separator).
+            public method dropdownItemAt(MenuBar* mb, int mx, int my) returns int {
+                if (!mb.isOpen()) {
+                    return 0 - 1;
+                }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int mh = this.menuH();
+                Menu* m = mb.openMenu();
+                int x = this.menuTitleX(mb, mb.openIndex);
+                int dw = this.dropdownWidth(m, cw);
+                if (mx < x || mx >= x + dw || my < mh) {
+                    return 0 - 1;
+                }
+                int rowH = ch + 6;
+                mutable int y = mh + 3;
+                mutable int i = 0;
+                while (i < m.items.size()) {
+                    MenuItem* it = m.items.get(i);
+                    mutable int h = rowH;
+                    if (it.isSeparator()) {
+                        h = 7;
+                    }
+                    if (my >= y && my < y + h) {
+                        if (it.isSeparator()) {
+                            return 0 - 1;
+                        }
+                        return i;
+                    }
+                    y = y + h;
+                    i = i + 1;
+                }
+                return 0 - 1;
+            }
+
+            // Height the output panel should occupy: 0 when hidden, otherwise a header plus its content sized
+            // to the number of lines (so an empty or short panel is small, not a big blank box), capped at
+            // ~40% of the window.
+            public method outputPanelHeight(OutputPanel* panel, int screenH) returns int {
+                if (!panel.visible) {
+                    return 0;
+                }
+                int ch = this.font.lineHeight();
+                int headerH = ch + 8;
+                mutable int maxRows = (screenH * 4 / 10) / ch;
+                if (maxRows < 3) {
+                    maxRows = 3;
+                }
+                mutable int rows = panel.lineCount();
+                if (rows < 1) {
+                    rows = 1;
+                }
+                if (rows > maxRows) {
+                    rows = maxRows;
+                }
+                return headerH + rows * ch + 8;
+            }
+            // The build/run output panel: a titled band at the bottom of the editor area with a close button,
+            // showing the tail of the captured command output.
+            private method drawOutputPanel(Batch2D* batch, OutputPanel* panel, int ox, int oy, int pw, int ph,
+                                           int mx, int my) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(ox, oy, pw, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
+                this.font.drawText(batch, ox + 10, oy + 4, panel.title, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                // close button (x) at the top-right of the panel header
+                int xbx = ox + pw - 2 * cw;
+                boolean overX = mx >= xbx - cw && mx < xbx + cw && my >= oy && my < oy + ch + 8;
+                mutable float xr = 0.502;
+                if (overX) {
+                    xr = 0.902;
+                }
+                this.font.drawText(batch, xbx, oy + 4, "x", xr, 0.588, 0.584, 1.0);
+                int headerH = ch + 8;
+                int rows = (ph - headerH) / ch;
+                int total = panel.lineCount();
+                mutable int start = 0;
+                if (total > rows) {
+                    start = total - rows;
+                }
+                mutable int i = start;
+                mutable int y = oy + headerH;
+                while (i < total) {
+                    this.font.drawText(batch, ox + 10, y, panel.line(i), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    y = y + ch;
+                    i = i + 1;
+                }
+            }
+            // True when (mx, my) is on the output panel's close button. `oy` is the panel top.
+            public method outputCloseAt(int mx, int my, int ox, int oy, int pw) returns boolean {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int xbx = ox + pw - 2 * cw;
+                return mx >= xbx - cw && mx < xbx + cw && my >= oy && my < oy + ch + 8;
+            }
+
+            // The integrated terminal panel occupies the bottom ~40% of the window.
+            public method terminalPanelHeight(int screenH) returns int {
+                mutable int h = cast<int>(cast<float>(screenH) * this.panelFrac);
+                if (h < 80) {
+                    h = 80;
+                }
+                int maxH = screenH - 160;
+                if (maxH > 80 && h > maxH) {
+                    h = maxH;
+                }
+                return h;
+            }
+            // The active bottom panel's height (terminal if open, else the output panel), 0 if none. The
+            // single source the editor↔panel divider drag and cursor read.
+            public method currentPanelHeight(Workbench* wb, int screenH) returns int {
+                if (wb.terminal().isOpen()) {
+                    return this.terminalPanelHeight(screenH);
+                }
+                return this.outputPanelHeight(wb.output(), screenH);
+            }
+            // Is the point on the draggable editor/panel divider (the panel's top edge, over the editor
+            // column)? Drives the resize-drag and the vertical double-arrow cursor.
+            public method onPanelDivider(Workbench* wb, int mx, int my, int screenW, int screenH) returns boolean {
+                int ph = this.currentPanelHeight(wb, screenH);
+                if (ph <= 0) {
+                    return false;
+                }
+                int top = screenH - this.statusH() - ph;
+                return mx >= this.treeW && mx < screenW && my >= top - 3 && my <= top + 3;
+            }
+            // Resize the bottom panel from a divider drag: `my` is the new panel top; store it as a fraction
+            // of the window so it tracks resizes, clamped so both the editor and the panel stay usable.
+            public method setPanelFrac(int my, int screenH) returns void {
+                int avail = screenH - this.statusH();
+                mutable float f = cast<float>(avail - my) / cast<float>(screenH);
+                if (f < 0.1) {
+                    f = 0.1;
+                }
+                if (f > 0.85) {
+                    f = 0.85;
+                }
+                this.panelFrac = f;
+                return;
+            }
+            // Which terminal-header control the point hits: -1 none, -2 "+ cmd", -3 "+ PowerShell",
+            // -(10+i) the close "x" of tab i, or a tab index >= 0 (switch/double-click to rename). Only
+            // meaningful with the terminal open. The geometry mirrors drawTerminal's header exactly.
+            public method terminalHeaderHit(Workbench* wb, int screenW, int screenH, int mx, int my) returns int {
+                if (!wb.terminal().isOpen()) {
+                    return -1;
+                }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int ph = this.terminalPanelHeight(screenH);
+                int oy = screenH - this.statusH() - ph;
+                int headerH = ch + 6;
+                if (my < oy || my >= oy + headerH) {
+                    return -1;
+                }
+                int ox = this.treeW;
+                int tabW = 14 * cw;   // "Terminal N" + a per-tab "x" close zone
+                int count = wb.terminalCount();
+                mutable int ti = 0;
+                while (ti < count) {
+                    int tx = ox + 6 + ti * tabW;
+                    if (mx >= tx && mx < tx + tabW) {
+                        if (mx >= tx + tabW - 2 * cw) {
+                            return 0 - (10 + ti);   // close THIS terminal (the tab's own x)
+                        }
+                        return ti;                  // switch to this terminal
+                    }
+                    ti = ti + 1;
+                }
+                // Two new-shell buttons after the tabs: "+ PowerShell" then "+ cmd".
+                int psX = ox + 6 + count * tabW + cw;
+                int psW = 14 * cw;
+                int cmdX = psX + psW + cw;
+                int cmdW = 7 * cw;
+                if (mx >= psX && mx < psX + psW) {
+                    return 0 - 3;   // + PowerShell
+                }
+                if (mx >= cmdX && mx < cmdX + cmdW) {
+                    return 0 - 2;   // + cmd
+                }
+                return 0 - 1;
+            }
+            // A 1px rectangular outline, so buttons/chips read as bounded controls.
+            private method drawBorder(Batch2D* batch, int x, int y, int w, int h,
+                                      float r, float g, float b, float a) returns void {
+                batch.rect(x, y, w, 1, r, g, b, a);
+                batch.rect(x, y + h - 1, w, 1, r, g, b, a);
+                batch.rect(x, y, 1, h, r, g, b, a);
+                batch.rect(x + w - 1, y, 1, h, r, g, b, a);
+            }
+            // Draw the terminal: a header, the tail of the scrollback that fits, the in-progress output tail,
+            // and the input line with a prompt + caret.
+            private method drawTerminal(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph,
+                                        int mx, int my) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                Terminal* term = wb.terminal();
+                int headerH = ch + 6;
+                // The terminal is a dark shell body, distinct from the editor: fill the whole panel with
+                // termBg, and mark the editor/terminal boundary with a clearly visible divider on top.
+                batch.rect(ox, oy, pw, ph, this.theme.termBg.r, this.theme.termBg.g, this.theme.termBg.b, 1.0);
+                batch.rect(ox, oy, pw, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, 1.0);   // visible editor/terminal divider
+                if (my >= oy - 3 && my <= oy + 3 && mx >= ox) {
+                    batch.rect(ox, oy - 1, pw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);   // draggable editor/panel divider hint
+                }
+                // Header: one tab per terminal ("Terminal N" + its own "x"), then two new-shell buttons.
+                // tabW / positions mirror terminalHeaderHit's hit-testing exactly.
+                int tabW = 14 * cw;
+                int count = wb.terminalCount();
+                int active = wb.activeTerminalIndex();
+                mutable int i = 0;
+                while (i < count) {
+                    int tx = ox + 6 + i * tabW;
+                    boolean sel = i == active;
+                    boolean hv = my >= oy && my < oy + headerH && mx >= tx && mx < tx + tabW;
+                    if (sel) {
+                        batch.rect(tx, oy + 1, tabW, headerH, 1.0, 1.0, 1.0, 0.05);       // lift the active tab
+                        batch.rect(tx, oy + 1, tabW, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                    } else if (hv) {
+                        batch.rect(tx, oy + 1, tabW, headerH - 1, 1.0, 1.0, 1.0, 0.04);
+                    }
+                    this.font.drawText(batch, tx + cw, oy + 4, wb.terminalLabel(i),
+                                       this.theme.termText.r, this.theme.termText.g, this.theme.termText.b,
+                                       sel ? 1.0 : 0.60);
+                    // per-tab close: the "x" in the tab's right zone (brighter when hovering that zone)
+                    boolean xHv = hv && mx >= tx + tabW - 2 * cw;
+                    this.font.drawText(batch, tx + tabW - 2 * cw + 1, oy + 4, "x",
+                                       this.theme.termText.r, this.theme.termText.g, this.theme.termText.b,
+                                       xHv ? 1.0 : 0.45);
+                    i = i + 1;
+                }
+                // Two new-shell buttons: "+ PowerShell" then "+ cmd" (open a terminal running that shell).
+                int psX = ox + 6 + count * tabW + cw;
+                boolean psHv = my >= oy && my < oy + headerH && mx >= psX && mx < psX + 14 * cw;
+                this.font.drawText(batch, psX, oy + 4, "+ PowerShell", this.theme.accent.r, this.theme.accent.g,
+                                   this.theme.accent.b, psHv ? 1.0 : 0.72);
+                int cmdX = psX + 14 * cw + cw;
+                boolean cmdHv = my >= oy && my < oy + headerH && mx >= cmdX && mx < cmdX + 7 * cw;
+                this.font.drawText(batch, cmdX, oy + 4, "+ cmd", this.theme.accent.r, this.theme.accent.g,
+                                   this.theme.accent.b, cmdHv ? 1.0 : 0.72);
+                // Rows for output: everything below the header. There is no separate input line -- the
+                // shell echoes what you type back through the pseudo-console, so what you are typing is
+                // already in the grid, at the shell's own cursor, exactly as in a real console.
+                int bodyTop = oy + headerH;
+                int rows = (ph - headerH) / ch;
+                if (rows < 2) {
+                    return;
+                }
+                int visCols = (pw - 20) / cw;
+                // Keep the pseudo-console's viewport in step with the panel, so the shell re-wraps its
+                // output to the width actually on screen.
+                term.resize(visCols, rows);
+
+                TermGrid* grid = term.screen();
+                int total = grid.lineCount();
+                mutable int start = total - rows - term.scrollOffset();
+                if (start < 0) {
+                    start = 0;
+                }
+                mutable int r = 0;
+                mutable int idx = start;
+                while (idx < total && r < rows) {
+                    TermLine* ln = grid.lineAt(idx);
+                    ln.buildRuns();
+                    int y = bodyTop + r * ch;
+                    mutable int col = 0;
+                    mutable int k = 0;
+                    while (k < ln.runCount()) {
+                        String seg = ln.runTextAt(k);
+                        int a = ln.runAttrAt(k);
+                        mutable int fg = TermLine.attrFg(a);
+                        mutable int bg = TermLine.attrBg(a);
+                        if (TermLine.attrBold(a) && fg < 8) {
+                            fg = fg + 8;          // bold brightens the eight classic colours
+                        }
+                        if (TermLine.attrInverse(a)) {
+                            int swap = fg;
+                            fg = bg;
+                            bg = swap;
+                        }
+                        int x = ox + 10 + col * cw;
+                        if (bg != 0) {            // 0 means "default background": leave termBg showing
+                            Color* bc = this.theme.ansiColor(bg);
+                            batch.rect(x, y, seg.length() * cw, ch, bc.r, bc.g, bc.b, 1.0);
+                        }
+                        Color* fc = this.theme.ansiColor(fg);
+                        this.font.drawText(batch, x, y, seg, fc.r, fc.g, fc.b, 1.0);
+                        col = col + seg.length();
+                        k = k + 1;
+                    }
+                    r = r + 1;
+                    idx = idx + 1;
+                }
+                // Block caret at the shell's own cursor, drawn only while pinned to the live tail.
+                if (term.isFocused() && this.caretOn && term.scrollOffset() == 0) {
+                    int crow = grid.cursorRow() - start;
+                    if (crow >= 0 && crow < rows) {
+                        int cx = ox + 10 + grid.cursorCol() * cw;
+                        batch.rect(cx, bodyTop + crow * ch, cw, ch,
+                                   this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.7);
+                    }
+                }
+            }
+
+            // Bottom status bar: an amber mode chip, the file, the caret position, and the line count.
+            private method drawStatusBar(Batch2D* batch, Workbench* wb, int screenW, int screenH, int sh)
+                    returns void {
+                int cw = this.font.advance();
+                int y0 = screenH - sh;
+                int ty = y0 + 4;
+                batch.rect(0, y0, screenW, sh, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);
+                batch.rect(0, y0, screenW, 1, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);   // top hairline
+                Controller* c = wb.active();
+                // amber mode chip
+                int chipW = 6 * cw;
+                batch.rect(0, y0, chipW, sh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, cw, ty, "Polaron", this.theme.onAccent.r, this.theme.onAccent.g, this.theme.onAccent.b, this.theme.onAccent.a);
+
+                // Lay the RIGHT side out first (git branch, then the caret position) so the file name on the
+                // left can be clipped to stop short of it -- a long absolute path used to overprint "Ln, Col".
+                String branch = wb.currentBranch();
+                mutable int rightEdge = screenW;
+                if (branch.length() > 0) {
+                    String chip = "git: " + branch;
+                    int bx = screenW - (chip.length() + 2) * cw;
+                    this.font.drawText(batch, bx, ty, chip, this.theme.modified.r, this.theme.modified.g,
+                                       this.theme.modified.b, this.theme.modified.a);
+                    rightEdge = bx - cw;
+                }
+                String pos = c.editor().selectionInfo()
+                           + "Ln " + (c.editor().cursorRow() + 1).toString()
+                           + ", Col " + (c.editor().cursorCol() + 1).toString()
+                           + "    " + c.lineCount().toString() + " lines";
+                int px = rightEdge - (pos.length() + 2) * cw;
+                this.font.drawText(batch, px, ty, pos, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+
+                // The file name, shown RELATIVE to the project (src/view/TextRenderer.pol, not the whole
+                // C:/Users/... path), plus a dirty marker, clipped with a leading "..." so it never reaches
+                // the caret info even when nested deep.
+                int nameX = chipW + cw;
+                mutable String name = c.document().path();
+                if (name.length() == 0) {
+                    name = "untitled";
+                } else {
+                    name = this.relativePath(name, wb.projectRoot());
+                }
+                if (c.document().isModified()) {
+                    name = name + " *";
+                }
+                mutable int maxNameCols = (px - nameX) / cw - 10;   // leave ~10 cols for the diagnostics count
+                if (maxNameCols < 8) {
+                    maxNameCols = 8;
+                }
+                if (name.length() > maxNameCols) {
+                    name = "..." + name.substring(name.length() - (maxNameCols - 3), name.length());
+                }
+                this.font.drawText(batch, nameX, ty, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                // diagnostics count (errors red, warnings amber), after the name
+                int errs = wb.errorCount();
+                int warns = wb.warningCount();
+                if (errs > 0 || warns > 0) {
+                    int dx = nameX + (name.length() + 3) * cw;
+                    String ecnt = "x" + errs.toString();
+                    mutable float er = 0.902;
+                    if (errs == 0) {
+                        er = 0.4;
+                    }
+                    this.font.drawText(batch, dx, ty, ecnt, er, 0.318, 0.263, 1.0);
+                    String wcnt = "!" + warns.toString();
+                    this.font.drawText(batch, dx + (ecnt.length() + 1) * cw, ty, wcnt, this.theme.warning.r, this.theme.warning.g, this.theme.warning.b, this.theme.warning.a);
+                }
+            }
+
+            // A path shown relative to the project root when it lives inside it (src/view/Foo.pol), else the
+            // path unchanged. Keeps the status bar short and readable instead of a full C:/Users/... path.
+            private method relativePath(String path, String root) returns String {
+                if (root.length() > 0 && path.startsWith(root)) {
+                    mutable String rel = path.substring(root.length(), path.length());
+                    if (rel.length() > 0 && (rel.charAt(0) == '/' || rel.charAt(0) == '\\')) {
+                        rel = rel.substring(1, rel.length());
+                    }
+                    if (rel.length() > 0) {
+                        return rel;
+                    }
+                }
+                return path;
+            }
+
+            // A tab caption clipped to a sane width: a very long file name would otherwise make one tab span
+            // most of the bar. Draw and both hit-tests all go through this so they stay in lockstep.
+            private method tabLabel(String title) returns String {
+                int cap = 24;
+                if (title.length() <= cap) {
+                    return title;
+                }
+                return title.substring(0, cap - 3) + "...";
+            }
+
+            private method drawTabBar(Batch2D* batch, DocumentManager* docs, int top, int tabh, int mx, int my)
+                    returns void {
+                int cw = this.font.advance();
+                int ty = top + (tabh - this.font.lineHeight()) / 2;
+                mutable int x = 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    String title = this.tabLabel(docs.title(i));
+                    int tw = (title.length() + 4) * cw;
+                    boolean active = i == docs.activeIndex();
+                    boolean hover = my >= top && my < top + tabh && mx >= x && mx < x + tw;
+                    boolean modified = docs.at(i).document().isModified();
+                    // The dirty state is shown by a dot at the close control, not a trailing " *".
+                    mutable String lbl = title;
+                    if (lbl.endsWith(" *")) {
+                        lbl = lbl.substring(0, lbl.length() - 2);
+                    }
+                    mutable float r = 0.502;
+                    mutable float g = 0.588;
+                    mutable float b = 0.584;
+                    if (active) {
+                        batch.rect(x, top, tw, tabh, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, this.theme.bg.a);   // active tab = editor ground
+                        batch.rect(x, top, tw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);      // amber accent
+                        r = 0.804; g = 0.851; b = 0.843;
+                    } else {
+                        if (hover) {
+                            batch.rect(x, top, tw, tabh, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.04);   // hover highlight
+                            r = 0.702; g = 0.769; b = 0.761;
+                        } else if (modified) {
+                            r = 0.702; g = 0.769; b = 0.761;   // a dirty file's name stays legible even when idle
+                        }
+                    }
+                    this.font.drawText(batch, x + cw, ty, lbl, r, g, b, 1.0);
+                    // A dirty tab shows a filled dot where the close x sits; hovering the tab swaps the dot
+                    // back to the x so you can still close it (VS Code behaviour). The close hit region is
+                    // unchanged -- only the glyph differs.
+                    if (modified && !hover) {
+                        batch.rect(x + tw - 2 * cw + 1, ty + this.font.lineHeight() / 2 - 3, 6, 6,
+                                   this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, 1.0);
+                    } else {
+                        mutable float xr = 0.376;
+                        mutable float xg = 0.478;
+                        mutable float xb = 0.475;
+                        if (active) {
+                            xr = 0.702;
+                            xg = 0.549;
+                            xb = 0.353;
+                        }
+                        this.font.drawText(batch, x + tw - 2 * cw, ty, "x", xr, xg, xb, 1.0);
+                    }
+                    x = x + tw;
+                    i = i + 1;
+                }
+            }
+
+            private method drawTree(Batch2D* batch, Workbench* wb, FileTree* tree, int top, int screenH, int mx, int my)
+                    returns void {
+                int ch = this.font.lineHeight();
+                int cw = this.font.advance();
+                int maxCols = (this.treeW - 12) / cw;   // clip labels to the sidebar so long names don't bleed
+                ArrayList<FileNode*>* rows = tree.visible();
+                mutable int i = 0;
+                while (i < rows.size()) {
+                    int y = top + 6 + i * ch;
+                    if (y + ch > screenH) {
+                        delete rows;
+                        return;
+                    }
+                    boolean hover = mx >= 0 && mx < this.treeW && my >= y && my < y + ch;
+                    if (hover) {
+                        batch.rect(0, y, this.treeW, ch, this.theme.hover.r, this.theme.hover.g, this.theme.hover.b, 0.045);
+                    }
+                    FileNode* node = rows.get(i);
+                    mutable float r = 0.576;
+                    mutable float g = 0.678;
+                    mutable float b = 0.667;
+                    if (node.isDir) {
+                        r = 0.918;
+                        g = 0.706;
+                        b = 0.392;
+                    }
+                    boolean dirty = !node.isDir && wb.isPathModified(node.path);
+                    if (dirty) {
+                        // Modified open files read brighter, matching the dot on their editor tab.
+                        r = this.theme.text.r;
+                        g = this.theme.text.g;
+                        b = this.theme.text.b;
+                    }
+                    mutable String rowLbl = tree.rowLabel(node);
+                    if (maxCols > 3 && rowLbl.length() > maxCols) {
+                        rowLbl = rowLbl.substring(0, maxCols - 3) + "...";   // a long name into the editor was the "3"
+                    }
+                    this.font.drawText(batch, 8, y, rowLbl, r, g, b, 1.0);
+                    if (dirty) {
+                        int dy = y + (ch - 6) / 2;
+                        batch.rect(this.treeW - 12, dy, 6, 6, this.theme.accent.r, this.theme.accent.g,
+                                   this.theme.accent.b, 0.9);
+                    }
+                    i = i + 1;
+                }
+                delete rows;
+            }
+
+            // One pane of a split. drawEditor always draws the FOCUSED controller, so the pane being drawn
+            // is focused for the duration -- the least invasive seam there is, and the focus is restored
+            // immediately. The unfocused pane's tab bar is drawn above it, dimmed by its own inactivity.
+            private method drawPaneEditor(Batch2D* batch, Workbench* wb, Overlay* ov, int which, int mx, int my,
+                                          int ox, int oy, int pw, int ph) returns void {
+                int was = wb.activePane();
+                wb.focusPane(which);
+                if (which == 1) {
+                    this.drawTabBar2(batch, wb.documentsOf(1), ox, oy - this.crumbH(), pw, mx, my);
+                }
+                wb.active().sync();   // another view may have edited the buffer under this one
+                this.drawEditor(batch, wb, ov, mx, my, ox, oy, pw, ph);
+                wb.focusPane(was);
+                return;
+            }
+            // The right pane's tab strip, drawn inside the pane (the left pane keeps the window's tab bar).
+            private method drawTabBar2(Batch2D* batch, DocumentManager* docs, int ox, int oy, int pw,
+                                       int mx, int my) returns void {
+                int ch = this.font.lineHeight();
+                batch.rect(ox, oy, pw, ch + 4, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b,
+                           this.theme.chrome.a);
+                int cw = this.font.advance();
+                mutable int x = ox + 6;
+                mutable int i = 0;
+                while (i < docs.count()) {
+                    String title = docs.title(i);
+                    int tw2 = (title.length() + 2) * cw;
+                    if (i == docs.activeIndex()) {
+                        batch.rect(x - 4, oy, tw2 + 8, ch + 4, this.theme.bg.r, this.theme.bg.g,
+                                   this.theme.bg.b, this.theme.bg.a);
+                        this.font.drawText(batch, x, oy + 2, title, this.theme.text.r, this.theme.text.g,
+                                           this.theme.text.b, this.theme.text.a);
+                    } else {
+                        this.font.drawText(batch, x, oy + 2, title, this.theme.textFaint.r,
+                                           this.theme.textFaint.g, this.theme.textFaint.b,
+                                           this.theme.textFaint.a);
+                    }
+                    x = x + tw2 + 8;
+                    i = i + 1;
+                }
+                return;
+            }
+            // Where the split divides the editor area (screen x), or -1 when there is no split.
+            public method splitX(Workbench* wb, int screenW) returns int {
+                if (!wb.isSplit()) {
+                    return 0 - 1;
+                }
+                int editorW = screenW - this.treeW - this.outlineWidth(wb);
+                return this.treeW + editorW / 2;
+            }
+
+            // The editor pane at (ox, oy), size (pw, ph).
+            private method drawEditor(Batch2D* batch, Workbench* wb, Overlay* ov, int mx, int my, int ox, int oy,
+                                      int pw, int ph) returns void {
+                Controller* c = wb.active();
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int gpx = this.gutterPx();
+                int textX = ox + gpx + 6;
+                // Word wrap follows the pane: the wrap width is the number of columns that fit, recomputed
+                // every frame, so resizing the window (or opening a side panel) rewraps immediately.
+                c.setWrap(wb.wrapEnabled());
+                c.setWrapCols((pw - gpx - 8) / cw);
+                int caretRow = c.caretScreenRow();
+                int visible = c.visibleRows();
+                int firstLine = c.firstLine();
+
+                batch.rect(ox, oy, gpx, ph, this.theme.gutter.r, this.theme.gutter.g, this.theme.gutter.b, this.theme.gutter.a);   // gutter band
+
+                // find: highlight every occurrence of the query in the visible lines. With the find bar closed,
+                // fall back to highlighting the identifier the caret sits on, JetBrains/VS Code-style.
+                if (ov.mode == 2 && ov.query.length() > 0) {
+                    this.drawFindMatches(batch, c, ov.query, textX, oy, cw, ch, visible, firstLine);
+                } else if (!c.editor().hasSelection()) {
+                    this.drawOccurrences(batch, c, textX, oy, cw, ch, visible);
+                }
+
+                if (c.editor().hasSelection()) {
+                    this.drawSelection(batch, c, textX, oy, cw, ch, visible, firstLine);
+                }
+
+                GitStatus* git = wb.gitStatus();
+                Debugger* dbg = wb.debugger();
+                String dbgPath = wb.activePath();
+                // bracket-pair colouring: seed the running nesting depth at the first visible document line,
+                // then carry it down the visible lines (bridging fold gaps) so each bracket is tinted by depth.
+                int firstDoc = c.lineNumberAt(0);
+                mutable int bdepth = c.bracketDepthAt(firstDoc);
+                mutable int expectDoc = firstDoc;
+                mutable int r = 0;
+                int used = c.screenRowsUsed(visible);   // real content rows; below this the viewport is empty
+                while (r < visible) {
+                    if (r >= used) {
+                        r = r + 1;
+                        continue;   // past the last (folded) line: leave the row blank, no repeated "}" furniture
+                    }
+                    int y = oy + this.topPad + r * ch;
+                    int docLine = c.lineNumberAt(r);
+                    if (r == caretRow) {
+                        batch.rect(ox + gpx, y, pw - gpx, ch, this.theme.caretLine.r, this.theme.caretLine.g, this.theme.caretLine.b, this.theme.caretLine.a);
+                    }
+                    // stopped line (debugger paused here): a translucent amber band across the whole row
+                    if (dbg.isStoppedAt(dbgPath, docLine + 1)) {
+                        batch.rect(ox + gpx, y, pw - gpx, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.16);
+                    }
+                    // A wrapped line's continuation rows carry no gutter furniture: the number, the markers
+                    // and the change bar belong to the LINE, and are drawn once, on the row it starts at.
+                    boolean firstRow = c.segStartAt(r) == 0;
+                    // git change bar at the gutter's left edge: green added, blue modified, red deletion tick
+                    mutable int gk = git.kindAt(docLine);
+                    if (!firstRow) {
+                        gk = 0;
+                    }
+                    if (gk == 1) {
+                        batch.rect(ox, y, 3, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, this.theme.added.a);
+                    } else if (gk == 2) {
+                        batch.rect(ox, y, 3, ch, this.theme.modified.r, this.theme.modified.g, this.theme.modified.b, this.theme.modified.a);
+                    } else if (gk == 3) {
+                        batch.rect(ox, y + ch - 3, 6, 3, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, this.theme.removed.a);
+                        batch.rect(ox, y + ch - 3, 3, 6, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, this.theme.removed.a);
+                    }
+                    // bookmark marker: a small amber square at the gutter's inner edge
+                    if (firstRow && c.hasBookmark(docLine)) {
+                        batch.rect(ox + gpx - 5, y + ch / 2 - 3, 5, 6, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                    }
+                    // breakpoint marker: a red dot at the gutter's left edge (VS Code-style). When the mouse
+                    // hovers the breakpoint strip of a real line without one, show a faint preview square
+                    // where the breakpoint would land -- the standard cue that a click here sets one.
+                    if (firstRow && dbg.hasBreakpoint(dbgPath, docLine + 1)) {
+                        batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, this.theme.breakpoint.r, this.theme.breakpoint.g, this.theme.breakpoint.b, this.theme.breakpoint.a);
+                    } else if (firstRow && mx >= ox && mx < ox + 18 && my >= y && my < y + ch) {
+                        batch.rect(ox + 4, y + ch / 2 - 4, 8, 8, this.theme.breakpoint.r, this.theme.breakpoint.g, this.theme.breakpoint.b, 0.32);
+                    }
+                    if (firstRow) {
+                        String num = (docLine + 1).toString();
+                        int nx = ox + gpx - 8 - num.length() * cw;
+                        // the caret's line number is brighter (amber), the rest dim
+                        if (docLine == c.editor().cursorRow()) {
+                            this.font.drawText(batch, nx, y, num, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, this.theme.accent.a);
+                        } else {
+                            this.font.drawText(batch, nx, y, num, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                        }
+                        // fold marker in the gutter/text gap for foldable header lines
+                        if (c.isFoldable(docLine)) {
+                            this.drawFoldMarker(batch, ox + gpx - 3, y + ch / 2, c.isFolded(docLine));
+                        }
+                    }
+                    String line = c.renderLine(r);
+                    if (firstRow) {
+                        this.drawIndentGuides(batch, c.guideIndent(docLine), textX, y, cw, ch);
+                    }
+                    // carry the bracket depth across any lines a fold skipped since the last drawn line
+                    if (docLine > expectDoc) {
+                        bdepth = bdepth + c.bracketDeltaBetween(expectDoc, docLine);
+                        if (bdepth < 0) {
+                            bdepth = 0;
+                        }
+                    }
+                    ArrayList<Span> spans = c.renderSpans(r);
+                    mutable int si = 0;
+                    while (si < spans.size()) {
+                        Span* sp = spans.get(si);
+                        if (this.isBracketSpan(line, sp)) {
+                            char bc = line.charAt(sp.start);
+                            mutable int idx = bdepth;
+                            if (bc == ')' || bc == ']' || bc == '}') {
+                                bdepth = bdepth - 1;
+                                if (bdepth < 0) {
+                                    bdepth = 0;
+                                }
+                                idx = bdepth;
+                            } else {
+                                bdepth = bdepth + 1;
+                            }
+                            this.drawBracket(batch, textX, y, cw, line, sp, idx);
+                        } else {
+                            this.drawSpan(batch, textX, y, cw, line, sp);
+                        }
+                        si = si + 1;
+                    }
+                    delete spans;   // renderSpans hands back a fresh owned list each frame; free it (no leak)
+                    // render-whitespace (View toggle): a faint dot centred in each space cell of the row.
+                    if (wb.renderWhitespace()) {
+                        mutable int wi = 0;
+                        while (wi < line.length()) {
+                            if (line.charAt(wi) == ' ') {
+                                batch.rect(textX + wi * cw + cw / 2 - 1, y + ch / 2 - 1, 2, 2,
+                                           this.theme.textFaint.r, this.theme.textFaint.g,
+                                           this.theme.textFaint.b, 0.55);
+                            }
+                            wi = wi + 1;
+                        }
+                    }
+                    expectDoc = docLine + 1;
+                    // a "..." badge after a collapsed header shows the block is folded
+                    if (c.isFolded(docLine)) {
+                        int bx2 = textX + (line.length() + 1) * cw;
+                        batch.rect(bx2, y + 2, 3 * cw + 4, ch - 4, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, 0.4);
+                        this.font.drawText(batch, bx2 + 2, y, "...", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                    }
+                    r = r + 1;
+                }
+
+                // sticky scroll: pin the enclosing class/method headers that scrolled off above the top line,
+                // so you always see what scope the code belongs to. Draws the innermost few over the top rows.
+                ArrayList<int>* sticky = Breadcrumbs.stickyLines(c, firstLine);
+                mutable int sc = sticky.size();
+                if (sc > 3) {
+                    sc = 3;
+                }
+                int startIdx = sticky.size() - sc;
+                mutable int s = 0;
+                while (s < sc) {
+                    int hl = sticky.get(startIdx + s);
+                    int sy = oy + this.topPad + s * ch;
+                    batch.rect(ox, sy, pw, ch, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                    String hnum = (hl + 1).toString();
+                    this.font.drawText(batch, ox + gpx - 8 - hnum.length() * cw, sy, hnum,
+                                       0.376, 0.478, 0.475, 1.0);
+                    this.font.drawText(batch, textX, sy, c.editor().document().line(hl),
+                                       0.804, 0.851, 0.843, 1.0);
+                    s = s + 1;
+                }
+                if (sc > 0) {
+                    batch.rect(ox, oy + this.topPad + sc * ch, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.35);
+                }
+                delete sticky;
+
+                // matching-bracket highlight (both the bracket at the caret and its partner)
+                Match* bm = c.editor().matchingBracket();
+                if (bm.valid()) {
+                    this.drawBracketCell(batch, c.screenRowForDocLine(bm.row), bm.col, textX, oy, cw, ch, visible);
+                    int cr = c.editor().cursorRow();
+                    int bcol = this.caretBracketCol(c, cr, c.editor().cursorCol());
+                    if (bcol >= 0) {
+                        this.drawBracketCell(batch, c.screenRowForDocLine(cr), bcol, textX, oy, cw, ch, visible);
+                    }
+                }
+                delete bm;   // matchingBracket() hands back a fresh owned Match each frame
+
+                int ccr = c.caretScreenRow();
+                if (ccr >= 0 && ccr < visible && this.caretOn) {
+                    int cx = textX + c.caretScreenCol() * cw;
+                    batch.rect(cx, oy + this.topPad + ccr * ch, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                }
+                // secondary carets (multi-cursor), each with its own Ctrl+D selection highlight
+                mutable int mc = 0;
+                while (mc < c.extraCaretCount()) {
+                    int esr = c.extraCaretScreenRow(mc);
+                    if (esr >= 0 && esr < visible) {
+                        int endCol = c.extraCaretScreenCol(mc);
+                        if (c.extraCaretHasSel(mc)) {
+                            int startCol = c.extraSelScreenCol(mc);
+                            mutable int a = startCol;
+                            mutable int b = endCol;
+                            if (b < a) {
+                                a = endCol;
+                                b = startCol;
+                            }
+                            if (a < 0) {
+                                a = 0;
+                            }
+                            if (b > a) {
+                                batch.rect(textX + a * cw, oy + this.topPad + esr * ch, (b - a) * cw, ch,
+                                           this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.22);
+                            }
+                        }
+                        if (this.caretOn) {
+                            int ex = textX + endCol * cw;
+                            batch.rect(ex, oy + this.topPad + esr * ch, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                        }
+                    }
+                    mc = mc + 1;
+                }
+
+                // diagnostics (from the last build) for this file: a gutter marker + an underline
+                String base = Paths.basename(c.document().path());
+                if (base.length() > 0) {
+                    ArrayList<Diagnostic>* ds = wb.diagnostics();
+                    mutable int di = 0;
+                    while (di < ds.size()) {
+                        Diagnostic* d = ds.get(di);
+                        int sr = c.screenRowForDocLine(d.line - 1);
+                        if (d.file.equals(base) && sr >= 0 && sr < visible) {
+                            int y = oy + this.topPad + sr * ch;
+                            // Severity colour from the theme (so it adapts to light/dark) -- error red reuses
+                            // the git-deleted red, warning the amber, matching the status-bar counts.
+                            mutable float dr = this.theme.removed.r;
+                            mutable float dg = this.theme.removed.g;
+                            mutable float db = this.theme.removed.b;
+                            if (d.severity != 0) {
+                                dr = this.theme.warning.r;
+                                dg = this.theme.warning.g;
+                                db = this.theme.warning.b;
+                            }
+                            batch.rect(ox + 3, y + ch / 2 - 3, 6, 6, dr, dg, db, 1.0);
+                            String txt = c.editor().document().line(d.line - 1);
+                            mutable int startCol = d.col - 1;
+                            if (startCol < 0) {
+                                startCol = 0;
+                            }
+                            mutable int uw = (txt.length() - startCol) * cw;
+                            if (uw < cw) {
+                                uw = cw;
+                            }
+                            batch.rect(textX + startCol * cw, y + ch - 2, uw, 2, dr, dg, db, 0.85);
+                        }
+                        di = di + 1;
+                    }
+                    // a lightbulb in the gutter of the caret line when Alt+Enter has a fix to offer -- the
+                    // hint that a squiggle here is one the compiler already knows how to repair.
+                    if (wb.hasQuickFixAtCaret()) {
+                        int csr = c.screenRowForDocLine(c.editor().cursorRow());
+                        if (csr >= 0 && csr < visible) {
+                            int ly = oy + this.topPad + csr * ch;
+                            float lr = this.theme.warning.r;
+                            float lg = this.theme.warning.g;
+                            float lb = this.theme.warning.b;
+                            batch.rect(ox + 2, ly + ch / 2 - 4, 5, 6, lr, lg, lb, 1.0);  // bulb
+                            batch.rect(ox + 3, ly + ch / 2 + 2, 3, 2, lr, lg, lb, 1.0);  // base
+                        }
+                    }
+                }
+
+                // the code minimap (right of the text, left of the overview ruler), when enabled
+                if (wb.minimapVisible()) {
+                    this.drawMinimap(batch, c, ox + pw - this.minimapW() - 14, oy, ph, firstLine, visible, mx, my);
+                }
+                // the overview ruler on the right edge: scroll thumb + a tick per diagnostic
+                this.drawOverviewRuler(batch, wb, ox + pw, oy, ph, mx, my);
+                // the horizontal scrollbar at the bottom, shown only when a line runs past the view
+                this.drawHScrollbar(batch, c, ox, oy + ph, pw, mx, my);
+
+                // hover tooltip: a diagnostic message when the mouse is over a line the build flagged (that's
+                // what you want to read there), otherwise the declaration of the identifier under the mouse.
+                if (!ov.isOpen() && mx >= textX && my >= oy + this.topPad && my < oy + ph) {
+                    int hsr = (my - (oy + this.topPad)) / ch;
+                    if (hsr >= 0 && hsr < visible) {
+                        int hdoc = c.lineNumberAt(hsr);
+                        int hcol = c.firstColumn() + (mx - textX) / cw;
+                        mutable String info = this.diagnosticAt(wb, base, hdoc);
+                        if (info.length() == 0) {
+                            info = c.hoverInfo(hdoc, hcol);
+                        }
+                        if (info.length() > 0) {
+                            // Wrap into a multi-line card so a long rich message reads cleanly instead of
+                            // being clipped at the panel edge. Width tracks the widest wrapped line.
+                            ArrayList<String>* wl = TextWrap.wrap(info, 58);
+                            mutable int widest = 0;
+                            mutable int wi = 0;
+                            while (wi < wl.size()) {
+                                int lw = wl.get(wi).length();
+                                if (lw > widest) {
+                                    widest = lw;
+                                }
+                                wi = wi + 1;
+                            }
+                            int tw2 = (widest + 2) * cw;
+                            int th2 = wl.size() * ch + 8;
+                            mutable int tx = mx;
+                            if (tx + tw2 > ox + pw) {
+                                tx = ox + pw - tw2;
+                            }
+                            if (tx < ox) {
+                                tx = ox;
+                            }
+                            // below the cursor by default; flip above it if the card would run past the bottom
+                            mutable int tyt = my + ch;
+                            if (tyt + th2 > oy + ph) {
+                                tyt = my - th2;
+                            }
+                            if (tyt < oy) {
+                                tyt = oy;
+                            }
+                            batch.rect(tx, tyt, tw2, th2, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);
+                            batch.rect(tx, tyt, tw2, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                            mutable int li = 0;
+                            while (li < wl.size()) {
+                                this.font.drawText(batch, tx + cw, tyt + 4 + li * ch, wl.get(li), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                                li = li + 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // A JetBrains/VS Code-style overview ruler down the right edge of the editor: a faint scroll thumb
+            // sized to the visible fraction, plus a colored tick per diagnostic at its proportional position,
+            // so you see at a glance where the errors are even when they're scrolled off screen.
+            // The code minimap: a zoomed-out view of the whole file on the right, each line a faint bar whose
+            // width tracks the code length, with a highlighted box over the visible range. Click-scrollable.
+            public method minimapW() returns int {
+                return 92;
+            }
+            // Is (mx, my) over the minimap strip? Used to start a drag-to-scroll (VS Code-style).
+            public method overMinimap(Workbench* wb, int screenW, int mx, int my) returns boolean {
+                if (!wb.minimapVisible()) {
+                    return false;
+                }
+                int mmW = this.minimapW();
+                int mmX = screenW - mmW - 14;
+                return mx >= mmX && mx < mmX + mmW && my >= this.editorTop();
+            }
+            // The first visible line so the minimap position under cursor y sits at the CENTER of the viewport
+            // (dragging the slider scrolls the file, like VS Code -- the caret does not move).
+            public method minimapFirstLineAtY(Workbench* wb, int screenH, int my) returns int {
+                int total = wb.active().lineCount();
+                int span = screenH - this.editorTop() - this.statusH();
+                if (span <= 0 || total <= 0) {
+                    return 0;
+                }
+                int line = (my - this.editorTop()) * total / span;
+                int vis = wb.active().visibleRows();
+                mutable int first = line - vis / 2;
+                if (first < 0) {
+                    first = 0;
+                }
+                return first;
+            }
+            private method drawMinimap(Batch2D* batch, Controller* c, int mmX, int oy, int ph, int firstLine,
+                                       int visible, int mx, int my) returns void {
+                int mmW = this.minimapW();
+                batch.rect(mmX, oy, mmW, ph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(mmX, oy, 1, ph, this.theme.divider.r, this.theme.divider.g, this.theme.divider.b, this.theme.divider.a);
+                int total = c.editor().document().lineCount();
+                if (total <= 0) {
+                    return;
+                }
+                int maxCols = 84;
+                mutable int line = 0;
+                while (line < total) {
+                    int y = oy + (line * ph) / total;
+                    String text = c.editor().document().line(line);
+                    int lead = this.leadingSpaces(text);
+                    int len = text.length() - lead;
+                    if (len > 0) {
+                        mutable int w = (len * mmW) / maxCols;
+                        if (w > mmW) {
+                            w = mmW;
+                        }
+                        mutable int lx = (lead * mmW) / maxCols;
+                        if (lx > mmW - 2) {
+                            lx = mmW - 2;
+                        }
+                        batch.rect(mmX + lx, y, w, 1, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, 0.55);
+                    }
+                    line = line + 1;
+                }
+                int vy0 = oy + (firstLine * ph) / total;
+                mutable int vyH = (visible * ph) / total;
+                if (vyH < 6) {
+                    vyH = 6;
+                }
+                // The viewport slider: a translucent block over the visible range, brighter while the cursor
+                // is over the minimap -- VS Code's grabbable slider. Accent hairlines mark its top and bottom.
+                boolean overMap = mx >= mmX && mx < mmX + mmW && my >= oy && my < oy + ph;
+                mutable float slideA = 0.12;
+                if (overMap) {
+                    slideA = 0.22;
+                }
+                batch.rect(mmX, vy0, mmW, vyH, this.theme.text.r, this.theme.text.g, this.theme.text.b, slideA);
+                batch.rect(mmX, vy0, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
+                batch.rect(mmX, vy0 + vyH - 1, mmW, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
+            }
+            private method leadingSpaces(String s) returns int {
+                mutable int i = 0;
+                while (i < s.length() && s.charAt(i) == ' ') {
+                    i = i + 1;
+                }
+                return i;
+            }
+
+            // The build message on document line `docLine` of the file `base` (0-based), prefixed by severity,
+            // or "" if the line is clean. Feeds the hover tooltip.
+            private method diagnosticAt(Workbench* wb, String base, int docLine) returns String {
+                if (base.length() == 0) {
+                    return "";
+                }
+                ArrayList<Diagnostic>* ds = wb.diagnostics();
+                mutable int i = 0;
+                while (i < ds.size()) {
+                    Diagnostic* d = ds.get(i);
+                    if (d.file.equals(base) && d.line - 1 == docLine) {
+                        mutable String sev = "error";
+                        if (d.severity != 0) {
+                            sev = "warning";
+                        }
+                        if (d.hasCode()) {
+                            // Show the code and point at Ctrl+F1 for the full why/fix/prevent.
+                            return sev + "[" + d.code + "]: " + d.message + "   (Ctrl+F1: why/fix/prevent)";
+                        }
+                        return sev + ": " + d.message;
+                    }
+                    i = i + 1;
+                }
+                return "";
+            }
+
+            // Read-only git-diff view over the editor (Git > Diff Current File): the raw diff, colour-coded --
+            // green added, red removed, amber hunk headers, dim file headers -- with add/remove rows tinted.
+            // Scrolls with the arrows/wheel; Esc closes.
+            private method drawDiff(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph) returns void {
+                DiffView* dv = wb.diffView();
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(ox, oy, pw, ph, this.theme.bg.r, this.theme.bg.g, this.theme.bg.b, 1.0);
+                batch.rect(ox, oy, pw, ch + 8, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(ox, oy + ch + 8, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.5);
+                mutable String hint = "   (Esc close, Ctrl+Shift+D unified)";
+                if (!dv.sideBySide) {
+                    hint = "   (Esc close, Ctrl+Shift+D side-by-side)";
+                }
+                this.font.drawText(batch, ox + 8, oy + 4, dv.title + hint,
+                    this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                int top = oy + ch + 12;
+                int rows = (ph - ch - 12) / ch;
+                if (dv.sideBySide) {
+                    this.drawDiffSideBySide(batch, dv, ox, top, pw, rows, cw, ch);
+                    return;
+                }
+                mutable int r = 0;
+                while (r < rows && dv.scroll + r < dv.lines.size()) {
+                    int idx = dv.scroll + r;
+                    int y = top + r * ch;
+                    int kind = dv.kinds.get(idx);
+                    String line = dv.lines.get(idx);
+                    mutable float cr = this.theme.text.r;
+                    mutable float cg = this.theme.text.g;
+                    mutable float cb = this.theme.text.b;
+                    if (kind == 1) {
+                        batch.rect(ox, y, pw, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.10);
+                        cr = this.theme.added.r;
+                        cg = this.theme.added.g;
+                        cb = this.theme.added.b;
+                    } else if (kind == 2) {
+                        batch.rect(ox, y, pw, ch, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, 0.10);
+                        cr = this.theme.removed.r;
+                        cg = this.theme.removed.g;
+                        cb = this.theme.removed.b;
+                    } else if (kind == 3) {
+                        cr = this.theme.accent.r;
+                        cg = this.theme.accent.g;
+                        cb = this.theme.accent.b;
+                    } else if (kind == 4) {
+                        cr = this.theme.textDim.r;
+                        cg = this.theme.textDim.g;
+                        cb = this.theme.textDim.b;
+                    }
+                    this.font.drawText(batch, ox + 8, y, line, cr, cg, cb, 1.0);
+                    r = r + 1;
+                }
+                return;
+            }
+
+            // The side-by-side diff: old on the left, new on the right, split by a divider. Each paired row
+            // draws its two halves independently -- a removed line tinted red on the left, the added line
+            // that replaced it green on the right, a gap dimmed. Headers span both columns.
+            private method drawDiffSideBySide(Batch2D* batch, DiffView* dv, int ox, int top, int pw, int rows,
+                                              int cw, int ch) returns void {
+                int half = pw / 2;
+                int leftX = ox + 6;
+                int rightX = ox + half + 8;
+                int leftChars = (half - 12) / cw;    // characters that fit in a column, so long lines
+                int rightChars = (half - 16) / cw;   // are clipped instead of bleeding into the other side
+                batch.rect(ox + half, top, 1, rows * ch, this.theme.divider.r, this.theme.divider.g,
+                           this.theme.divider.b, this.theme.divider.a);
+                mutable int r = 0;
+                while (r < rows && dv.scroll + r < dv.leftText.size()) {
+                    int idx = dv.scroll + r;
+                    int y = top + r * ch;
+                    int lk = dv.leftKind.get(idx);
+                    int rk = dv.rightKind.get(idx);
+                    if (lk == 3 || lk == 4) {
+                        // A header row spans the whole width (hunk/file header).
+                        mutable float hr = this.theme.accent.r;
+                        mutable float hg = this.theme.accent.g;
+                        mutable float hb = this.theme.accent.b;
+                        if (lk == 4) {
+                            hr = this.theme.textDim.r;
+                            hg = this.theme.textDim.g;
+                            hb = this.theme.textDim.b;
+                        }
+                        this.font.drawText(batch, leftX, y, dv.leftText.get(idx), hr, hg, hb, 1.0);
+                    } else {
+                        this.drawDiffHalf(batch, GpuScreen.clip(dv.leftText.get(idx), leftChars), lk,
+                                          leftX, y, half - 6);
+                        this.drawDiffHalf(batch, GpuScreen.clip(dv.rightText.get(idx), rightChars), rk,
+                                          rightX, y, half - 10);
+                    }
+                    r = r + 1;
+                }
+                return;
+            }
+            // Truncate `s` to at most `maxChars` characters (so a long line stays inside its diff column).
+            private static method clip(String s, int maxChars) returns String {
+                if (maxChars < 1) {
+                    return "";
+                }
+                if (s.length() <= maxChars) {
+                    return s;
+                }
+                return s.substring(0, maxChars);
+            }
+            // One column of one side-by-side row: a tinted band for added/removed, dim for a gap, plus text.
+            private method drawDiffHalf(Batch2D* batch, String text, int kind, int x, int y, int w)
+                returns void {
+                int ch = this.font.lineHeight();
+                mutable float cr = this.theme.text.r;
+                mutable float cg = this.theme.text.g;
+                mutable float cb = this.theme.text.b;
+                if (kind == 1) {
+                    batch.rect(x - 4, y, w, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.10);
+                    cr = this.theme.added.r;
+                    cg = this.theme.added.g;
+                    cb = this.theme.added.b;
+                } else if (kind == 2) {
+                    batch.rect(x - 4, y, w, ch, this.theme.removed.r, this.theme.removed.g, this.theme.removed.b, 0.10);
+                    cr = this.theme.removed.r;
+                    cg = this.theme.removed.g;
+                    cb = this.theme.removed.b;
+                } else if (kind == 5) {
+                    batch.rect(x - 4, y, w, ch, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, 0.05);
+                    return;
+                }
+                this.font.drawText(batch, x, y, text, cr, cg, cb, 1.0);
+                return;
+            }
+
+            // Inline peek-definition popup (Alt+F12): a bordered card of the definition's source shown just
+            // below the caret (or above it if there is no room), read-only and syntax-highlighted. The
+            // declaration line is banded; Enter jumps to it, Esc closes it.
+            private method drawPeek(Batch2D* batch, Workbench* wb, int ox, int oy, int pw, int ph) returns void {
+                Peek* pk = wb.peekView();
+                Controller* c = wb.active();
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int caretRow = c.caretScreenRow();
+                int rows = pk.lines.size();
+                int bodyH = (rows + 1) * ch + 10;
+                mutable int py = oy + this.topPad + (caretRow + 1) * ch + 2;
+                if (caretRow < 0) {
+                    py = oy + this.topPad + 2;
+                }
+                if (py + bodyH > oy + ph) {
+                    mutable int above = oy + this.topPad + caretRow * ch - bodyH - 2;
+                    if (above < oy + this.topPad) {
+                        above = oy + this.topPad;
+                    }
+                    py = above;
+                }
+                batch.rect(ox, py, pw, bodyH, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 0.98);
+                batch.rect(ox, py, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
+                batch.rect(ox, py + bodyH - 1, pw, 1, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.6);
+                this.font.drawText(batch, ox + 8, py + 4, "> " + pk.file + ":" + (pk.defLine + 1).toString()
+                    + "   (Enter to open  Esc to close)",
+                    this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int i = 0;
+                while (i < rows) {
+                    int ly = py + ch + 6 + i * ch;
+                    int docLine = pk.startLine + i;
+                    if (docLine == pk.defLine) {
+                        batch.rect(ox, ly, pw, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.12);
+                    }
+                    String num = (docLine + 1).toString();
+                    this.font.drawText(batch, ox + 8, ly, num,
+                        this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, 1.0);
+                    String line = pk.lines.get(i);
+                    int px = ox + 8 + 6 * cw;
+                    ArrayList<Span> spans = this.hl.tokenize(line);
+                    mutable int si = 0;
+                    while (si < spans.size()) {
+                        this.drawSpan(batch, px, ly, cw, line, spans.get(si));
+                        si = si + 1;
+                    }
+                    i = i + 1;
+                }
+                return;
+            }
+
+            private method drawOverviewRuler(Batch2D* batch, Workbench* wb, int rightX, int oy, int ph,
+                                             int mx, int my) returns void {
+                int rw = 12;
+                int x = rightX - rw;
+                batch.rect(x, oy, rw, ph, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);      // track
+                Controller* c = wb.active();
+                int total = c.lineCount();
+                if (total <= 0) {
+                    return;
+                }
+                int first = c.firstLine();
+                int vis = c.visibleRows();
+                int thumbY = oy + (first * ph) / total;
+                mutable int thumbH = (vis * ph) / total;
+                if (thumbH < 24) {
+                    thumbH = 24;
+                }
+                mutable float thumbA = 0.28;
+                if (mx >= x && mx <= x + rw && my >= thumbY && my <= thumbY + thumbH) {
+                    thumbA = 0.55;   // brighten under the cursor so the thumb reads as grabbable
+                }
+                batch.rect(x + 2, thumbY, rw - 4, thumbH, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, thumbA);   // amber thumb
+                String base = Paths.basename(c.document().path());
+                if (base.length() == 0) {
+                    return;
+                }
+                ArrayList<Diagnostic>* ds = wb.diagnostics();
+                mutable int i = 0;
+                while (i < ds.size()) {
+                    Diagnostic* d = ds.get(i);
+                    if (d.file.equals(base)) {
+                        int ty = oy + ((d.line - 1) * ph) / total;
+                        mutable float r = this.theme.removed.r;
+                        mutable float g = this.theme.removed.g;
+                        mutable float b = this.theme.removed.b;
+                        if (d.severity != 0) {
+                            r = this.theme.warning.r;
+                            g = this.theme.warning.g;
+                            b = this.theme.warning.b;
+                        }
+                        batch.rect(x, ty, rw, 2, r, g, b, 1.0);
+                    }
+                    i = i + 1;
+                }
+            }
+
+            // The height of the horizontal scrollbar (0 when it is not needed).
+            public method hscrollH() returns int {
+                return 10;
+            }
+            // The horizontal scrollbar at the bottom of the editor, drawn only when the widest line runs
+            // past the visible columns. The thumb's width and offset track firstColumn over maxColumn.
+            private method drawHScrollbar(Batch2D* batch, Controller* c, int ox, int bottomY, int pw,
+                                          int mx, int my) returns void {
+                int maxCol = c.maxColumn();
+                int cols = c.viewCols();
+                if (maxCol <= cols) {
+                    return;
+                }
+                int bh = this.hscrollH();
+                int y = bottomY - bh;
+                int trackW = pw - 14;                       // leave room for the vertical ruler on the right
+                batch.rect(ox, y, trackW, bh, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b,
+                           this.theme.chrome.a);
+                mutable int thumbW = cols * trackW / maxCol;
+                if (thumbW < 24) {
+                    thumbW = 24;
+                }
+                int thumbX = ox + c.firstColumn() * (trackW - thumbW) / (maxCol - cols);
+                mutable float thumbA = 0.28;
+                if (my >= y && my <= y + bh && mx >= thumbX && mx <= thumbX + thumbW) {
+                    thumbA = 0.55;   // brighten under the cursor so the thumb reads as grabbable
+                }
+                batch.rect(thumbX, y + 1, thumbW, bh - 2, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, thumbA);
+                return;
+            }
+
+            // --- scrollbar hit-testing (so a click there scrolls instead of placing the caret) ---
+            // The first line to scroll to so the vertical scrollbar thumb centres on `my`, or -1 when
+            // (mx, my) is not on the vertical scrollbar. Mirrors drawOverviewRuler's geometry.
+            public method vscrollTargetLine(Workbench* wb, int screenW, int screenH, int mx, int my)
+                    returns int {
+                int rightEdge = screenW - this.outlineWidth(wb);
+                if (mx < rightEdge - 12 || mx >= rightEdge) {
+                    return 0 - 1;
+                }
+                int top = this.editorTop();
+                int bottom = screenH - this.statusH() - this.outputPanelHeight(wb.output(), screenH);
+                if (my < top || my >= bottom || bottom <= top) {
+                    return 0 - 1;
+                }
+                Controller* c = wb.active();
+                int total = c.lineCount();
+                int vis = c.visibleRows();
+                mutable int line = (my - top) * total / (bottom - top) - vis / 2;
+                if (line < 0) {
+                    line = 0;
+                }
+                return line;
+            }
+            // The first column to scroll to so the horizontal scrollbar thumb tracks `mx`, or -1 when
+            // (mx, my) is not on the horizontal scrollbar.
+            public method hscrollTargetCol(Workbench* wb, int screenW, int screenH, int mx, int my)
+                    returns int {
+                Controller* c = wb.active();
+                int maxCol = c.maxColumn();
+                int cols = c.viewCols();
+                if (maxCol <= cols) {
+                    return 0 - 1;
+                }
+                int bottom = screenH - this.statusH() - this.outputPanelHeight(wb.output(), screenH);
+                int y = bottom - this.hscrollH();
+                if (my < y || my >= bottom) {
+                    return 0 - 1;
+                }
+                int ox = this.textOx();
+                int rightEdge = screenW - this.outlineWidth(wb);
+                int trackW = rightEdge - ox - 14;
+                if (mx < ox || mx >= ox + trackW || trackW <= 0) {
+                    return 0 - 1;
+                }
+                mutable int col = (mx - ox) * maxCol / trackW - cols / 2;
+                if (col < 0) {
+                    col = 0;
+                }
+                return col;
+            }
+            // The target first line from `my` alone (no x check), for a vertical scrollbar DRAG in progress
+            // -- so it keeps scrolling even if the cursor drifts off the 12px bar.
+            public method vscrollLineAtY(Workbench* wb, int screenH, int my) returns int {
+                int top = this.editorTop();
+                int bottom = screenH - this.statusH() - this.outputPanelHeight(wb.output(), screenH);
+                if (bottom <= top) {
+                    return 0;
+                }
+                Controller* c = wb.active();
+                int total = c.lineCount();
+                int vis = c.visibleRows();
+                mutable int line = (my - top) * total / (bottom - top) - vis / 2;
+                if (line < 0) {
+                    line = 0;
+                }
+                return line;
+            }
+            // The target first column from `mx` alone, for a horizontal scrollbar drag in progress.
+            public method hscrollColAtX(Workbench* wb, int screenW, int mx) returns int {
+                Controller* c = wb.active();
+                int maxCol = c.maxColumn();
+                int cols = c.viewCols();
+                int ox = this.textOx();
+                int rightEdge = screenW - this.outlineWidth(wb);
+                int trackW = rightEdge - ox - 14;
+                if (trackW <= 0) {
+                    return 0;
+                }
+                mutable int col = (mx - ox) * maxCol / trackW - cols / 2;
+                if (col < 0) {
+                    col = 0;
+                }
+                return col;
+            }
+
+            // Paint [startCol, endCol) of a document line. With wrap on that range can cross several screen
+            // rows, so it becomes one rectangle per row -- and every highlight in the editor (selection, find
+            // matches, occurrences) gets wrapping right by going through here, instead of each learning it.
+            // padEmpty widens a zero-width range to one cell: how a selection shows that it ate the newline.
+            private method paintRange(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
+                                      int visible, int docLine, int startCol, int endCol, boolean padEmpty,
+                                      float rr, float gg, float bb, float aa) returns void {
+                if (endCol < startCol) {
+                    return;
+                }
+                mutable int w = 1000000000;   // no wrap: the line is one very wide segment
+                if (c.isWrapped() && c.wrapWidth() > 0) {
+                    w = c.wrapWidth();
+                }
+                mutable int from = startCol;
+                mutable int guard = 0;
+                while (guard < 4096) {
+                    guard = guard + 1;
+                    int segStart = (from / w) * w;
+                    int segEnd = segStart + w;
+                    mutable int to = endCol;
+                    if (to > segEnd) {
+                        to = segEnd;
+                    }
+                    int row = c.screenRowFor(docLine, from);
+                    if (row >= 0 && row < visible) {
+                        mutable int width = (to - from) * cw;
+                        if (width < cw && padEmpty) {
+                            width = cw;
+                        }
+                        if (width > 0) {
+                            batch.rect(textX + (from - segStart) * cw, oy + this.topPad + row * ch, width, ch,
+                                       rr, gg, bb, aa);
+                        }
+                    }
+                    if (to >= endCol) {
+                        return;
+                    }
+                    from = to;
+                }
+                return;
+            }
+
+            private method drawSelection(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
+                                         int visible, int firstLine) returns void {
+                int sr = c.editor().selStartRow();
+                int sc = c.editor().selStartCol();
+                int er = c.editor().selEndRow();
+                int ec = c.editor().selEndCol();
+                mutable int row = sr;
+                while (row <= er) {
+                    mutable int startCol = 0;
+                    if (row == sr) {
+                        startCol = sc;
+                    }
+                    mutable int endCol = c.editor().document().line(row).length();
+                    if (row == er) {
+                        endCol = ec;
+                    }
+                    // a line fully inside the selection shows that it swallowed the newline, as one extra cell
+                    this.paintRange(batch, c, textX, oy, cw, ch, visible, row, startCol, endCol, row < er,
+                                    this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.22);
+                    row = row + 1;
+                }
+            }
+
+            // Highlight every occurrence of `query` (case-insensitive) in the visible lines -- the "find all"
+            // feel while the find bar is open.
+            private method drawFindMatches(Batch2D* batch, Controller* c, String query, int textX, int oy,
+                                           int cw, int ch, int visible, int firstLine) returns void {
+                int qlen = query.length();
+                int total = c.lineCount();
+                mutable int r = 0;
+                while (r < visible) {
+                    int docRow = c.lineNumberAt(r);
+                    // a wrapped line spans several rows; scan it once, on the row it starts at
+                    if (docRow < total && c.segStartAt(r) == 0) {
+                        String line = c.editor().document().line(docRow);
+                        int n = line.length();
+                        mutable int i = 0;
+                        while (i + qlen <= n) {
+                            if (this.matchAt(line, query, i)) {
+                                this.paintRange(batch, c, textX, oy, cw, ch, visible, docRow, i, i + qlen,
+                                                false, 0.918, 0.706, 0.392, 0.26);
+                                i = i + qlen;
+                            } else {
+                                i = i + 1;
+                            }
+                        }
+                    }
+                    r = r + 1;
+                }
+            }
+            // Highlight every whole-word occurrence of the identifier under the caret (the caret's own
+            // instance excluded), a faint green box, so you see where a name is used at a glance. Only kicks
+            // in for identifiers of two or more characters and while nothing is selected.
+            private method drawOccurrences(Batch2D* batch, Controller* c, int textX, int oy, int cw, int ch,
+                                           int visible) returns void {
+                String word = c.wordAtCaret();
+                int wlen = word.length();
+                if (wlen < 2) {
+                    return;
+                }
+                int total = c.lineCount();
+                int caretRow = c.editor().cursorRow();
+                int caretCol = c.editor().cursorCol();
+                mutable int r = 0;
+                while (r < visible) {
+                    int docRow = c.lineNumberAt(r);
+                    // a wrapped line spans several rows; scan it once, on the row it starts at
+                    if (docRow < total && c.segStartAt(r) == 0) {
+                        String line = c.editor().document().line(docRow);
+                        int n = line.length();
+                        mutable int i = 0;
+                        while (i + wlen <= n) {
+                            if (GpuScreen.wordMatchAt(line, word, i)) {
+                                boolean isCaretOne = docRow == caretRow && caretCol >= i && caretCol <= i + wlen;
+                                if (!isCaretOne) {
+                                    this.paintRange(batch, c, textX, oy, cw, ch, visible, docRow, i, i + wlen,
+                                                    false, 0.549, 0.784, 0.624, 0.13);
+                                }
+                                i = i + wlen;
+                            } else {
+                                i = i + 1;
+                            }
+                        }
+                    }
+                    r = r + 1;
+                }
+            }
+
+            // A case-sensitive whole-word match of `word` in `line` at index `i` (identifier boundaries).
+            private static method wordMatchAt(String line, String word, int i) returns boolean {
+                int wlen = word.length();
+                mutable int j = 0;
+                while (j < wlen) {
+                    if (line.charAt(i + j) != word.charAt(j)) {
+                        return false;
+                    }
+                    j = j + 1;
+                }
+                if (i > 0 && GpuScreen.isWordCh(line.charAt(i - 1))) {
+                    return false;
+                }
+                if (i + wlen < line.length() && GpuScreen.isWordCh(line.charAt(i + wlen))) {
+                    return false;
+                }
+                return true;
+            }
+            private static method isWordCh(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
+
+            // Draw a subtle boxed cell around a matched bracket at screen row `sr`, column `col`.
+            private method drawBracketCell(Batch2D* batch, int sr, int col, int textX, int oy, int cw, int ch,
+                                           int visible) returns void {
+                if (sr < 0 || sr >= visible) {
+                    return;
+                }
+                int x = textX + col * cw;
+                int y = oy + this.topPad + sr * ch;
+                batch.rect(x, y, cw, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.16);
+                batch.rect(x, y, cw, 1, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
+                batch.rect(x, y + ch - 1, cw, 1, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
+                batch.rect(x, y, 1, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
+                batch.rect(x + cw - 1, y, 1, ch, this.theme.added.r, this.theme.added.g, this.theme.added.b, 0.85);
+            }
+            // The column of the bracket the caret sits on/after (-1 if none) -- mirrors Editor.matchingBracket.
+            private method caretBracketCol(Controller* c, int row, int col) returns int {
+                String line = c.editor().document().line(row);
+                if (col < line.length() && this.isBracket(line.charAt(col))) {
+                    return col;
+                }
+                if (col > 0 && this.isBracket(line.charAt(col - 1))) {
+                    return col - 1;
+                }
+                return 0 - 1;
+            }
+            private method isBracket(char ch) returns boolean {
+                return ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}';
+            }
+            private method matchAt(String line, String q, int pos) returns boolean {
+                int m = q.length();
+                if (pos + m > line.length()) {
+                    return false;
+                }
+                mutable int j = 0;
+                while (j < m) {
+                    if (this.lc(line.charAt(pos + j)) != this.lc(q.charAt(j))) {
+                        return false;
+                    }
+                    j = j + 1;
+                }
+                return true;
+            }
+            private method lc(char c) returns char {
+                if (c >= 'A' && c <= 'Z') {
+                    return cast<char>(cast<int>(c) + 32);
+                }
+                return c;
+            }
+
+            // The autocomplete popup, anchored below the caret at the prefix start.
+            public method drawCompletion(Batch2D* batch, Completion* comp, Workbench* wb, int screenW,
+                                         int screenH) returns void {
+                Controller* c = wb.active();
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int ox = this.treeW;
+                int cx = ox + this.gutterPx() + 6 + c.caretScreenCol() * cw;
+                int cy = this.editorTop() + this.topPad + c.caretScreenRow() * ch;
+                int px = cx - comp.prefix.length() * cw;
+                int py = cy + ch;
+                mutable int shown = comp.items.size();
+                if (shown > 10) {
+                    shown = 10;
+                }
+                int pw = 280;
+                int pph = shown * (ch + 2) + 6;
+                batch.rect(px, py, pw, pph, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(px, py, 2, pph, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int i = 0;
+                while (i < shown) {
+                    int ry = py + 3 + i * (ch + 2);
+                    if (i == comp.sel) {
+                        batch.rect(px + 2, ry - 1, pw - 4, ch + 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
+                    }
+                    this.font.drawText(batch, px + 8, ry, comp.items.get(i), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    i = i + 1;
+                }
+            }
+
+            // Signature help: a tooltip above the caret with the declaration of the call it's inside.
+            public method drawSignatureHelp(Batch2D* batch, Workbench* wb, int screenW) returns void {
+                Controller* c = wb.active();
+                String sig = c.signatureAtCaret();
+                if (sig.length() == 0) {
+                    return;
+                }
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int ccr = c.caretScreenRow();
+                if (ccr < 0) {
+                    return;
+                }
+                int cx = this.treeW + this.gutterPx() + 6 + c.caretScreenCol() * cw;
+                int cy = this.editorTop() + this.topPad + ccr * ch;
+                int tw = (sig.length() + 2) * cw;
+                mutable int tx = cx;
+                if (tx + tw > screenW) {
+                    tx = screenW - tw - 4;
+                }
+                if (tx < this.treeW) {
+                    tx = this.treeW;
+                }
+                mutable int ty = cy - ch - 8;
+                if (ty < this.editorTop()) {
+                    ty = cy + ch;
+                }
+                batch.rect(tx, ty, tw, ch + 8, this.theme.chrome.r, this.theme.chrome.g, this.theme.chrome.b, this.theme.chrome.a);
+                batch.rect(tx, ty, tw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, tx + cw, ty + 4, sig, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+            }
+
+            // --- modal overlays (drawn on top of the frame) ---
+            public method drawOverlay(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW, int screenH)
+                    returns void {
+                if (ov.mode == 1) {
+                    this.drawPalette(batch, ov, wb, screenW, screenH);
+                }
+                else if (ov.mode == 2) {
+                    this.drawFindBar(batch, ov, wb, screenW);
+                }
+                else if (ov.mode == 3) {
+                    this.drawSymbols(batch, ov, screenW, screenH);
+                }
+                else if (ov.mode == 4) {
+                    this.drawQuickOpen(batch, ov, screenW, screenH);
+                }
+                else if (ov.mode == 5) {
+                    this.drawGoToLine(batch, ov, screenW);
+                }
+                else if (ov.mode == 6) {
+                    this.drawFindInFiles(batch, ov, screenW);
+                }
+                else if (ov.mode == 7) {
+                    this.drawPrompt(batch, ov, screenW);
+                }
+                else if (ov.mode == 8) {
+                    this.drawAbout(batch, screenW, screenH);
+                }
+                else if (ov.mode == 9) {
+                    this.drawSettings(batch, ov, wb, screenW, screenH);
+                }
+                else if (ov.mode == 10) {
+                    this.drawChat(batch, wb, screenW, screenH);
+                }
+                else if (ov.mode == 11) {
+                    this.drawPreview(batch, wb, screenW, screenH);
+                }
+            }
+
+            // The render preview (mode 11): an image the program under development wrote, shown at its
+            // real aspect ratio. The batch carries ONE texture at a time, so the queued chrome is
+            // flushed, the image texture is bound for a draw of its own, and the atlas is restored --
+            // otherwise every glyph drawn afterwards would sample the image instead of the font.
+            private method drawPreview(Batch2D* batch, Workbench* wb, int screenW, int screenH)
+                    returns void {
+                int ch = this.font.lineHeight();
+                ImagePreview* pv = wb.renderPreview();
+                int bw = screenW - 160;
+                int bh = screenH - 140;
+                int bx = 80;
+                int by = 70;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.55);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+                mutable String title = "Render Preview";
+                if (pv.sourcePath().length() > 0) {
+                    title = title + "  --  " + pv.sourcePath();
+                }
+                this.font.drawText(batch, bx + 24, by + 20, title, this.theme.accent.r,
+                                   this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 24, by + bh - 26, "R refresh    O open image    Esc close",
+                                   this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
+                                   this.theme.textDim.a);
+                if (!pv.hasImage()) {
+                    mutable String msg = pv.statusLine();
+                    if (msg.length() == 0) {
+                        msg = "no image yet -- press O and give a path (.ppm, .png, .bmp)";
+                    }
+                    this.font.drawText(batch, bx + 24, by + 60, msg, this.theme.warning.r,
+                                       this.theme.warning.g, this.theme.warning.b, 1.0);
+                    return;
+                }
+                // Fit inside the card preserving aspect, and never upscale past the available box.
+                int availW = bw - 48;
+                int availH = bh - 110;
+                mutable int dw = pv.width();
+                mutable int dh = pv.height();
+                if (dw > availW) {
+                    dh = dh * availW / dw;
+                    dw = availW;
+                }
+                if (dh > availH) {
+                    dw = dw * availH / dh;
+                    dh = availH;
+                }
+                int ix = bx + (bw - dw) / 2;
+                int iy = by + 44 + (availH - dh) / 2;
+                int atlas = batch.currentTexture();
+                batch.flush();                       // everything queued so far draws with the atlas
+                batch.setTexture(pv.texture());
+                batch.image(ix, iy, dw, dh, 1.0);
+                batch.flush();                       // the image draws alone, with its own texture
+                batch.setTexture(atlas);             // restore, or the next glyphs sample the image
+                this.font.drawText(batch, bx + 24, by + bh - 26 - ch,
+                                   pv.width().toString() + " x " + pv.height().toString(),
+                                   this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
+                                   this.theme.textDim.a);
+            }
+
+            // The AI chat (mode 10): the conversation above, what you are typing below. Wide and tall,
+            // because answers are prose and a cramped box makes them unreadable. Long lines wrap to the
+            // card width instead of running off the edge.
+            private method drawChat(Batch2D* batch, Workbench* wb, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                AiChat* chat = wb.aiChat();
+                int bw = screenW - 160;
+                int bh = screenH - 140;
+                int bx = 80;
+                int by = 70;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.45);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g,
+                           this.theme.accent.b, 1.0);
+
+                this.font.drawText(batch, bx + 24, by + 20, "Assistant  --  " + chat.modelName(),
+                                   this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+
+                // Flatten the conversation into display lines first, so scrolling works on what is drawn
+                // rather than on turns of wildly different heights.
+                int wrapAt = (bw - 60) / cw;
+                ArrayList<String>* flat = new ArrayList<String>() on heap;
+                ArrayList<int>* kinds = new ArrayList<int>() on heap;   // 0 you, 1 reply, 2/3 role label
+                ArrayList<ChatMessage*>* turns = chat.history();
+                mutable int t = 0;
+                while (t < turns.size()) {
+                    ChatMessage* m = turns.get(t);
+                    boolean isUser = m.role.equals("user");
+                    flat.add(isUser ? "you" : "assistant");
+                    kinds.add(isUser ? 2 : 3);
+                    ArrayList<String>* wrapped = TextWrap.wrap(m.text, wrapAt);
+                    mutable int w = 0;
+                    while (w < wrapped.size()) {
+                        flat.add(wrapped.get(w));
+                        kinds.add(isUser ? 0 : 1);
+                        w = w + 1;
+                    }
+                    delete wrapped;
+                    flat.add("");
+                    kinds.add(0);
+                    t = t + 1;
+                }
+
+                int bodyTop = by + 56;
+                int inputY = by + bh - 34;
+                int rows = (inputY - bodyTop) / ch;
+                mutable int start = flat.size() - rows - chat.scrollOffset();
+                if (start < 0) {
+                    start = 0;
+                }
+                mutable int r = 0;
+                mutable int idx = start;
+                while (idx < flat.size() && r < rows) {
+                    int kind = kinds.get(idx);
+                    mutable float cr = this.theme.text.r;
+                    mutable float cg = this.theme.text.g;
+                    mutable float cb = this.theme.text.b;
+                    if (kind == 2 || kind == 3) {
+                        cr = this.theme.accent.r;
+                        cg = this.theme.accent.g;
+                        cb = this.theme.accent.b;
+                    } else if (kind == 0) {
+                        cr = this.theme.textDim.r;
+                        cg = this.theme.textDim.g;
+                        cb = this.theme.textDim.b;
+                    }
+                    this.font.drawText(batch, bx + 30, bodyTop + r * ch, flat.get(idx), cr, cg, cb, 1.0);
+                    r = r + 1;
+                    idx = idx + 1;
+                }
+                delete flat;
+                delete kinds;
+
+                batch.rect(bx + 20, inputY - 8, bw - 40, 1, this.theme.divider.r, this.theme.divider.g,
+                           this.theme.divider.b, this.theme.divider.a);
+                mutable String prompt = "> ";
+                if (chat.isRunning()) {
+                    prompt = "  ";
+                }
+                this.font.drawText(batch, bx + 30, inputY, prompt + chat.inputLine(),
+                                   this.theme.text.r, this.theme.text.g, this.theme.text.b, 1.0);
+                // Status sits ABOVE the input, inside the card: below it falls past the bottom border.
+                if (chat.statusLine().length() > 0) {
+                    this.font.drawText(batch, bx + 30, inputY - ch - 14, chat.statusLine(),
+                                       this.theme.warning.r, this.theme.warning.g, this.theme.warning.b,
+                                       1.0);
+                }
+            }
+
+            // --- settings panel geometry (mode 9) ---
+            // The renderer and the hit-test derive every coordinate from these, so a click always lands on
+            // the row that was drawn there.
+            public method settingsCardW() returns int {
+                return 620;
+            }
+            public method settingsCardH() returns int {
+                return 64 + Overlay.settingsRowCount() * this.settingsRowH() + 52;
+            }
+            public method settingsRowH() returns int {
+                return this.font.lineHeight() + 12;
+            }
+            public method settingsCardX(int screenW) returns int {
+                return (screenW - this.settingsCardW()) / 2;
+            }
+            public method settingsCardY(int screenH) returns int {
+                return (screenH - this.settingsCardH()) / 2;
+            }
+            // The row under the pointer, or -1 outside the list. -2 means "inside the card but not on a
+            // row", which the shell uses to keep the panel open on a stray click.
+            public method settingsRowAt(int mx, int my, int screenW, int screenH) returns int {
+                int bx = this.settingsCardX(screenW);
+                int by = this.settingsCardY(screenH);
+                if (mx < bx || mx >= bx + this.settingsCardW()
+                        || my < by || my >= by + this.settingsCardH()) {
+                    return 0 - 1;
+                }
+                int top = by + 64;
+                int idx = (my - top) / this.settingsRowH();
+                if (my < top || idx < 0 || idx >= Overlay.settingsRowCount()) {
+                    return 0 - 2;
+                }
+                return idx;
+            }
+            // The current value of row `i`, as shown on the right of the panel.
+            private method settingsValueOf(Workbench* wb, int i) returns String {
+                if (i == 0) {
+                    return wb.themeName();
+                }
+                if (i == 1) {
+                    return wb.settings().fontFamily;
+                }
+                if (i == 2) {
+                    return wb.settings().fontSize.toString() + " px";
+                }
+                if (i == 3) {
+                    return wb.settings().tabWidth.toString();
+                }
+                if (i == 4) {
+                    return wb.minimapVisible() ? "on" : "off";
+                }
+                if (i == 5) {
+                    return wb.settings().whitespace ? "on" : "off";
+                }
+                if (i == 6) {
+                    return wb.settings().wordWrap ? "on" : "off";
+                }
+                return "";
+            }
+
+            // The settings panel (mode 9): the editable view of what settings.txt holds. Arrows move, Enter
+            // toggles a switch or opens a prompt for a value, Esc closes. Every change is applied and saved
+            // immediately -- there is no OK button to forget to press.
+            private method drawSettings(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW,
+                                        int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = this.settingsCardW();
+                int bh = this.settingsCardH();
+                int bx = this.settingsCardX(screenW);
+                int by = this.settingsCardY(screenH);
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.45);   // dim the app behind the card
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+
+                this.font.drawText(batch, bx + 28, by + 24, "Settings", this.theme.accent.r,
+                                   this.theme.accent.g, this.theme.accent.b, 1.0);
+
+                int rowH = this.settingsRowH();
+                int top = by + 64;
+                mutable int i = 0;
+                while (i < Overlay.settingsRowCount()) {
+                    int ry = top + i * rowH;
+                    if (i == ov.sel) {
+                        batch.rect(bx + 12, ry - 2, bw - 24, rowH, this.theme.accent.r,
+                                   this.theme.accent.g, this.theme.accent.b, 0.16);
+                    }
+                    boolean isFile = i == Overlay.settingsRowCount() - 1;
+                    if (isFile) {
+                        // Separator above the escape hatch, so it reads as an action rather than a setting.
+                        batch.rect(bx + 20, ry - 8, bw - 40, 1, this.theme.divider.r, this.theme.divider.g,
+                                   this.theme.divider.b, this.theme.divider.a);
+                    }
+                    this.font.drawText(batch, bx + 28, ry + 4, Overlay.settingsRowLabel(i),
+                                       this.theme.text.r, this.theme.text.g, this.theme.text.b,
+                                       this.theme.text.a);
+                    String val = this.settingsValueOf(wb, i);
+                    if (val.length() > 0) {
+                        int vx = bx + bw - 28 - val.length() * cw;
+                        this.font.drawText(batch, vx, ry + 4, val, this.theme.accent.r, this.theme.accent.g,
+                                           this.theme.accent.b, 1.0);
+                    }
+                    i = i + 1;
+                }
+                this.font.drawText(batch, bx + 28, by + bh - 30,
+                                   "Up/Down select    Enter change    Esc close",
+                                   this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b,
+                                   this.theme.textDim.a);
+            }
+
+            // The About card (mode 8): a small centered modal window over a dimmed backdrop -- the proper
+            // "little window about Forge", not a line in the output panel. Any key or a click dismisses it.
+            private method drawAbout(Batch2D* batch, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.45);   // dim the app behind the card
+                int bw = 460;
+                int bh = 220;
+                int bx = (screenW - bw) / 2;
+                int by = (screenH - bh) / 2;
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, 1.0);
+                batch.rect(bx, by, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);      // Flamo accent top
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx + bw - 3, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                batch.rect(bx, by + bh - 3, bw, 3, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int ty = by + 28;
+                this.font.drawText(batch, bx + 32, ty, "F O R G E", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                ty = ty + ch + 18;
+                this.font.drawText(batch, bx + 32, ty, "The Polaron IDE -- written in Polaron.", this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                ty = ty + ch + 8;
+                this.font.drawText(batch, bx + 32, ty, "Version 0.1", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                ty = ty + ch + 16;
+                this.font.drawText(batch, bx + 32, ty, "by Joao Victor Pereira Tavares", this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                ty = ty + ch + 4;
+                this.font.drawText(batch, bx + 32, ty, "creator of the Polaron language", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                this.font.drawText(batch, bx + 32, by + bh - ch - 14, "Press Esc to close", this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+            }
+
+            // A generic single-line text prompt (mode 7): the label, the typed text, a caret. Enter runs the
+            // action named by ov.promptKind (e.g. a commit message).
+            private method drawPrompt(Batch2D* batch, Overlay* ov, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 520;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                int bh = ch + 14;
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, ov.promptLabel, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                int lx = bx + 12 + ov.promptLabel.length() * cw;
+                this.font.drawText(batch, lx, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+            }
+
+            // Find-in-files box (Ctrl+Shift+F): a centered input; Enter greps the project into the output panel.
+            private method drawFindInFiles(Batch2D* batch, Overlay* ov, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 460;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                int bh = ch + 14;
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "find in files: ", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                int lx = bx + 12 + 15 * cw;
+                this.font.drawText(batch, lx, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                batch.rect(lx + ov.query.length() * cw, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+            }
+
+            // Go-to-line box (Ctrl+G): a small centered input for a line number.
+            private method drawGoToLine(Batch2D* batch, Overlay* ov, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 320;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                int bh = ch + 14;
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "line: ", this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                this.font.drawText(batch, bx + 12 + 6 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                int qx = bx + 12 + (6 + ov.query.length()) * cw;
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+            }
+
+            // The quick-open file picker (Ctrl+P): a centered list of project files filtered by the query,
+            // basename bright with the path dim beside it, the selected row highlighted.
+            private method drawQuickOpen(Batch2D* batch, Overlay* ov, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 640;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                ArrayList<int>* m = ov.matches();
+                mutable int shown = m.size();
+                if (shown > 14) {
+                    shown = 14;
+                }
+                int bh = ch + 12 + shown * (ch + 4) + 8;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12, by + 7, "> ", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                int qx = bx + 12 + (2 + ov.query.length()) * cw;
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int i = 0;
+                while (i < shown) {
+                    int orig = m.get(i);
+                    int ry = by + ch + 12 + i * (ch + 4);
+                    if (i == ov.sel) {
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
+                    }
+                    String path = ov.items.get(orig);
+                    String name = Paths.basename(path);
+                    this.font.drawText(batch, bx + 16, ry, name, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    this.font.drawText(batch, bx + 16 + (name.length() + 2) * cw, ry, path,
+                                       0.376, 0.478, 0.475, 1.0);
+                    i = i + 1;
+                }
+            }
+
+            // The go-to-symbol navigator (Ctrl+Shift+O): a centered list of the file's declarations filtered by
+            // the query, each with its line number, the selected row highlighted.
+            private method drawSymbols(Batch2D* batch, Overlay* ov, int screenW, int screenH) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 560;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                ArrayList<int>* m = ov.matches();
+                mutable int shown = m.size();
+                if (shown > 14) {
+                    shown = 14;
+                }
+                int bh = ch + 12 + shown * (ch + 4) + 8;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);        // dim backdrop
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                // query row (a leading '#' hints "symbols")
+                this.font.drawText(batch, bx + 12, by + 7, "# ", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                int qx = bx + 12 + (2 + ov.query.length()) * cw;
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                mutable int i = 0;
+                while (i < shown) {
+                    int orig = m.get(i);
+                    int ry = by + ch + 12 + i * (ch + 4);
+                    if (i == ov.sel) {
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
+                    }
+                    this.font.drawText(batch, bx + 16, ry, ov.items.get(orig), this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    String ln = ":" + ov.targets.get(orig).toString();
+                    this.font.drawText(batch, bx + bw - 16 - ln.length() * cw, ry, ln, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                    i = i + 1;
+                }
+            }
+
+            private method drawPalette(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW, int screenH)
+                    returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 640;
+                int bx = (screenW - bw) / 2;
+                int by = 70;
+                ArrayList<Command>* results = wb.registry().filter(ov.query);
+                mutable int shown = results.size();
+                if (shown > 12) {
+                    shown = 12;
+                }
+                int bh = ch + 12 + shown * (ch + 4) + 8;
+                batch.rect(0, 0, screenW, screenH, 0.0, 0.0, 0.0, 0.35);        // dim backdrop
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, bw, 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                // query row
+                this.font.drawText(batch, bx + 12, by + 7, "> ", this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                this.font.drawText(batch, bx + 12 + 2 * cw, by + 7, ov.query, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                int qx = bx + 12 + (2 + ov.query.length()) * cw;
+                batch.rect(qx, by + 7, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                // results
+                mutable int i = 0;
+                while (i < shown) {
+                    int ry = by + ch + 12 + i * (ch + 4);
+                    if (i == ov.sel) {
+                        batch.rect(bx + 4, ry - 2, bw - 8, ch + 4, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 0.18);
+                    }
+                    Command* cmd = results.get(i);
+                    this.font.drawText(batch, bx + 16, ry, cmd.title, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                    int idx = bx + bw - 16 - cmd.id.length() * cw;
+                    this.font.drawText(batch, idx, ry, cmd.id, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                    i = i + 1;
+                }
+            }
+
+            // Find & replace panel (Ctrl+F): a find row with a live match count and a replace row. Tab moves
+            // focus between the two fields (the focused one shows the caret and a brighter label).
+            private method drawFindBar(Batch2D* batch, Overlay* ov, Workbench* wb, int screenW) returns void {
+                int cw = this.font.advance();
+                int ch = this.font.lineHeight();
+                int bw = 480;
+                int bx = screenW - bw - 24;
+                int by = this.contentTop() + 10;
+                int rowH = ch + 9;
+                int bh = rowH * 2 + 10;
+                batch.rect(bx, by, bw, bh, this.theme.panel.r, this.theme.panel.g, this.theme.panel.b, this.theme.panel.a);
+                batch.rect(bx, by, 3, bh, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                // find row
+                int fy = by + 6;
+                this.drawField(batch, bx, fy, cw, ch, "find", ov.query, !ov.focusReplace);
+                int total = wb.active().matchCount(ov.query);
+                mutable String cnt = total.toString() + " found";
+                if (ov.query.length() == 0) {
+                    cnt = "";
+                }
+                this.font.drawText(batch, bx + bw - (cnt.length() + 1) * cw, fy, cnt, this.theme.textDim.r, this.theme.textDim.g, this.theme.textDim.b, this.theme.textDim.a);
+                // replace row
+                int ry = by + 6 + rowH;
+                this.drawField(batch, bx, ry, cw, ch, "repl", ov.replace, ov.focusReplace);
+                // find options (Alt+C/W/R toggles) + a compact hint
+                String hint = "Aa:" + GpuScreen.onOff(ov.matchCase) + " W:" + GpuScreen.onOff(ov.wholeWord)
+                    + " .*:" + GpuScreen.onOff(ov.useRegex) + "  Alt+C/W/R";
+                if (bw - 24 > hint.length() * cw) {
+                    this.font.drawText(batch, bx + bw - (hint.length() + 1) * cw, ry, hint, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, this.theme.textFaint.a);
+                }
+            }
+            private static method onOff(boolean b) returns String {
+                if (b) {
+                    return "on";
+                }
+                return "off";
+            }
+            // One labelled input row of the find panel; draws the caret when it is the focused field.
+            private method drawField(Batch2D* batch, int bx, int y, int cw, int ch, String caption, String text,
+                                     boolean focused) returns void {
+                mutable float lr = 0.376;
+                mutable float lg = 0.478;
+                mutable float lb = 0.475;
+                if (focused) {
+                    lr = 0.918;
+                    lg = 0.706;
+                    lb = 0.392;
+                }
+                this.font.drawText(batch, bx + 12, y, caption, lr, lg, lb, 1.0);
+                this.font.drawText(batch, bx + 12 + 5 * cw, y, text, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+                if (focused) {
+                    int qx = bx + 12 + (5 + text.length()) * cw;
+                    batch.rect(qx, y, 2, ch, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                }
+            }
+
+            // A chevron in the gutter for a foldable line: a bright amber right-pointing triangle when the
+            // block is collapsed, a clear down-pointing one when it's expanded. Drawn from rects (no glyph in
+            // the atlas). The whole gutter is the click target, so this is just the visual affordance.
+            private method drawFoldMarker(Batch2D* batch, int cx, int cy, boolean folded) returns void {
+                mutable int k = 0;
+                if (folded) {
+                    // right-pointing filled triangle
+                    while (k < 6) {
+                        batch.rect(cx + k, cy - (6 - k), 1, (6 - k) * 2, this.theme.accent.r, this.theme.accent.g, this.theme.accent.b, 1.0);
+                        k = k + 1;
+                    }
+                } else {
+                    // down-pointing filled triangle
+                    while (k < 6) {
+                        batch.rect(cx - (6 - k), cy - 3 + k, (6 - k) * 2, 1, this.theme.text.r, this.theme.text.g, this.theme.text.b, 0.95);
+                        k = k + 1;
+                    }
+                }
+            }
+
+            // Faint vertical guides at each indent level up to `lead` spaces -- the "where does this block
+            // sit" cue. `lead` is the fold/blank-aware effective indent so the guides stay continuous.
+            private method drawIndentGuides(Batch2D* batch, int lead, int textX, int y, int cw, int ch)
+                    returns void {
+                mutable int col = 4;
+                while (col < lead) {
+                    batch.rect(textX + col * cw, y, 1, ch, this.theme.textFaint.r, this.theme.textFaint.g, this.theme.textFaint.b, 0.5);
+                    col = col + 4;
+                }
+            }
+
+            // Is this span a single bracket character the highlighter classified as punctuation? (Brackets in
+            // strings/chars/comments are not PUNCT, so they are never colourised.)
+            private method isBracketSpan(String line, Span* sp) returns boolean {
+                if (sp.kind != Tok.PUNCT || sp.end != sp.start + 1) {
+                    return false;
+                }
+                char c = line.charAt(sp.start);
+                return c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}';
+            }
+            // Draw a bracket tinted by its nesting depth (rainbow brackets), cycling three theme colours.
+            private method drawBracket(Batch2D* batch, int textX, int y, int cw, String line, Span* sp, int depth)
+                    returns void {
+                int x = textX + sp.start * cw;
+                mutable int idx = depth % 3;
+                if (idx < 0) {
+                    idx = 0;
+                }
+                mutable Color* col = this.theme.bracket1;
+                if (idx == 1) {
+                    col = this.theme.bracket2;
+                } else if (idx == 2) {
+                    col = this.theme.bracket3;
+                }
+                this.font.drawSub(batch, x, y, line, sp.start, sp.end, col.r, col.g, col.b, col.a);
+            }
+
+            private method drawSpan(Batch2D* batch, int textX, int y, int cw, String line, Span* sp)
+                    returns void {
+                Tok k = sp.kind;
+                int x = textX + sp.start * cw;
+                if (k == Tok.WS) {
+                    return;
+                }
+                // A multi-hue scheme in the Forge world: amber for structural declarations (the identity
+                // colour), teal for types, magenta for control flow, blue for modifiers, coral for word
+                // operators and self-refs, yellow for calls, green for literals/comments.
+                if (k == Tok.DECL) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tDecl.r, this.theme.tDecl.g, this.theme.tDecl.b, this.theme.tDecl.a);
+                    return;
+                }
+                if (k == Tok.CONTROL) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tControl.r, this.theme.tControl.g, this.theme.tControl.b, this.theme.tControl.a);
+                    return;
+                }
+                if (k == Tok.MODIFIER) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tModifier.r, this.theme.tModifier.g, this.theme.tModifier.b, this.theme.tModifier.a);
+                    return;
+                }
+                if (k == Tok.TYPE) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tType.r, this.theme.tType.g, this.theme.tType.b, this.theme.tType.a);
+                    return;
+                }
+                if (k == Tok.TYPENAME) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tTypeName.r, this.theme.tTypeName.g, this.theme.tTypeName.b, this.theme.tTypeName.a);
+                    return;
+                }
+                if (k == Tok.OPWORD) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tOpword.r, this.theme.tOpword.g, this.theme.tOpword.b, this.theme.tOpword.a);
+                    return;
+                }
+                if (k == Tok.SELFKW) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tSelf.r, this.theme.tSelf.g, this.theme.tSelf.b, this.theme.tSelf.a);
+                    return;
+                }
+                if (k == Tok.CONSTANT) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tConstant.r, this.theme.tConstant.g, this.theme.tConstant.b, this.theme.tConstant.a);
+                    return;
+                }
+                if (k == Tok.FUNC) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tFunc.r, this.theme.tFunc.g, this.theme.tFunc.b, this.theme.tFunc.a);
+                    return;
+                }
+                if (k == Tok.KEYWORD) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tDecl.r, this.theme.tDecl.g, this.theme.tDecl.b, this.theme.tDecl.a);
+                    return;
+                }
+                if (k == Tok.NUMBER) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tNumber.r, this.theme.tNumber.g, this.theme.tNumber.b, this.theme.tNumber.a);
+                    return;
+                }
+                if (k == Tok.STRING) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tString.r, this.theme.tString.g, this.theme.tString.b, this.theme.tString.a);
+                    return;
+                }
+                if (k == Tok.CHAR) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tString.r, this.theme.tString.g, this.theme.tString.b, this.theme.tString.a);
+                    return;
+                }
+                if (k == Tok.COMMENT) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tComment.r, this.theme.tComment.g, this.theme.tComment.b, this.theme.tComment.a);
+                    return;
+                }
+                if (k == Tok.PUNCT) {
+                    this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.tPunct.r, this.theme.tPunct.g, this.theme.tPunct.b, this.theme.tPunct.a);
+                    return;
+                }
+                this.font.drawSub(batch, x, y, line, sp.start, sp.end, this.theme.text.r, this.theme.text.g, this.theme.text.b, this.theme.text.a);
+            }
+
+            // The screen owns its palette and its highlighter, and says so here -- which is also what
+            // makes taking a new theme in `setTheme` a handover rather than an unprovable borrow.
+            public destructor ~GpuScreen() returns void {
+                delete this.theme;
+                delete this.hl;
+                return;
+            }
+        }
+    }
+}

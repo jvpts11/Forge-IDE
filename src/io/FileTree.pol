@@ -1,0 +1,143 @@
+import System.Collections.ArrayList;
+import System.IO.File;
+import System.IO.Files;
+import System.IO.Paths;
+
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // FileNode (one tree entry) lives in FileNode.pol in this namespace.
+
+        // The project file tree rooted at a directory. Directories load their children on demand (first
+        // expand), sorted directories-first then alphabetically. visible() flattens the expanded tree into
+        // the rows a tree widget draws; toggle() expands/collapses a directory.
+        public class FileTree {
+            private mutable FileNode* rootNode;
+
+            public constructor FileTree(String rootPath) {
+                this.rootNode = new FileNode(rootPath, Paths.basename(rootPath), true, 0) on heap;
+                this.rootNode.expanded = true;
+                this.load(this.rootNode);
+            }
+
+            public method root() returns FileNode* {
+                return this.rootNode;
+            }
+
+            // Every file under the project root (recursive), skipping build/vcs dirs -- powers quick-open.
+            // Bounded in depth and count so a huge tree doesn't stall the picker.
+            public method allFiles() returns ArrayList<String>* {
+                ArrayList<String>* out = new ArrayList<String>() on heap;
+                this.walk(this.rootNode.path, out, 0);
+                return out;
+            }
+            private method walk(String dir, ArrayList<String>* out, int depth) returns void {
+                if (depth > 10 || out.size() > 4000) {
+                    return;
+                }
+                ArrayList<String> entries = Files.listDir(dir);
+                mutable int i = 0;
+                while (i < entries.size()) {
+                    String name = entries.get(i);
+                    if (!FileTree.ignored(name)) {
+                        String full = Paths.join(dir, name);
+                        if (File.isDir(full)) {
+                            this.walk(full, out, depth + 1);
+                        } else {
+                            out.add(full);
+                        }
+                    }
+                    i = i + 1;
+                }
+            }
+            // Entries an IDE shouldn't clutter the project view with: VCS/build/dependency directories and
+            // scratch artifacts (Forge's own .ppm/.tmp shots, editor temp files).
+            private static method ignored(String name) returns boolean {
+                return name.equals(".git") || name.equals("build-output") || name.equals("node_modules")
+                    || name.equals(".vs") || name.equals(".vscode") || name.equals("target")
+                    || name.equals("dist") || name.equals("obj") || name.equals("bin")
+                    || name.equals(".forge") || name.endsWith(".tmp") || name.endsWith(".ppm");
+            }
+
+            // Populate a directory node's children (idempotent), skipping ignored entries. Each entry's kind
+            // comes from File.isDir.
+            private method load(FileNode* node) returns void {
+                if (node.loaded || !node.isDir) {
+                    return;
+                }
+                node.loaded = true;
+                ArrayList<String> entries = Files.listDir(node.path);
+                for (mutable int i = 0; i < entries.size(); i++) {
+                    String name = entries.get(i);
+                    if (!FileTree.ignored(name)) {
+                        String full = Paths.join(node.path, name);
+                        node.children.add(new FileNode(full, name, File.isDir(full), node.depth + 1) on heap);
+                    }
+                }
+                this.sortChildren(node.children);
+            }
+
+            // Expand or collapse a directory node; the first expand loads its children.
+            public method toggle(FileNode* node) returns void {
+                if (!node.isDir) {
+                    return;
+                }
+                if (!node.expanded) {
+                    this.load(node);
+                }
+                node.expanded = !node.expanded;
+            }
+
+            // The expanded tree as a flat list, depth-first (a directory's children follow it), which is the
+            // row order a tree widget renders top to bottom.
+            public method visible() returns ArrayList<FileNode*>* {
+                ArrayList<FileNode*>* out = new ArrayList<FileNode*>() on heap;
+                this.collect(this.rootNode, out);
+                return out;
+            }
+            private method collect(FileNode* node, ArrayList<FileNode*>* out) returns void {
+                out.add(node);
+                if (node.isDir && node.expanded) {
+                    for (mutable int i = 0; i < node.children.size(); i++) {
+                        this.collect(node.children.get(i), out);
+                    }
+                }
+            }
+
+            // A drawable label: indentation by depth, a disclosure marker for directories, then the name.
+            public method rowLabel(FileNode* node) returns String {
+                mutable String marker = "  ";
+                if (node.isDir) {
+                    if (node.expanded) {
+                        marker = "v ";
+                    } else {
+                        marker = "> ";
+                    }
+                }
+                return "  ".repeat(node.depth) + marker + node.name;
+            }
+
+            // Insertion sort: directories before files, then case-sensitive alphabetical by name.
+            private method sortChildren(ArrayList<FileNode*>* xs) returns void {
+                for (mutable int i = 1; i < xs.size(); i++) {
+                    FileNode* key = xs.get(i);
+                    mutable int j = i - 1;
+                    while (j >= 0 && this.after(xs.get(j), key)) {
+                        xs.set(j + 1, xs.get(j));
+                        j = j - 1;
+                    }
+                    xs.set(j + 1, key);
+                }
+            }
+            // True if `a` should sort after `b`.
+            private method after(FileNode* a, FileNode* b) returns boolean {
+                if (a.isDir != b.isDir) {
+                    return !a.isDir;
+                }
+                return a.name.compareTo(b.name) > 0;
+            }
+        }
+    }
+}

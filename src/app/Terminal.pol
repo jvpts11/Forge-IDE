@@ -1,0 +1,398 @@
+import System.Collections.ArrayList;
+import System.OS.Pty;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // An integrated terminal: a real shell running behind a Windows pseudo-console (ConPTY), so it
+        // believes it is talking to a terminal and emits the ANSI colour/cursor sequences a real one
+        // understands. Those bytes are parsed here into a TermGrid of coloured cells, which the panel
+        // draws. Keys are forwarded straight to the shell -- there is no local echo or local line
+        // buffer, because the shell itself echoes and handles editing (arrows, history, tab-completion).
+        // Toggle with Ctrl+` ; the shell routes keys here while it is focused.
+        public class Terminal {
+            // Absent rather than empty until the shell is started: a pty that is not attached to a
+            // process is not a pty.
+            private mutable nullable Pty pty;
+            private mutable boolean started;
+            private mutable boolean open;
+            private mutable boolean focused;
+            private mutable TermGrid* grid;
+            private mutable String cwd;                  // where the shell starts
+            private mutable int scrollOff;               // lines scrolled up from the bottom (0 = live tail)
+            private mutable String shell;                // the shell command: "cmd.exe" or "powershell.exe"
+            private mutable String tabName;              // user-facing name (empty = default "Terminal N")
+            private mutable int cols;
+            private mutable int rows;
+
+            // ANSI parser state: 0 ground, 1 after ESC, 2 inside CSI, 3 inside OSC, 4 skip one byte,
+            // 5 saw ESC inside OSC (waiting for the closing backslash of a string terminator).
+            private mutable int state;
+            private mutable ArrayList<int>* params;
+            private mutable int curParam;
+            private mutable boolean hasParam;
+
+            public constructor Terminal() {
+                this.pty = null;
+                this.started = false;
+                this.open = false;
+                this.focused = false;
+                this.cwd = ".";
+                this.scrollOff = 0;
+                this.shell = "cmd.exe";
+                this.tabName = "";
+                this.cols = 120;
+                this.rows = 30;
+                this.grid = new TermGrid(this.cols, this.rows) on heap;
+                this.state = 0;
+                this.params = new ArrayList<int>() on heap;
+                this.curParam = 0;
+                this.hasParam = false;
+            }
+            public destructor ~Terminal() returns void {
+                delete this.grid;
+                delete this.params;
+            }
+
+            // The shell to spawn (default cmd.exe). Set BEFORE the first openPanel; ignored once started.
+            public method setShell(String s) returns void {
+                this.shell = s;
+            }
+            public method isPowerShell() returns boolean {
+                return this.shell.equals("powershell.exe");
+            }
+            // The user-facing name; empty means the panel shows the default "Terminal N".
+            public method setLabel(String n) returns void {
+                this.tabName = n;
+            }
+            public method name() returns String {
+                return this.tabName;
+            }
+            public method screen() returns TermGrid* {
+                return this.grid;
+            }
+
+            // Scrollback view offset (0 = pinned to the newest output). The wheel moves it while the mouse
+            // is over the terminal; typing snaps back to the bottom so you always see what you type.
+            public method scrollOffset() returns int {
+                return this.scrollOff;
+            }
+            public method scrollBy(int delta, int maxUp) returns void {
+                mutable int n = this.scrollOff + delta;
+                if (n < 0) {
+                    n = 0;
+                }
+                if (n > maxUp) {
+                    n = maxUp;
+                }
+                this.scrollOff = n;
+            }
+            public method scrollToBottom() returns void {
+                this.scrollOff = 0;
+            }
+            public method lineCount() returns int {
+                return this.grid.lineCount();
+            }
+
+            public method isOpen() returns boolean {
+                return this.open;
+            }
+            public method isFocused() returns boolean {
+                return this.open && this.focused;
+            }
+            public method setCwd(String dir) returns void {
+                this.cwd = dir;
+            }
+
+            // Tell the pseudo-console the viewport changed size, so the shell re-wraps its output.
+            public method resize(int c, int r) returns void {
+                if (c <= 0 || r <= 0) {
+                    return;
+                }
+                if (c == this.cols && r == this.rows) {
+                    return;
+                }
+                this.cols = c;
+                this.rows = r;
+                this.grid.resize(c, r);
+                if (this.started) {
+                    this.pty.resize(c, r);
+                }
+            }
+
+            // Open the panel (spawning the shell the first time) and focus it.
+            public method openPanel() returns void {
+                this.open = true;
+                this.focused = true;
+                if (!this.started) {
+                    this.pty = Pty.start(this.shell, this.cols, this.rows);
+                    this.started = this.pty.isValid();
+                    if (this.started && this.cwd.length() > 0) {
+                        if (this.isPowerShell()) {
+                            this.pty.write("Set-Location \"" + this.cwd + "\"\r");
+                        } else {
+                            this.pty.write("cd /d \"" + this.cwd + "\"\r");
+                        }
+                    }
+                }
+            }
+            public method toggle() returns void {
+                if (this.open) {
+                    this.open = false;
+                    this.focused = false;
+                } else {
+                    this.openPanel();
+                }
+            }
+            public method focus() returns void {
+                this.focused = this.open;
+            }
+            public method blur() returns void {
+                this.focused = false;
+            }
+
+            // Drain whatever the shell wrote since the last frame (never blocks) through the parser.
+            public method pump() returns void {
+                if (!this.started) {
+                    return;
+                }
+                mutable int guard = 0;
+                while (this.pty.canRead() && guard < 64) {
+                    String chunk = this.pty.read();
+                    if (chunk.length() == 0) {
+                        return;
+                    }
+                    this.absorb(chunk);
+                    guard = guard + 1;
+                }
+            }
+
+            // --- the ANSI/VT state machine ---
+            public method absorb(String chunk) returns void {
+                mutable int i = 0;
+                while (i < chunk.length()) {
+                    this.feed(chunk.charAt(i));
+                    i = i + 1;
+                }
+            }
+
+            private method feed(char c) returns void {
+                if (this.state == 4) {          // one byte of a charset-selection sequence
+                    this.state = 0;
+                    return;
+                }
+                if (this.state == 5) {          // the backslash of ESC \ ends an OSC string
+                    this.state = 0;
+                    return;
+                }
+                if (this.state == 3) {          // OSC: a window-title string we deliberately drop
+                    if (c == cast<char>(7)) {
+                        this.state = 0;
+                    } else if (c == cast<char>(27)) {
+                        this.state = 5;
+                    }
+                    return;
+                }
+                if (this.state == 2) {
+                    this.feedCsi(c);
+                    return;
+                }
+                if (this.state == 1) {
+                    if (c == '[') {
+                        this.state = 2;
+                        this.params.clear();
+                        this.curParam = 0;
+                        this.hasParam = false;
+                    } else if (c == ']') {
+                        this.state = 3;
+                    } else if (c == '(' || c == ')') {
+                        this.state = 4;
+                    } else {
+                        this.state = 0;
+                    }
+                    return;
+                }
+                // ground state
+                if (c == cast<char>(27)) {
+                    this.state = 1;
+                } else if (c == '\n') {
+                    this.grid.lineFeed();
+                } else if (c == '\r') {
+                    this.grid.carriageReturn();
+                } else if (c == cast<char>(8)) {
+                    this.grid.backspace();
+                } else if (c == '\t') {
+                    this.grid.tab();
+                } else if (c >= ' ') {
+                    this.grid.putChar(c);
+                }
+            }
+
+            private method feedCsi(char c) returns void {
+                if (c >= '0' && c <= '9') {
+                    this.curParam = this.curParam * 10 + (cast<int>(c) - cast<int>('0'));
+                    this.hasParam = true;
+                    return;
+                }
+                if (c == ';') {
+                    this.params.add(this.curParam);
+                    this.curParam = 0;
+                    this.hasParam = false;
+                    return;
+                }
+                if (c == '?' || c == '>' || c == '!' || c == '$' || c == '"' || c == '\'' || c == ' ') {
+                    return;   // private markers and intermediates: recorded by presence only
+                }
+                if (c >= '@' && c <= '~') {
+                    if (this.hasParam || this.params.size() > 0) {
+                        this.params.add(this.curParam);
+                    }
+                    this.dispatchCsi(c);
+                    this.state = 0;
+                    this.curParam = 0;
+                    this.hasParam = false;
+                }
+            }
+
+            private method paramOr(int idx, int fallback) returns int {
+                if (idx >= this.params.size()) {
+                    return fallback;
+                }
+                int v = this.params.get(idx);
+                if (v == 0 && fallback > 0) {
+                    return fallback;
+                }
+                return v;
+            }
+
+            private method dispatchCsi(char f) returns void {
+                if (f == 'H' || f == 'f') {
+                    this.grid.moveTo(this.paramOr(0, 1), this.paramOr(1, 1));
+                } else if (f == 'A') {
+                    this.grid.moveUp(this.paramOr(0, 1));
+                } else if (f == 'B') {
+                    this.grid.moveDown(this.paramOr(0, 1));
+                } else if (f == 'C') {
+                    this.grid.moveRight(this.paramOr(0, 1));
+                } else if (f == 'D') {
+                    this.grid.moveLeft(this.paramOr(0, 1));
+                } else if (f == 'G') {
+                    this.grid.setColumn(this.paramOr(0, 1));
+                } else if (f == 'J') {
+                    this.grid.eraseInDisplay(this.paramOr(0, 0));
+                } else if (f == 'K') {
+                    this.grid.eraseInLine(this.paramOr(0, 0));
+                } else if (f == 'm') {
+                    this.applySgrParams();
+                }
+                // Anything else (mode set/reset ?25h, device reports, scroll regions) is ignored: the
+                // grid has no alternate screen, so honouring them would misplace output rather than help.
+            }
+
+            // SGR, including the 256-colour extensions 38;5;N (foreground) and 48;5;N (background).
+            private method applySgrParams() returns void {
+                if (this.params.size() == 0) {
+                    this.grid.resetAttr();
+                    return;
+                }
+                mutable int i = 0;
+                while (i < this.params.size()) {
+                    int code = this.params.get(i);
+                    if ((code == 38 || code == 48) && i + 2 < this.params.size()
+                            && this.params.get(i + 1) == 5) {
+                        if (code == 38) {
+                            this.grid.setFgIndex(this.params.get(i + 2));
+                        } else {
+                            this.grid.setBgIndex(this.params.get(i + 2));
+                        }
+                        i = i + 3;
+                    } else if ((code == 38 || code == 48) && i + 4 < this.params.size()
+                            && this.params.get(i + 1) == 2) {
+                        i = i + 5;   // 24-bit form: skipped, the grid stores palette indices
+                    } else {
+                        this.grid.applySgr(code);
+                        i = i + 1;
+                    }
+                }
+            }
+
+            // --- keyboard, while focused: everything goes straight to the shell ---
+            public method typeChar(char c) returns void {
+                if (!this.started) {
+                    return;
+                }
+                this.pty.write(Terminal.ch2s(c));
+                this.scrollOff = 0;   // typing snaps the view back to the live tail
+            }
+            public method backspace() returns void {
+                this.sendRaw(Terminal.ch2s(cast<char>(8)));
+            }
+            public method enter() returns void {
+                this.sendRaw("\r");
+            }
+            public method interrupt() returns void {   // Ctrl+C
+                this.sendRaw(Terminal.ch2s(cast<char>(3)));
+            }
+            public method arrowUp() returns void {
+                this.sendCsi('A');
+            }
+            public method arrowDown() returns void {
+                this.sendCsi('B');
+            }
+            public method arrowRight() returns void {
+                this.sendCsi('C');
+            }
+            public method arrowLeft() returns void {
+                this.sendCsi('D');
+            }
+            public method tabKey() returns void {
+                this.sendRaw(Terminal.ch2s(cast<char>(9)));
+            }
+            public method paste(String text) returns void {
+                this.sendRaw(text);
+            }
+            private method sendCsi(char letter) returns void {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(cast<char>(27));
+                sb.appendChar('[');
+                sb.appendChar(letter);
+                String seq = sb.toString();
+                delete sb;
+                this.sendRaw(seq);
+            }
+            private method sendRaw(String s) returns void {
+                if (!this.started) {
+                    return;
+                }
+                this.pty.write(s);
+                this.scrollOff = 0;
+            }
+
+            public method isAlive() returns boolean {
+                if (!this.started) {
+                    return false;
+                }
+                return this.pty.isAlive();
+            }
+            public method close() returns void {
+                if (this.started) {
+                    this.pty.close();
+                    this.started = false;
+                }
+                this.open = false;
+                this.focused = false;
+            }
+            private static method ch2s(char c) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(c);
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+        }
+    }
+}

@@ -1,0 +1,148 @@
+program Forge;
+
+public bundle forge {
+    public namespace editor {
+
+        // Bracket matching over a TextBuffer. matchAt finds the partner of the bracket at a position by a
+        // depth scan (forward from an opener, backward from a closer), crossing lines. It counts only the
+        // same bracket type -- simple and predictable; full mixed-type matching can come later. Reuses the
+        // Match sentinel (valid() == false when there is no partner). Does not own the buffer.
+        public class Brackets {
+            // The comment above says it does not own the buffer; `weak` is that sentence in the type.
+            private mutable weak nullable TextBuffer* buf;
+            public constructor Brackets(TextBuffer* buf) {
+                this.buf = buf;
+            }
+
+            private method none() returns Match* {
+                return new Match(0 - 1, 0 - 1, 0) on heap;
+            }
+            private method isOpen(char c) returns boolean {
+                return c == '(' || c == '[' || c == '{';
+            }
+            private method isClose(char c) returns boolean {
+                return c == ')' || c == ']' || c == '}';
+            }
+            private method closeFor(char c) returns char {
+                if (c == '(') {
+                    return ')';
+                }
+                if (c == '[') {
+                    return ']';
+                }
+                return '}';
+            }
+            private method openFor(char c) returns char {
+                if (c == ')') {
+                    return '(';
+                }
+                if (c == ']') {
+                    return '[';
+                }
+                return '{';
+            }
+
+            // The matching bracket for the character at (row, col), or the no-match sentinel.
+            public method matchAt(int row, int col) returns Match* {
+                String line = this.buf.line(row);
+                if (col < 0 || col >= line.length()) {
+                    return this.none();
+                }
+                char c = line.charAt(col);
+                if (this.isOpen(c)) {
+                    return this.scanForward(row, col, c, this.closeFor(c));
+                }
+                if (this.isClose(c)) {
+                    return this.scanBackward(row, col, c, this.openFor(c));
+                }
+                return this.none();
+            }
+
+            private method scanForward(int row, int col, char open, char close) returns Match* {
+                mutable int depth = 0;
+                mutable int r = row;
+                mutable int c = col;
+                while (r < this.buf.lineCount()) {
+                    String line = this.buf.line(r);
+                    while (c < line.length()) {
+                        char ch = line.charAt(c);
+                        if (ch == open) {
+                            depth = depth + 1;
+                        }
+                        else if (ch == close) {
+                            depth = depth - 1;
+                            if (depth == 0) {
+                                return new Match(r, c, 1) on heap;
+                            }
+                        }
+                        c = c + 1;
+                    }
+                    r = r + 1;
+                    c = 0;
+                }
+                return this.none();
+            }
+
+            // The nearest opener that encloses position (row, col): scanning left/up, the first opener seen at
+            // depth 0 (a closer raises depth, an opener at depth > 0 lowers it). No-match sentinel at top level.
+            // Like matchAt, this counts raw bracket characters and does not skip strings/comments.
+            public method enclosingOpen(int row, int col) returns Match* {
+                mutable int depth = 0;
+                mutable int r = row;
+                mutable int c = col - 1;
+                while (r >= 0) {
+                    String line = this.buf.line(r);
+                    if (c >= line.length()) {
+                        c = line.length() - 1;
+                    }
+                    while (c >= 0) {
+                        char ch = line.charAt(c);
+                        if (this.isClose(ch)) {
+                            depth = depth + 1;
+                        } else if (this.isOpen(ch)) {
+                            if (depth == 0) {
+                                return new Match(r, c, 1) on heap;
+                            }
+                            depth = depth - 1;
+                        }
+                        c = c - 1;
+                    }
+                    r = r - 1;
+                    if (r >= 0) {
+                        c = this.buf.line(r).length() - 1;
+                    }
+                }
+                return this.none();
+            }
+
+            private method scanBackward(int row, int col, char close, char open) returns Match* {
+                mutable int depth = 0;
+                mutable int r = row;
+                mutable int c = col;
+                while (r >= 0) {
+                    String line = this.buf.line(r);
+                    while (c >= 0) {
+                        if (c < line.length()) {
+                            char ch = line.charAt(c);
+                            if (ch == close) {
+                                depth = depth + 1;
+                            }
+                            else if (ch == open) {
+                                depth = depth - 1;
+                                if (depth == 0) {
+                                    return new Match(r, c, 1) on heap;
+                                }
+                            }
+                        }
+                        c = c - 1;
+                    }
+                    r = r - 1;
+                    if (r >= 0) {
+                        c = this.buf.line(r).length() - 1;
+                    }
+                }
+                return this.none();
+            }
+        }
+    }
+}

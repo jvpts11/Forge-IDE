@@ -1,0 +1,313 @@
+import System.Collections.ArrayList;
+import System.OS.Subprocess;
+import System.IO.File;
+import System.IO.Paths;
+import System.Text.Strings;
+import forge.app.Diagnostic;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // Live type-checking: the project's real diagnostics, while you type, without building anything.
+        //
+        // The compiler is the only thing that knows what a Polaron error is, so the IDE does not guess --
+        // it asks. `polaron check` runs the front end over the whole project (every file, every dependency
+        // header) and prints exactly what a build would print, minus codegen, which is what makes it quick
+        // enough to run between keystrokes.
+        //
+        // Two things make that usable in an editor:
+        //   - the buffers are NOT saved. Each modified document is written to a scratch file and passed as
+        //     `--overlay <real>=<scratch>`: the compiler reads the scratch bytes but reports the real path,
+        //     so a diagnostic lands on the line you are looking at, in the file you are editing.
+        //   - the check runs as a subprocess and is polled, never waited on. A frame that blocks on a
+        //     compiler is a frozen IDE, and an IDE that freezes while you type is worse than one that has
+        //     no diagnostics at all.
+        //
+        // The debounce is deliberate: a check starts only after typing pauses, and a burst of edits while
+        // one is running replaces the pending request rather than queueing a second compiler.
+        public class Checker {
+            // Absent rather than empty between checks: there is no such thing as a subprocess that is
+            // not a process.
+            private mutable nullable Subprocess proc;
+            private mutable boolean running;         // a check is in flight
+            private mutable boolean pending;         // an edit arrived; check when the debounce expires
+            private mutable int idleTicks;           // frames since the last edit (the debounce)
+            private mutable String buf;              // what the child has said so far
+            private mutable ArrayList<Diagnostic>* diags;   // the last completed check's answer
+            private mutable ArrayList<String>* scratch;     // scratch files to delete when it finishes
+            private mutable String projectDir;
+            private mutable boolean everRan;         // false until the first check completes
+            private mutable int runs;                // completed checks (the tests watch this)
+            private mutable String tool;             // the toolchain driver ("polaron", or a path to one)
+            private mutable String lastCmd;          // the command line of the last check (shown on failure)
+
+            public constructor Checker() {
+                this.proc = null;
+                this.running = false;
+                this.pending = false;
+                this.idleTicks = 0;
+                this.buf = "";
+                this.diags = new ArrayList<Diagnostic>() on heap;
+                this.scratch = new ArrayList<String>() on heap;
+                this.projectDir = "";
+                this.everRan = false;
+                this.runs = 0;
+                this.tool = "polaron";
+                this.lastCmd = "";
+            }
+
+            // Point the checker at a specific toolchain driver. It defaults to whatever `polaron` is on PATH,
+            // which is what an installed Forge wants; a Forge built from source can be told to check with
+            // the compiler it was built with.
+            public method setTool(String path) returns void {
+                this.tool = path;
+                return;
+            }
+
+            public method setProjectDir(String dir) returns void {
+                this.projectDir = dir;
+                return;
+            }
+            // The toolchain driver used for check/explain (so `<tool> explain <code>` uses the same one).
+            public method toolPath() returns String {
+                return this.tool;
+            }
+            public method isRunning() returns boolean {
+                return this.running;
+            }
+            public method hasRun() returns boolean {
+                return this.everRan;
+            }
+            public method runCount() returns int {
+                return this.runs;
+            }
+            public method diagnostics() returns ArrayList<Diagnostic>* {
+                return this.diags;
+            }
+            // What was run, and what it said -- the two things you want when a check surprises you.
+            public method lastCommand() returns String {
+                return this.lastCmd;
+            }
+            public method lastOutput() returns String {
+                return this.buf;
+            }
+
+            // An edit happened: restart the debounce. Nothing runs yet -- the point of the debounce is that
+            // a burst of keystrokes costs ONE check, not one per character.
+            public method touch() returns void {
+                this.pending = true;
+                this.idleTicks = 0;
+                return;
+            }
+
+            // Called once per frame. `delayFrames` is how long the typing must be still before a check
+            // starts. Returns true when a check just completed (the caller repaints its diagnostics).
+            public method pump(ArrayList<String>* dirtyPaths, ArrayList<String>* dirtyTexts,
+                               int delayFrames) returns boolean {
+                if (this.running) {
+                    return this.poll();
+                }
+                if (!this.pending) {
+                    return false;
+                }
+                this.idleTicks = this.idleTicks + 1;
+                if (this.idleTicks < delayFrames) {
+                    return false;
+                }
+                this.pending = false;
+                this.start(dirtyPaths, dirtyTexts);
+                return false;
+            }
+
+            // Spawn the check. Each unsaved buffer goes to a scratch file next to the project (under
+            // .forge/, which the file tree already hides) and is handed to the compiler as an overlay.
+            public method start(ArrayList<String>* dirtyPaths, ArrayList<String>* dirtyTexts) returns void {
+                if (this.projectDir.length() == 0) {
+                    return;
+                }
+                this.buf = "";
+                delete this.scratch;                              // free the previous run's paths
+                this.scratch = new ArrayList<String>() on heap;
+                String dir = Paths.join(this.projectDir, ".forge");
+                if (!File.exists(dir)) {
+                    File.mkdir(dir);
+                }
+                mutable String cmd = this.tool + " check --project \"" + this.projectDir + "\"";
+                mutable int i = 0;
+                while (i < dirtyPaths.size()) {
+                    String real = dirtyPaths.get(i);
+                    String tmp = this.scratchPathFor(i);
+                    File.writeAll(tmp, dirtyTexts.get(i));
+                    this.scratch.add(tmp);
+                    cmd = cmd + " --overlay \"" + real + "=" + tmp + "\"";
+                    i = i + 1;
+                }
+                // --project instead of a shell that cds: no shell on the hot path, and it works the same on
+                // both platforms. startCombined, because a compiler prints its diagnostics on stderr, and a
+                // check whose errors went to a console nobody reads would call every broken file clean.
+                this.lastCmd = cmd;
+                this.proc = Subprocess.startCombined(cmd);
+                this.running = this.proc.isValid();
+                if (!this.running) {
+                    this.cleanup();
+                }
+                return;
+            }
+
+            // Drain whatever the child has written, without blocking. When it exits, parse what it said.
+            private method poll() returns boolean {
+                while (this.proc.canRead() && this.proc.isAlive()) {
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        break;
+                    }
+                    this.buf = this.buf + chunk;
+                }
+                if (this.proc.isAlive()) {
+                    return false;
+                }
+                while (this.proc.canRead()) {           // the tail it wrote just before exiting
+                    String chunk = this.proc.read();
+                    if (chunk.length() == 0) {
+                        break;
+                    }
+                    this.buf = this.buf + chunk;
+                }
+                this.proc.close();
+                this.running = false;
+                this.everRan = true;
+                this.runs = this.runs + 1;
+                this.diags = Checker.parse(this.buf);
+                this.cleanup();
+                return true;
+            }
+
+            private method cleanup() returns void {
+                mutable int i = 0;
+                while (i < this.scratch.size()) {
+                    File.remove(this.scratch.get(i));
+                    i = i + 1;
+                }
+                delete this.scratch;                              // free the removed scratch paths
+                this.scratch = new ArrayList<String>() on heap;
+                return;
+            }
+
+            private method scratchPathFor(int i) returns String {
+                return Paths.join(Paths.join(this.projectDir, ".forge"), "check" + i.toString() + ".pol");
+            }
+
+            // Turn the compiler's output into diagnostics. Its format is fixed and simple:
+            //   <path>:<line>:<col>: error|warning: <message>
+            // A line that is not shaped like that (the "OK: entry point ..." banner, a driver message) is
+            // not a diagnostic and is dropped -- silently, because the compiler is allowed to talk.
+            public static method parse(String text) returns ArrayList<Diagnostic>* {
+                ArrayList<Diagnostic>* out = new ArrayList<Diagnostic>() on heap;
+                ArrayList<String> lines = Strings.split(text, "\n");
+                mutable int i = 0;
+                while (i < lines.size()) {
+                    Diagnostic* d = Checker.parseLine(lines.get(i).trim());
+                    if (d.line >= 0) {
+                        out.add(d);
+                    } else {
+                        delete d;
+                    }
+                    i = i + 1;
+                }
+                return out;
+            }
+
+            // One line. A Windows path starts with "C:", so the drive colon must not be read as the
+            // line/column separator: the scan for the three colons starts after the second character.
+            private static method parseLine(String s) returns Diagnostic* {
+                int sev = Checker.severityOf(s);
+                if (sev < 0 || s.length() < 6) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                String tail = s.substring(2, s.length());
+                int c1 = tail.indexOf(":");
+                if (c1 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                String path = s.substring(0, 2 + c1);
+                String rest = tail.substring(c1 + 1, tail.length());   // line:col: sev: message
+                int c2 = rest.indexOf(":");
+                if (c2 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                String lineNo = rest.substring(0, c2);
+                String rest2 = rest.substring(c2 + 1, rest.length());  // col: sev: message
+                int c3 = rest2.indexOf(":");
+                if (c3 < 0) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                String colNo = rest2.substring(0, c3);
+                if (!Checker.isNumber(lineNo) || !Checker.isNumber(colNo)) {
+                    return new Diagnostic("", 0 - 1, 0, 0, "") on heap;
+                }
+                // "error: message", or "parse error: message" -- the label runs to the first colon that is
+                // followed by a space, and the message is everything after it.
+                String after = rest2.substring(c3 + 1, rest2.length()).trim();
+                int c4 = after.indexOf(": ");
+                mutable String msg = after;
+                if (c4 >= 0) {
+                    msg = after.substring(c4 + 2, after.length()).trim();
+                }
+                // 1-based line/col, matching the Diagnostic the build path produces and the renderer
+                // expects (GpuScreen subtracts 1). Store 0-based here and every squiggle lands a line high.
+                Diagnostic* d = new Diagnostic(Paths.basename(path), lineNo.toInt(), colNo.toInt(), sev,
+                                               msg) on heap;
+                d.code = Checker.codeOf(after);   // "Polaron-0401" from "error[Polaron-0401]: ...", or ""
+                return d;
+            }
+
+            // 0 = error, 1 = warning, -1 = not a diagnostic at all. The compiler labels a diagnostic by the
+            // phase that raised it -- "lex error", "parse error", "error" (semantic) -- and all three are
+            // errors to the person typing. An IDE that only understood one of the three would show a clean
+            // file with a syntax error in it, which is worse than showing nothing.
+            // A coded diagnostic reads "...: error[Polaron-0102]: msg", an un-coded one "...: error: msg", and a
+            // front-end one "...: parse error: msg" / "lex error". All are errors to the person typing.
+            private static method severityOf(String s) returns int {
+                if (Strings.count(s, ": error: ") > 0 || Strings.count(s, ": error[") > 0
+                    || Strings.count(s, ": parse error: ") > 0 || Strings.count(s, ": lex error: ") > 0) {
+                    return 0;
+                }
+                if (Strings.count(s, ": warning: ") > 0 || Strings.count(s, ": warning[") > 0) {
+                    return 1;
+                }
+                return 0 - 1;
+            }
+
+            // The code inside a "error[Polaron-0401]: ..." label, or "" if the label carries none. `s` is the
+            // text after the column (the severity token + message).
+            private static method codeOf(String s) returns String {
+                int open = s.indexOf("[");
+                if (open < 0) {
+                    return "";
+                }
+                int close = s.indexOf("]");
+                if (close < 0 || close < open) {
+                    return "";
+                }
+                return s.substring(open + 1, close);
+            }
+
+            private static method isNumber(String s) returns boolean {
+                if (s.length() == 0) {
+                    return false;
+                }
+                mutable int i = 0;
+                while (i < s.length()) {
+                    char c = s.charAt(i);
+                    if (c < '0' || c > '9') {
+                        return false;
+                    }
+                    i = i + 1;
+                }
+                return true;
+            }
+        }
+    }
+}

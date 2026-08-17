@@ -1,0 +1,316 @@
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // An RGBA colour, 0..1 per channel. Colours live in the Theme so the whole IDE can be re-skinned by
+        // swapping one object; GpuScreen reads them through fill()/text() helpers.
+        // Color (the RGBA value class) lives in Color.pol in this namespace.
+
+        // The colour palette for the whole IDE. Two presets: a neutral dark (the default -- no green tint)
+        // and a light one. Everything GpuScreen draws pulls its colour from here, so a theme switch is one
+        // assignment. The amber accent (the Flamo brand colour) is kept in both themes.
+        public class Theme {
+            public mutable boolean dark;
+            public mutable String name;
+
+            // Surfaces
+            public mutable Color* bg;         // editor background
+            public mutable Color* chrome;     // menu bar / tab bar / status bar
+            public mutable Color* panel;      // tree / output / debug panels
+            public mutable Color* termBg;     // integrated terminal body (always dark, like a real shell)
+            public mutable Color* termText;   // integrated terminal text (light, reads on termBg)
+            public mutable ArrayList<Color*>* ansi;  // the terminal's 256-entry xterm palette
+            public mutable Color* gutter;     // the line-number gutter band
+            public mutable Color* divider;    // hairlines between panels
+            public mutable Color* caretLine;  // the current line's subtle highlight (usually white-on-alpha)
+            public mutable Color* selection;  // selection background
+            public mutable Color* hover;      // row/tab/button hover wash
+
+            // Text
+            public mutable Color* text;       // primary code / label text
+            public mutable Color* textDim;    // line numbers, secondary chrome text
+            public mutable Color* textFaint;  // inactive / very secondary
+            public mutable Color* accent;     // amber brand: active line number, chips, markers
+            public mutable Color* onAccent;   // text drawn on top of an accent fill (the Polaron chip)
+
+            // Semantic
+            public mutable Color* added;      // git added / success green
+            public mutable Color* modified;   // git modified / info blue
+            public mutable Color* removed;    // git deleted / error red
+            public mutable Color* warning;    // warning amber
+            public mutable Color* breakpoint; // breakpoint dot red
+
+            // Syntax tokens
+            public mutable Color* tDecl;
+            public mutable Color* tControl;
+            public mutable Color* tModifier;
+            public mutable Color* tType;
+            public mutable Color* tTypeName;
+            public mutable Color* tOpword;
+            public mutable Color* tSelf;
+            public mutable Color* tConstant;
+            public mutable Color* tFunc;
+            public mutable Color* tNumber;
+            public mutable Color* tString;
+            public mutable Color* tComment;
+            public mutable Color* tPunct;
+
+            // Bracket-pair colours, cycled by nesting depth (VS Code / JetBrains rainbow brackets).
+            public mutable Color* bracket1;
+            public mutable Color* bracket2;
+            public mutable Color* bracket3;
+
+            // THE PALETTE IS CHOSEN ONCE, HERE. It used to be applied twice -- the constructor laid down
+            // the dark preset and the factory immediately laid down another over the top -- so every
+            // theme ever made leaked a full palette, twenty-eight colours and the 256-entry terminal
+            // list, before anybody had looked at it.
+            public constructor Theme(boolean dark) {
+                this.dark = dark;
+                this.name = "Dark";
+                if (dark) {
+                    Theme.applyDark(this);
+                } else {
+                    Theme.applyLight(this);
+                }
+            }
+
+            // AND THE THEME OWNS ITS COLOURS, which is said here and nowhere else. Without this the
+            // whole palette outlived every theme that held it, and a program that lets the user try
+            // themes leaked one palette per try.
+            public destructor ~Theme() returns void {
+                delete this.bg; delete this.chrome; delete this.panel;
+                delete this.termBg; delete this.termText;
+                delete this.gutter; delete this.divider; delete this.caretLine;
+                delete this.selection; delete this.hover;
+                delete this.text; delete this.textDim; delete this.textFaint;
+                delete this.accent; delete this.onAccent;
+                delete this.added; delete this.modified; delete this.removed;
+                delete this.warning; delete this.breakpoint;
+                delete this.tDecl; delete this.tControl; delete this.tModifier;
+                delete this.tType; delete this.tTypeName; delete this.tOpword;
+                delete this.tSelf; delete this.tConstant; delete this.tFunc;
+                delete this.tNumber; delete this.tString; delete this.tComment;
+                delete this.tPunct;
+                delete this.bracket1; delete this.bracket2; delete this.bracket3;
+                for (var c in this.ansi.toArray()) {
+                    delete c;
+                }
+                delete this.ansi;
+                return;
+            }
+
+            // ONE THEMED SLOT, BY THE NAME A THEME FILE USES. It lives here rather than in the reader
+            // because taking a colour means freeing the one it replaces, and what a theme frees is the
+            // theme's own business -- the reader would have had to reach into twenty-two fields and
+            // remember the delete at each of them. Answers false when the name is not a slot, and then
+            // the caller still owns what it passed.
+            internal method setColour(String key, Color* c) returns boolean {
+                if (key.equals("bg")) {
+                    delete this.bg; this.bg = c; return true;
+                } else if (key.equals("chrome")) {
+                    delete this.chrome; this.chrome = c; return true;
+                } else if (key.equals("panel")) {
+                    delete this.panel; this.panel = c; return true;
+                } else if (key.equals("termBg")) {
+                    delete this.termBg; this.termBg = c; return true;
+                } else if (key.equals("termText")) {
+                    delete this.termText; this.termText = c; return true;
+                } else if (key.equals("gutter")) {
+                    delete this.gutter; this.gutter = c; return true;
+                } else if (key.equals("divider")) {
+                    delete this.divider; this.divider = c; return true;
+                } else if (key.equals("text")) {
+                    delete this.text; this.text = c; return true;
+                } else if (key.equals("textDim")) {
+                    delete this.textDim; this.textDim = c; return true;
+                } else if (key.equals("accent")) {
+                    delete this.accent; this.accent = c; return true;
+                } else if (key.equals("added")) {
+                    delete this.added; this.added = c; return true;
+                } else if (key.equals("modified")) {
+                    delete this.modified; this.modified = c; return true;
+                } else if (key.equals("removed")) {
+                    delete this.removed; this.removed = c; return true;
+                } else if (key.equals("warning")) {
+                    delete this.warning; this.warning = c; return true;
+                } else if (key.equals("keyword")) {
+                    delete this.tControl; this.tControl = c; return true;
+                } else if (key.equals("type")) {
+                    delete this.tType; this.tType = c; return true;
+                } else if (key.equals("string")) {
+                    delete this.tString; this.tString = c; return true;
+                } else if (key.equals("number")) {
+                    delete this.tNumber; this.tNumber = c; return true;
+                } else if (key.equals("comment")) {
+                    delete this.tComment; this.tComment = c; return true;
+                } else if (key.equals("declaration")) {
+                    delete this.tDecl; this.tDecl = c; return true;
+                } else if (key.equals("modifier")) {
+                    delete this.tModifier; this.tModifier = c; return true;
+                } else if (key.equals("function")) {
+                    delete this.tFunc; this.tFunc = c; return true;
+                }
+                return false;
+            }
+
+            public static method makeDark() returns Theme* {
+                return new Theme(true) on heap;
+            }
+            public static method makeLight() returns Theme* {
+                return new Theme(false) on heap;
+            }
+
+            // Neutral dark (the default). Cool near-gray surfaces -- no green cast -- with the amber accent
+            // and a saturated multi-hue token scheme.
+            private static method applyDark(Theme* t) returns void {
+                t.dark = true;
+                t.name = "Dark";
+                t.bg = new Color(0.110, 0.118, 0.137, 1.0) on heap;
+                t.chrome = new Color(0.086, 0.090, 0.106, 1.0) on heap;
+                t.panel = new Color(0.125, 0.133, 0.157, 1.0) on heap;
+                t.termBg = new Color(0.043, 0.047, 0.055, 1.0) on heap;    // near-black shell body
+                t.termText = new Color(0.859, 0.871, 0.882, 1.0) on heap;
+                t.gutter = new Color(0.098, 0.106, 0.125, 1.0) on heap;
+                t.divider = new Color(0.267, 0.278, 0.318, 1.0) on heap;   // visible boundary between panels
+                t.caretLine = new Color(1.0, 1.0, 1.0, 0.035) on heap;
+                t.selection = new Color(0.286, 0.400, 0.573, 0.40) on heap;
+                t.hover = new Color(1.0, 1.0, 1.0, 0.055) on heap;
+                t.text = new Color(0.843, 0.855, 0.882, 1.0) on heap;
+                t.textDim = new Color(0.451, 0.471, 0.510, 1.0) on heap;
+                t.textFaint = new Color(0.290, 0.306, 0.341, 1.0) on heap;
+                t.accent = new Color(0.918, 0.706, 0.392, 1.0) on heap;
+                t.onAccent = new Color(0.125, 0.086, 0.043, 1.0) on heap;
+                t.added = new Color(0.451, 0.816, 0.604, 1.0) on heap;
+                t.modified = new Color(0.435, 0.678, 0.796, 1.0) on heap;
+                t.removed = new Color(0.902, 0.353, 0.310, 1.0) on heap;
+                t.warning = new Color(0.902, 0.706, 0.318, 1.0) on heap;
+                t.breakpoint = new Color(0.886, 0.251, 0.243, 1.0) on heap;
+                t.tDecl = new Color(0.918, 0.706, 0.392, 1.0) on heap;
+                t.tControl = new Color(0.831, 0.573, 0.706, 1.0) on heap;
+                t.tModifier = new Color(0.435, 0.678, 0.796, 1.0) on heap;
+                t.tType = new Color(0.376, 0.788, 0.678, 1.0) on heap;
+                t.tTypeName = new Color(0.545, 0.831, 0.741, 1.0) on heap;
+                t.tOpword = new Color(0.898, 0.588, 0.443, 1.0) on heap;
+                t.tSelf = new Color(0.882, 0.529, 0.505, 1.0) on heap;
+                t.tConstant = new Color(0.847, 0.706, 0.482, 1.0) on heap;
+                t.tFunc = new Color(0.863, 0.863, 0.667, 1.0) on heap;
+                t.tNumber = new Color(0.710, 0.808, 0.659, 1.0) on heap;
+                t.tString = new Color(0.561, 0.780, 0.624, 1.0) on heap;
+                t.tComment = new Color(0.463, 0.502, 0.478, 1.0) on heap;
+                t.tPunct = new Color(0.576, 0.600, 0.635, 1.0) on heap;
+                t.bracket1 = new Color(0.984, 0.827, 0.400, 1.0) on heap;   // gold
+                t.bracket2 = new Color(0.855, 0.573, 0.878, 1.0) on heap;   // orchid
+                t.bracket3 = new Color(0.361, 0.686, 0.980, 1.0) on heap;   // sky blue
+                Theme.applyAnsi(t);
+            }
+
+            // Light theme. Warm-neutral off-white surfaces, darker ink text, the same accent + token hues
+            // darkened enough to read on a light ground.
+            private static method applyLight(Theme* t) returns void {
+                t.dark = false;
+                t.name = "Light";
+                t.bg = new Color(0.988, 0.988, 0.984, 1.0) on heap;
+                t.chrome = new Color(0.937, 0.937, 0.929, 1.0) on heap;
+                t.panel = new Color(0.957, 0.957, 0.949, 1.0) on heap;
+                t.termBg = new Color(0.137, 0.145, 0.165, 1.0) on heap;    // dark shell body even in light mode
+                t.termText = new Color(0.882, 0.890, 0.902, 1.0) on heap;
+                t.gutter = new Color(0.965, 0.965, 0.957, 1.0) on heap;
+                t.divider = new Color(0.851, 0.851, 0.835, 1.0) on heap;
+                t.caretLine = new Color(0.0, 0.0, 0.0, 0.045) on heap;
+                t.selection = new Color(0.267, 0.478, 0.780, 0.28) on heap;
+                t.hover = new Color(0.0, 0.0, 0.0, 0.055) on heap;
+                t.text = new Color(0.145, 0.157, 0.180, 1.0) on heap;
+                t.textDim = new Color(0.482, 0.494, 0.518, 1.0) on heap;
+                t.textFaint = new Color(0.663, 0.671, 0.686, 1.0) on heap;
+                t.accent = new Color(0.780, 0.522, 0.169, 1.0) on heap;
+                t.onAccent = new Color(1.0, 1.0, 1.0, 1.0) on heap;
+                t.added = new Color(0.204, 0.588, 0.376, 1.0) on heap;
+                t.modified = new Color(0.176, 0.443, 0.647, 1.0) on heap;
+                t.removed = new Color(0.769, 0.196, 0.157, 1.0) on heap;
+                t.warning = new Color(0.706, 0.494, 0.055, 1.0) on heap;
+                t.breakpoint = new Color(0.800, 0.180, 0.169, 1.0) on heap;
+                t.tDecl = new Color(0.647, 0.408, 0.078, 1.0) on heap;
+                t.tControl = new Color(0.643, 0.278, 0.482, 1.0) on heap;
+                t.tModifier = new Color(0.129, 0.416, 0.573, 1.0) on heap;
+                t.tType = new Color(0.075, 0.494, 0.443, 1.0) on heap;
+                t.tTypeName = new Color(0.114, 0.478, 0.431, 1.0) on heap;
+                t.tOpword = new Color(0.694, 0.353, 0.169, 1.0) on heap;
+                t.tSelf = new Color(0.678, 0.259, 0.243, 1.0) on heap;
+                t.tConstant = new Color(0.588, 0.412, 0.129, 1.0) on heap;
+                t.tFunc = new Color(0.482, 0.451, 0.161, 1.0) on heap;
+                t.tNumber = new Color(0.106, 0.475, 0.290, 1.0) on heap;
+                t.tString = new Color(0.153, 0.514, 0.314, 1.0) on heap;
+                t.tComment = new Color(0.545, 0.573, 0.545, 1.0) on heap;
+                t.tPunct = new Color(0.353, 0.376, 0.408, 1.0) on heap;
+                t.bracket1 = new Color(0.706, 0.502, 0.090, 1.0) on heap;   // gold
+                t.bracket2 = new Color(0.600, 0.290, 0.620, 1.0) on heap;   // orchid
+                t.bracket3 = new Color(0.129, 0.435, 0.741, 1.0) on heap;   // blue
+                Theme.applyAnsi(t);
+            }
+
+            // The terminal's xterm-256 palette. It is theme-independent: the terminal body stays dark in
+            // both presets, and a shell that asks for "red" must get the red it expects, not a re-skin.
+            // 0-15 are the classic ANSI colours, 16-231 the 6x6x6 colour cube, 232-255 the grey ramp.
+            private static method applyAnsi(Theme* t) returns void {
+                t.ansi = new ArrayList<Color*>() on heap;
+                Theme.addAnsi(t, 0.157, 0.165, 0.180);   // 0 black (lifted, so it reads on termBg)
+                Theme.addAnsi(t, 0.800, 0.286, 0.290);   // 1 red
+                Theme.addAnsi(t, 0.482, 0.706, 0.353);   // 2 green
+                Theme.addAnsi(t, 0.851, 0.678, 0.310);   // 3 yellow
+                Theme.addAnsi(t, 0.353, 0.573, 0.851);   // 4 blue
+                Theme.addAnsi(t, 0.706, 0.443, 0.780);   // 5 magenta
+                Theme.addAnsi(t, 0.337, 0.714, 0.729);   // 6 cyan
+                Theme.addAnsi(t, 0.859, 0.871, 0.882);   // 7 white (the default foreground)
+                Theme.addAnsi(t, 0.376, 0.396, 0.427);   // 8 bright black
+                Theme.addAnsi(t, 0.937, 0.412, 0.400);   // 9 bright red
+                Theme.addAnsi(t, 0.612, 0.839, 0.451);   // 10 bright green
+                Theme.addAnsi(t, 0.965, 0.804, 0.400);   // 11 bright yellow
+                Theme.addAnsi(t, 0.478, 0.694, 0.965);   // 12 bright blue
+                Theme.addAnsi(t, 0.827, 0.561, 0.898);   // 13 bright magenta
+                Theme.addAnsi(t, 0.451, 0.843, 0.855);   // 14 bright cyan
+                Theme.addAnsi(t, 0.976, 0.980, 0.988);   // 15 bright white
+                // 16-231: the colour cube, each axis stepping 0, 95, 135, 175, 215, 255.
+                mutable int r = 0;
+                while (r < 6) {
+                    mutable int g = 0;
+                    while (g < 6) {
+                        mutable int b = 0;
+                        while (b < 6) {
+                            Theme.addAnsi(t, Theme.cubeLevel(r), Theme.cubeLevel(g), Theme.cubeLevel(b));
+                            b = b + 1;
+                        }
+                        g = g + 1;
+                    }
+                    r = r + 1;
+                }
+                // 232-255: 24 greys from 8 to 238 in steps of 10.
+                mutable int i = 0;
+                while (i < 24) {
+                    float v = cast<float>(8 + i * 10) / 255.0;
+                    Theme.addAnsi(t, v, v, v);
+                    i = i + 1;
+                }
+            }
+            private static method addAnsi(Theme* t, float r, float g, float b) returns void {
+                t.ansi.add(new Color(r, g, b, 1.0) on heap);
+            }
+            private static method cubeLevel(int n) returns float {
+                if (n == 0) {
+                    return 0.0;
+                }
+                return cast<float>(55 + n * 40) / 255.0;
+            }
+            // The colour for a palette index, clamped so a malformed sequence cannot index out of range.
+            public method ansiColor(int idx) returns Color* {
+                mutable int i = idx;
+                if (i < 0 || i >= this.ansi.size()) {
+                    i = 7;
+                }
+                return this.ansi.get(i);
+            }
+        }
+    }
+}

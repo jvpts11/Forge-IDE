@@ -1,0 +1,82 @@
+import OpenGL.Text.FontAtlas;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // A loaded monospace font: the GL atlas texture id plus the grid metrics needed to place glyphs. It
+        // keeps only ints (not the atlas pixel buffer, which lives on the GPU after upload), and draws text
+        // by emitting one glyph quad per character into a Batch2D -- computing each cell's UVs inline, with
+        // no per-glyph allocation.
+        public class Font {
+            public mutable int tex;
+            public mutable int cellW;
+            public mutable int cellH;
+            public mutable int cols;
+            public mutable int first;
+            public mutable int count;
+            public mutable int atlasW;
+            public mutable int atlasH;
+            public mutable int ascent;
+
+            public constructor Font(FontAtlas a, int tex) {
+                this.tex = tex;
+                this.cellW = a.cellW;
+                this.cellH = a.cellH;
+                this.cols = a.cols;
+                this.first = a.first;
+                this.count = a.count;
+                this.atlasW = a.atlasW;
+                this.atlasH = a.atlasH;
+                this.ascent = a.ascent;
+            }
+
+            public method texture() returns int {
+                return this.tex;
+            }
+            public method advance() returns int {
+                return this.cellW;
+            }
+            public method lineHeight() returns int {
+                return this.cellH;
+            }
+
+            // Draw one glyph at pixel (x, y) tinted (r,g,b,a). A glyph outside the atlas range draws nothing.
+            // The batch is taken by pointer -- it accumulates shared mutable state (a value copy would be
+            // silently discarded).
+            public method drawChar(Batch2D* batch, int x, int y, char c, float r, float g, float bl, float a)
+                    returns void {
+                int idx = cast<int>(c) - this.first;
+                if (idx < 0 || idx >= this.count) {
+                    return;
+                }
+                int col = idx % this.cols;
+                int row = idx / this.cols;
+                float u0 = cast<float>(col * this.cellW) / cast<float>(this.atlasW);
+                float v0 = cast<float>(row * this.cellH) / cast<float>(this.atlasH);
+                float u1 = cast<float>((col + 1) * this.cellW) / cast<float>(this.atlasW);
+                float v1 = cast<float>((row + 1) * this.cellH) / cast<float>(this.atlasH);
+                batch.glyph(x, y, this.cellW, this.cellH, u0, v0, u1, v1, r, g, bl, a);
+            }
+
+            // Draw a whole string starting at pixel (x, y), advancing one cell per character.
+            public method drawText(Batch2D* batch, int x, int y, String s, float r, float g, float bl, float a)
+                    returns void {
+                this.drawSub(batch, x, y, s, 0, s.length(), r, g, bl, a);
+            }
+
+            // Draw the [from, to) slice of `s` starting at pixel (x, y) -- used to colour one token span.
+            public method drawSub(Batch2D* batch, int x, int y, String s, int from, int to,
+                                  float r, float g, float bl, float a) returns void {
+                mutable int cx = x;
+                mutable int i = from;
+                while (i < to) {
+                    this.drawChar(batch, cx, y, s.charAt(i), r, g, bl, a);
+                    cx = cx + this.cellW;
+                    i = i + 1;
+                }
+            }
+        }
+    }
+}

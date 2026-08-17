@@ -319,7 +319,7 @@ def _build_server():
 
     @mcp.tool()
     def regions() -> str:
-        """LDP3 regions declared in the project (the Regions tool window)."""
+        """Polaron regions declared in the project (the Regions tool window)."""
         return _dump("inspect", "cmd view.regions")
 
     @mcp.tool()

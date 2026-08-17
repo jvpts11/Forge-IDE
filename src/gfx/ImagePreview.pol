@@ -1,0 +1,234 @@
+import System.IO.File;
+import System.Text.Strings;
+import System.Collections.ArrayList;
+import OpenGL.Core.Gl;
+import OpenGL.Textures.Texture;
+
+program Forge;
+
+public bundle forge {
+    public namespace gfx {
+
+        // A picture of what the program under development drew.
+        //
+        // A graphics program renders into its own window, which Forge cannot reach into. What it CAN do
+        // is show an image the program writes out -- which is how Forge itself is verified, via `shot`.
+        // So the preview shows a file the program writes: run the program, have it write a frame, and
+        // look at it without leaving the editor. Refresh is explicit (a key), not polled -- re-reading
+        // an image every frame to see whether it changed would cost more than it is worth.
+        //
+        // PPM is decoded here because it is what the Polaron graphics stack emits (and GDI+ cannot read
+        // it); PNG, BMP and JPG go through the loader Polaron-OpenGL already has.
+        public class ImagePreview {
+            private mutable int texId;
+            private mutable int imgW;
+            private mutable int imgH;
+            private mutable String path;
+            private mutable String status;
+            // The loader, borrowed from the window that owns it -- the decoders need a context. `weak`
+            // says the thing that is true: nothing orders this panel's life against the window's, and
+            // the slot empties by itself the moment the context goes. It also IS the "have I got a
+            // context" fact, so the boolean that used to say it separately is gone: two ways to ask
+            // the same question is how one of them ends up answering wrongly.
+            private mutable weak nullable Gl* gl;
+
+            public constructor ImagePreview() {
+                this.texId = 0;
+                this.imgW = 0;
+                this.imgH = 0;
+                this.path = "";
+                this.status = "";
+                this.gl = null;
+            }
+
+            // Called once when the window exists. Uploading a texture needs a context, and the key
+            // handlers that trigger a reload do not have one to pass down.
+            public method attach(Gl* g) returns void {
+                this.gl = g;
+                return;
+            }
+
+            public method texture() returns int {
+                return this.texId;
+            }
+            public method width() returns int {
+                return this.imgW;
+            }
+            public method height() returns int {
+                return this.imgH;
+            }
+            public method sourcePath() returns String {
+                return this.path;
+            }
+            public method statusLine() returns String {
+                return this.status;
+            }
+            public method hasImage() returns boolean {
+                return this.texId != 0 && this.imgW > 0;
+            }
+
+            // Point the preview at a file and load it now.
+            public method load(String p) returns void {
+                this.path = p;
+                this.reload();
+                return;
+            }
+
+            // Re-read the current file. Called on demand and when the file changed on disk.
+            public method reload() returns void {
+                nullable Gl* held = this.gl;
+                if (held == null) {
+                    this.status = "no GL context yet";
+                    return;
+                }
+                if (this.path.length() == 0) {
+                    this.status = "no image selected";
+                    return;
+                }
+                if (!File.exists(this.path)) {
+                    this.status = "not found: " + this.path;
+                    this.texId = 0;
+                    return;
+                }
+                if (this.path.endsWith(".ppm")) {
+                    this.loadPpm();
+                } else {
+                    int id = Texture.load2D(held, this.path);
+                    if (id == 0) {
+                        this.status = "could not decode " + this.path;
+                        return;
+                    }
+                    this.texId = id;
+                    this.status = "";
+                    // GDI+ owns the decode, so the size is not reported back here; a square-ish default
+                    // keeps the aspect sane until a PPM (which does report it) replaces it.
+                    if (this.imgW == 0) {
+                        this.imgW = 1;
+                        this.imgH = 1;
+                    }
+                }
+                return;
+            }
+
+
+            // PPM: magic, width, height, maxval, then w*h RGB triples. Both flavours are handled --
+            // P6 stores the triples as raw bytes, P3 as decimal text. P3 is what the Polaron graphics
+            // stack actually writes (Forge's own `shot` included), so supporting only the binary form
+            // would have failed on the very files this is meant to show. Comments (#) may appear
+            // between header fields.
+            private method loadPpm() returns void {
+                String raw = File.readAll(this.path);
+                if (raw.length() < 10 || raw.charAt(0) != 'P') {
+                    this.status = "not a PPM: " + this.path;
+                    return;
+                }
+                char kind = raw.charAt(1);
+                if (kind != '3' && kind != '6') {
+                    this.status = "unsupported PPM type";
+                    return;
+                }
+                mutable int i = 2;
+                int w = ImagePreview.nextInt(raw, i);
+                i = ImagePreview.afterInt(raw, i);
+                int h = ImagePreview.nextInt(raw, i);
+                i = ImagePreview.afterInt(raw, i);
+                int maxv = ImagePreview.nextInt(raw, i);
+                i = ImagePreview.afterInt(raw, i);
+                if (w <= 0 || h <= 0 || maxv != 255) {
+                    this.status = "unsupported PPM header";
+                    return;
+                }
+                byte[] rgba = new byte[w * h * 4]();
+                mutable int px = 0;
+                if (kind == '6') {
+                    i = i + 1;                   // the single whitespace byte before the pixel data
+                    if (raw.length() - i < w * h * 3) {
+                        this.status = "PPM is truncated";
+                        delete rgba;
+                        return;
+                    }
+                    while (px < w * h) {
+                        int src = i + px * 3;
+                        int dst = px * 4;
+                        rgba[dst] = cast<byte>(raw.charAt(src));
+                        rgba[dst + 1] = cast<byte>(raw.charAt(src + 1));
+                        rgba[dst + 2] = cast<byte>(raw.charAt(src + 2));
+                        rgba[dst + 3] = cast<byte>(255);
+                        px = px + 1;
+                    }
+                } else {
+                    // P3: read decimal numbers, three per pixel. Scanning inline rather than through
+                    // nextInt/afterInt because this runs millions of times on a full-screen frame.
+                    mutable int at = i;
+                    while (px < w * h) {
+                        mutable int comp = 0;
+                        while (comp < 3) {
+                            while (at < raw.length() && (raw.charAt(at) < '0' || raw.charAt(at) > '9')) {
+                                at = at + 1;
+                            }
+                            mutable int v = 0;
+                            while (at < raw.length() && raw.charAt(at) >= '0' && raw.charAt(at) <= '9') {
+                                v = v * 10 + (cast<int>(raw.charAt(at)) - cast<int>('0'));
+                                at = at + 1;
+                            }
+                            rgba[px * 4 + comp] = cast<byte>(v);
+                            comp = comp + 1;
+                        }
+                        rgba[px * 4 + 3] = cast<byte>(255);
+                        px = px + 1;
+                    }
+                }
+                nullable Gl* held = this.gl;
+                if (held == null) {
+                    this.status = "no GL context yet";
+                    delete rgba;
+                    return;
+                }
+                this.texId = Texture.upload2DRGBA(rgba, w, h);
+                this.imgW = w;
+                this.imgH = h;
+                this.status = "";
+                delete rgba;
+                return;
+            }
+
+            // The next decimal number at or after `at`, skipping whitespace and # comment lines.
+            public static method nextInt(String s, int at) returns int {
+                mutable int i = ImagePreview.skipBlanks(s, at);
+                mutable int v = 0;
+                mutable boolean any = false;
+                while (i < s.length() && s.charAt(i) >= '0' && s.charAt(i) <= '9') {
+                    v = v * 10 + (cast<int>(s.charAt(i)) - cast<int>('0'));
+                    any = true;
+                    i = i + 1;
+                }
+                return any ? v : 0 - 1;
+            }
+            // The index just past the number that nextInt would read.
+            public static method afterInt(String s, int at) returns int {
+                mutable int i = ImagePreview.skipBlanks(s, at);
+                while (i < s.length() && s.charAt(i) >= '0' && s.charAt(i) <= '9') {
+                    i = i + 1;
+                }
+                return i;
+            }
+            private static method skipBlanks(String s, int at) returns int {
+                mutable int i = at;
+                mutable boolean going = true;
+                while (i < s.length() && going) {
+                    char c = s.charAt(i);
+                    if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                        i = i + 1;
+                    } else if (c == '#') {                 // comment runs to end of line
+                        while (i < s.length() && s.charAt(i) != '\n') {
+                            i = i + 1;
+                        }
+                    } else {
+                        going = false;
+                    }
+                }
+                return i;
+            }
+        }
+    }
+}

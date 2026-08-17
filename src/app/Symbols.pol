@@ -1,0 +1,179 @@
+import forge.app.Controller;
+import System.Collections.ArrayList;
+
+program Forge;
+
+public bundle forge {
+    public namespace app {
+
+        // One navigable symbol in a file: a display label ("class GpuScreen", "method drawFrame") and the
+        // 1-based line it's declared on.
+        // Symbol (the go-to-symbol entry) lives in Symbol.pol in this namespace.
+
+        // Extracts the declarations in a buffer (namespace/bundle/class/interface/enum/record/struct/method/
+        // constructor/destructor) as a flat, in-order symbol list -- the source for go-to-symbol (Ctrl+Shift+O).
+        // A best-effort line scan (strips // comments), which is all the navigator needs.
+        public class Symbols {
+
+            public static method list(Controller* c) returns ArrayList<Symbol>* {
+                ArrayList<Symbol>* out = new ArrayList<Symbol>() on heap;
+                int n = c.editor().document().lineCount();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = Symbols.stripComment(c.editor().document().line(row));
+                    mutable String kind = "";
+                    mutable String name = "";
+                    mutable String prev = "";
+                    mutable int i = 0;
+                    int len = line.length();
+                    while (i < len) {
+                        while (i < len && !Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        mutable int start = i;
+                        while (i < len && Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        if (i > start) {
+                            String word = line.substring(start, i);
+                            if (kind.length() == 0 && Symbols.isDeclKeyword(prev)) {
+                                kind = prev;
+                                name = word;
+                            }
+                            prev = word;
+                        }
+                    }
+                    if (name.length() > 0) {
+                        out.add(new Symbol(kind + " " + name, row + 1) on heap);
+                    }
+                    row = row + 1;
+                }
+                return out;
+            }
+
+            // Same extraction as list(), but over raw file lines (no Controller) -- powers workspace-wide
+            // symbol search across files that aren't open. Appends to `out`.
+            public static method scan(ArrayList<String> lines, ArrayList<Symbol>* out) returns void {
+                int n = lines.size();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = Symbols.stripComment(lines.get(row));
+                    mutable String kind = "";
+                    mutable String name = "";
+                    mutable String prev = "";
+                    mutable int i = 0;
+                    int len = line.length();
+                    while (i < len) {
+                        while (i < len && !Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        mutable int start = i;
+                        while (i < len && Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        if (i > start) {
+                            String word = line.substring(start, i);
+                            if (kind.length() == 0 && Symbols.isDeclKeyword(prev)) {
+                                kind = prev;
+                                name = word;
+                            }
+                            prev = word;
+                        }
+                    }
+                    if (name.length() > 0) {
+                        out.add(new Symbol(kind + " " + name, row + 1) on heap);
+                    }
+                    row = row + 1;
+                }
+                return;
+            }
+
+            // The 0-based line where `name` is declared (the first class/method/etc whose name matches), or
+            // -1. Powers go-to-definition: the identifier under the caret is looked up here.
+            public static method definitionLine(Controller* c, String name) returns int {
+                int n = c.editor().document().lineCount();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = Symbols.stripComment(c.editor().document().line(row));
+                    mutable String prev = "";
+                    mutable int i = 0;
+                    int len = line.length();
+                    while (i < len) {
+                        while (i < len && !Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        mutable int start = i;
+                        while (i < len && Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        if (i > start) {
+                            String word = line.substring(start, i);
+                            if (Symbols.isDeclKeyword(prev) && word.equals(name)) {
+                                return row;
+                            }
+                            prev = word;
+                        }
+                    }
+                    row = row + 1;
+                }
+                return 0 - 1;
+            }
+
+            // The 0-based line where `name` is declared in raw file `lines`, or -1. The cross-file half of
+            // definitionLine (which works on an open Controller) -- lets go-to-definition reach declarations in
+            // files that aren't open.
+            public static method definitionLineIn(ArrayList<String> lines, String name) returns int {
+                int n = lines.size();
+                mutable int row = 0;
+                while (row < n) {
+                    String line = Symbols.stripComment(lines.get(row));
+                    mutable String prev = "";
+                    mutable int i = 0;
+                    int len = line.length();
+                    while (i < len) {
+                        while (i < len && !Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        mutable int start = i;
+                        while (i < len && Symbols.isIdentChar(line.charAt(i))) {
+                            i = i + 1;
+                        }
+                        if (i > start) {
+                            String word = line.substring(start, i);
+                            if (Symbols.isDeclKeyword(prev) && word.equals(name)) {
+                                return row;
+                            }
+                            prev = word;
+                        }
+                    }
+                    row = row + 1;
+                }
+                return 0 - 1;
+            }
+
+            private static method isDeclKeyword(String w) returns boolean {
+                return w.equals("namespace") || w.equals("bundle") || w.equals("class")
+                    || w.equals("interface") || w.equals("enum") || w.equals("record")
+                    || w.equals("struct") || w.equals("union") || w.equals("method")
+                    || w.equals("constructor") || w.equals("destructor");
+            }
+
+            private static method isIdentChar(char ch) returns boolean {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9') || ch == '_';
+            }
+
+            private static method stripComment(String line) returns String {
+                int n = line.length();
+                mutable int i = 0;
+                while (i + 1 < n) {
+                    if (line.charAt(i) == '/' && line.charAt(i + 1) == '/') {
+                        return line.substring(0, i);
+                    }
+                    i = i + 1;
+                }
+                return line;
+            }
+        }
+    }
+}

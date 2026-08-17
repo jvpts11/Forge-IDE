@@ -1,0 +1,1272 @@
+﻿import System.Collections.ArrayList;
+import System.Text.StringBuilder;
+import forge.gfx.Overlay;
+import forge.gfx.ImagePreview;
+import forge.gfx.Color;
+import forge.io.ThemeStore;
+import forge.io.PluginStore;
+import forge.app.LspClient;
+import forge.app.AiChat;
+import forge.app.Terminal;
+import forge.app.TermGrid;
+import forge.app.TermLine;
+import forge.editor.TextBuffer;
+import forge.editor.Editor;
+import forge.editor.Match;
+import forge.syntax.Tok;
+import forge.syntax.Span;
+import forge.syntax.Highlighter;
+import forge.io.Document;
+import forge.io.FileTree;
+import forge.io.FileNode;
+import System.IO.Console;
+import System.IO.File;
+import System.IO.Files;
+import System.IO.Paths;
+import System.OS.Env;
+import System.Time.Stopwatch;
+import forge.view.Viewport;
+import forge.view.TextRenderer;
+import forge.view.ScreenRenderer;
+import forge.app.Controller;
+import forge.app.DocumentManager;
+import forge.app.Command;
+import forge.app.CommandRegistry;
+import forge.app.ContextMenu;
+import forge.app.Symbols;
+import forge.app.Breadcrumbs;
+import forge.app.Symbol;
+import forge.app.Completion;
+import forge.app.Workbench;
+import forge.input.Key;
+import forge.input.KeyCode;
+import forge.input.KeyMap;
+import forge.app.Checker;
+import forge.app.QuickFix;
+import forge.app.Diagnostic;
+import forge.gfx.TextWrap;
+import forge.test.Asserts;
+
+program Forge;
+
+public bundle forge {
+    public namespace test {
+
+        // The headless self-check suite for the editor core. run() exercises every module and returns the
+        // number of failed checks (0 == all green), so the entry point can report and exit accordingly.
+        public class CoreTests {
+            public static method run() returns int {
+                Asserts* a = new Asserts() on heap;
+
+                // --- TextBuffer edits ---
+                TextBuffer buf = new TextBuffer() on heap;
+                buf.loadText("ab\ncd");
+                buf.insertChar(0, 1, 'X');               // "aXb"
+                buf.splitLine(0, 2);                       // "aX" / "b"
+                buf.backspace(2, 0);                       // join "cd" onto "b" -> "bcd"
+                a.eqInt(buf.lineCount(), 2, "buf.lineCount");
+                a.eqStr(buf.line(0), "aX", "buf.line0");
+                a.eqStr(buf.line(1), "bcd", "buf.line1");
+
+                // --- Editor: type, Enter, backspace within a line, backspace-join, cursor motion ---
+                Editor ed = new Editor(new TextBuffer() on heap) on heap;
+                ed.type('h'); ed.type('i'); ed.enter(); ed.type('y'); ed.type('o');   // "hi" / "yo"
+                a.eqInt(ed.document().lineCount(), 2, "ed.lineCount");
+                a.eqStr(ed.document().line(0), "hi", "ed.line0");
+                a.eqStr(ed.document().line(1), "yo", "ed.line1");
+                a.eqInt(ed.cursorRow(), 1, "ed.row");
+                a.eqInt(ed.cursorCol(), 2, "ed.col");
+                ed.backspace(); ed.backspace();
+                a.eqStr(ed.document().line(1), "", "ed.after-bs-line1");
+                a.eqInt(ed.cursorCol(), 0, "ed.col-after-bs");
+                ed.backspace();                            // line-start backspace joins -> "hi"
+                a.eqInt(ed.document().lineCount(), 1, "ed.after-join-count");
+                a.eqStr(ed.document().line(0), "hi", "ed.after-join");
+                a.eqInt(ed.cursorRow(), 0, "ed.row-after-join");
+                a.eqInt(ed.cursorCol(), 2, "ed.col-after-join");
+                ed.moveLeft();  a.eqInt(ed.cursorCol(), 1, "moveLeft");
+                ed.moveRight(); ed.moveRight();  a.eqInt(ed.cursorCol(), 2, "moveRight-clamp");
+
+                // --- syntax highlighting ---
+                Highlighter hl = new Highlighter() on heap;
+                ArrayList<Span> sp = hl.tokenize("public int x = 42; // hi");
+                a.eqInt(sp.size(), 12, "hl.spanCount");
+                a.eqInt(cast<int>(sp.get(0).kind), cast<int>(Tok.MODIFIER), "hl.public-modifier");
+                a.eqInt(cast<int>(sp.get(2).kind), cast<int>(Tok.TYPE), "hl.int-type");
+                a.eqInt(cast<int>(sp.get(4).kind), cast<int>(Tok.IDENT), "hl.x-ident");
+                a.eqInt(cast<int>(sp.get(8).kind), cast<int>(Tok.NUMBER), "hl.42-number");
+                a.eqInt(cast<int>(sp.get(11).kind), cast<int>(Tok.COMMENT), "hl.comment");
+                ArrayList<Span> sp2 = hl.tokenize("s = \"hi\";");
+                a.eqInt(cast<int>(sp2.get(4).kind), cast<int>(Tok.STRING), "hl.string");
+
+                // --- bracket-pair depth (seeds rainbow-bracket colouring) ---
+                a.eqInt(hl.bracketDelta("if (x) {"), 1, "brk.open");
+                a.eqInt(hl.bracketDelta("}"), 0 - 1, "brk.close");
+                a.eqInt(hl.bracketDelta("a[i] = f(g(x));"), 0, "brk.balanced");
+                a.eqInt(hl.bracketDelta("s = \"{[(\";"), 0, "brk.in-string");
+                a.eqInt(hl.bracketDelta("x = 1; // {{{"), 0, "brk.in-comment");
+                a.eqInt(hl.bracketDelta("c = '}';"), 0, "brk.in-char");
+
+                // --- undo / redo ---
+                Editor ed2 = new Editor(new TextBuffer() on heap) on heap;
+                ed2.type('h'); ed2.type('i');
+                a.eqStr(ed2.document().line(0), "hi", "ur.typed");
+                ed2.undo();  a.eqStr(ed2.document().line(0), "h", "ur.undo1");
+                ed2.undo();  a.eqStr(ed2.document().line(0), "", "ur.undo2");
+                ed2.redo();  a.eqStr(ed2.document().line(0), "h", "ur.redo1");
+                ed2.redo();  a.eqStr(ed2.document().line(0), "hi", "ur.redo2");
+                a.eqBool(ed2.redo(), false, "ur.redo-empty");
+                ed2.undo();
+                ed2.type('o');
+                a.eqStr(ed2.document().line(0), "ho", "ur.new-edit");
+                a.eqBool(ed2.redo(), false, "ur.redo-cleared");
+
+                // --- read-only buffer: every edit is refused, the caret never moves, undo stays empty ---
+                Editor ro = new Editor(new TextBuffer() on heap) on heap;
+                ro.type('a');
+                ro.type('b');
+                ro.type('c');
+                ro.document().setReadOnly(true);
+                ro.type('X');
+                ro.enter();
+                ro.backspace();
+                ro.deleteForward();
+                ro.paste();
+                ro.duplicateLine();
+                ro.indent();
+                a.eqInt(ro.document().lineCount(), 1, "ro.lineCount");
+                a.eqStr(ro.document().line(0), "abc", "ro.unchanged");
+                a.eqInt(ro.cursorRow(), 0, "ro.row-frozen");
+                a.eqInt(ro.cursorCol(), 3, "ro.col-frozen");
+                ro.document().setReadOnly(false);   // unlocking restores normal editing
+                ro.type('d');
+                a.eqStr(ro.document().line(0), "abcd", "ro.editable-again");
+
+                // --- file I/O (Document) ---
+                Document doc = new Document(new TextBuffer() on heap) on heap;
+                doc.buffer().loadText("line1\nline2\nline3");
+                doc.saveAs("forge_doc_test.tmp");
+                a.eqBool(doc.isModified(), false, "doc.saved-clean");
+                Document doc2 = new Document(new TextBuffer() on heap) on heap;
+                doc2.openFile("forge_doc_test.tmp");
+                a.eqStr(doc2.buffer().line(0), "line1", "doc.reload-l0");
+                a.eqStr(doc2.buffer().line(1), "line2", "doc.reload-l1");
+                a.eqStr(doc2.buffer().line(2), "line3", "doc.reload-l2");
+                a.eqStr(doc2.path(), "forge_doc_test.tmp", "doc.path");
+
+                // --- selection: extend, read, replace, multi-line delete ---
+                Editor es = new Editor(new TextBuffer() on heap) on heap;
+                es.document().loadText("hello world");
+                es.selectRight(); es.selectRight(); es.selectRight(); es.selectRight(); es.selectRight();
+                a.eqBool(es.hasSelection(), true, "sel.has");
+                a.eqStr(es.selectionText(), "hello", "sel.text");
+                es.type('H'); es.type('i');                    // replace the selection with "Hi"
+                a.eqStr(es.document().line(0), "Hi world", "sel.replace");
+                a.eqBool(es.hasSelection(), false, "sel.cleared");
+                // selection summary for the status bar
+                Editor si = new Editor(new TextBuffer() on heap) on heap;
+                si.document().loadText("hello world");
+                si.selectRight(); si.selectRight(); si.selectRight();          // "hel"
+                a.eqStr(si.selectionInfo(), "(3 selected)   ", "sel.info-single");
+                Editor si2 = new Editor(new TextBuffer() on heap) on heap;
+                si2.document().loadText("ab\ncd\nef");
+                si2.selectDown(); si2.selectDown();                            // spans 3 lines
+                a.eqStr(si2.selectionInfo(), "(6 chars, 3 lines)   ", "sel.info-multi");
+                // breadcrumbs: the trail names and the line each was declared on, for clickable crumbs
+                Controller bc = new Controller(24, 80) on heap;
+                bc.editor().document().loadText("program P;\npublic bundle b {\n    public namespace n {\n        public class C {\n            public method m() returns void {\n                return;\n            }\n        }\n    }\n}");
+                bc.editor().setCaret(5, 0);                    // inside method m()
+                ArrayList<String>* bt = Breadcrumbs.trail(bc);
+                ArrayList<int>* bl = Breadcrumbs.trailLines(bc);
+                a.eqInt(bt.size(), 4, "crumb.trail-len");
+                a.eqStr(bt.get(0), "b", "crumb.bundle");
+                a.eqStr(bt.get(3), "m", "crumb.method");
+                a.eqInt(bl.size(), 4, "crumb.lines-len");
+                a.eqInt(bl.get(0), 1, "crumb.bundle-line");
+                a.eqInt(bl.get(2), 3, "crumb.class-line");
+                a.eqInt(bl.get(3), 4, "crumb.method-line");
+
+                Editor es2 = new Editor(new TextBuffer() on heap) on heap;
+                es2.document().loadText("aaa\nbbb\nccc");
+                es2.moveRight();                                // caret (0,1)
+                es2.selectDown();                               // anchor (0,1), caret (1,1)
+                es2.selectRight();                              // caret (1,2)
+                a.eqStr(es2.selectionText(), "aa\nbb", "sel.multiline-text");
+                es2.deleteSelection();
+                a.eqStr(es2.document().line(0), "ab", "sel.multiline-deleted");
+                a.eqInt(es2.document().lineCount(), 2, "sel.multiline-count");
+                a.eqInt(es2.cursorRow(), 0, "sel.caret-row");
+                a.eqInt(es2.cursorCol(), 1, "sel.caret-col");
+
+                // --- multi-cursor: Ctrl+D add-next-occurrence, then type-over replaces all ---
+                Editor md = new Editor(new TextBuffer() on heap) on heap;
+                md.document().loadText("foo bar foo\nfoo end");
+                md.setCaret(0, 0);
+                a.eqBool(md.selectNextOccurrence(), true, "mc.first-selects-word");
+                a.eqStr(md.selectionText(), "foo", "mc.word");
+                a.eqBool(md.hasMultipleCarets(), false, "mc.no-extra-yet");
+                a.eqBool(md.selectNextOccurrence(), true, "mc.second-adds");
+                a.eqInt(md.extraCaretCount(), 1, "mc.one-extra");
+                a.eqBool(md.selectNextOccurrence(), true, "mc.third-adds");
+                a.eqInt(md.extraCaretCount(), 2, "mc.two-extra");
+                md.typeMulti('X');
+                a.eqStr(md.document().line(0), "X bar X", "mc.replace-line0");
+                a.eqStr(md.document().line(1), "X end", "mc.replace-line1");
+                a.eqBool(md.hasMultipleCarets(), true, "mc.carets-remain");
+
+                // --- multi-cursor: Ctrl+Shift+L selects every occurrence at once ---
+                Editor ma = new Editor(new TextBuffer() on heap) on heap;
+                ma.document().loadText("id x id y id");
+                ma.setCaret(0, 0);
+                a.eqBool(ma.selectAllOccurrences(), true, "mc.all-ok");
+                a.eqInt(ma.extraCaretCount(), 2, "mc.all-two-extra");
+                a.eqStr(ma.selectionText(), "id", "mc.all-primary-sel");
+                ma.typeMulti('Z');
+                a.eqStr(ma.document().line(0), "Z x Z y Z", "mc.all-replaced");
+
+                // --- column / box selection: Ctrl+Alt+Down carries the column span down, type replaces all ---
+                Editor cse = new Editor(new TextBuffer() on heap) on heap;
+                cse.document().loadText("abcd\nefgh\nijkl");
+                cse.setCaret(0, 1);
+                cse.selectRight();
+                cse.selectRight();
+                a.eqStr(cse.selectionText(), "bc", "colsel.primary");
+                cse.addCaretBelow();
+                cse.addCaretBelow();
+                a.eqInt(cse.extraCaretCount(), 2, "colsel.carets");
+                cse.typeMulti('X');
+                a.eqStr(cse.document().line(0), "aXd", "colsel.l0");
+                a.eqStr(cse.document().line(1), "eXh", "colsel.l1");
+                a.eqStr(cse.document().line(2), "iXl", "colsel.l2");
+
+                // --- join lines (Ctrl+J): merge selected lines into one, single-spaced ---
+                Editor jl = new Editor(new TextBuffer() on heap) on heap;
+                jl.document().loadText("int x =\n    5;\nnext");
+                jl.setCaret(0, 0);
+                jl.selectDown();
+                a.eqStr(jl.selectionText(), "int x =\n", "join.sel");
+                jl.joinLines();
+                a.eqStr(jl.document().line(0), "int x = 5;", "join.merged");
+                a.eqStr(jl.document().line(1), "next", "join.rest");
+                a.eqInt(jl.document().lineCount(), 2, "join.count");
+
+                // --- sort selected lines ascending ---
+                Editor srt = new Editor(new TextBuffer() on heap) on heap;
+                srt.document().loadText("banana\napple\ncherry");
+                srt.setCaret(0, 0);
+                srt.selectDown();
+                srt.selectDown();
+                srt.sortSelectedLines();
+                a.eqStr(srt.document().line(0), "apple", "sort.l0");
+                a.eqStr(srt.document().line(1), "banana", "sort.l1");
+                a.eqStr(srt.document().line(2), "cherry", "sort.l2");
+
+                // --- extract variable: pull a selected expression into a var declaration above ---
+                Editor xv = new Editor(new TextBuffer() on heap) on heap;
+                xv.document().loadText("    return this.w * 2;");
+                xv.beginSelect(0, 11);
+                xv.extendSelectTo(0, 21);
+                a.eqStr(xv.selectionText(), "this.w * 2", "xvar.sel");
+                a.eqBool(xv.extractVariable("area"), true, "xvar.ok");
+                a.eqStr(xv.document().line(0), "    var area = this.w * 2;", "xvar.decl");
+                a.eqStr(xv.document().line(1), "    return area;", "xvar.usage");
+
+                // --- auto-surround: typing a bracket with a selection wraps it (keeps it selected) ---
+                Editor sur = new Editor(new TextBuffer() on heap) on heap;
+                sur.document().loadText("hello world");
+                sur.beginSelect(0, 0);
+                sur.extendSelectTo(0, 5);
+                a.eqStr(sur.selectionText(), "hello", "surround.sel");
+                sur.typeWithPairs('(');
+                a.eqStr(sur.document().line(0), "(hello) world", "surround.wrap");
+                a.eqStr(sur.selectionText(), "hello", "surround.keeps-sel");
+
+                // --- transform case (upper/lower) of the selection, in place ---
+                Editor tcase = new Editor(new TextBuffer() on heap) on heap;
+                tcase.document().loadText("Hello World");
+                tcase.beginSelect(0, 0);
+                tcase.extendSelectTo(0, 5);
+                tcase.transformCase(true);
+                a.eqStr(tcase.document().line(0), "HELLO World", "case.upper");
+                tcase.transformCase(false);
+                a.eqStr(tcase.document().line(0), "hello World", "case.lower");
+
+                // --- go to matching bracket ---
+                Editor mb = new Editor(new TextBuffer() on heap) on heap;
+                mb.document().loadText("f(a, b)");
+                mb.setCaret(0, 1);
+                mb.goToMatchingBracket();
+                a.eqInt(mb.cursorCol(), 6, "match.jump");
+
+                // --- expand / shrink selection (Shift+Alt+Right/Left): word -> inside () -> whole () ---
+                Editor ex = new Editor(new TextBuffer() on heap) on heap;
+                ex.document().loadText("foo(bar, baz)");
+                ex.setCaret(0, 5);
+                ex.expandSelection();
+                a.eqStr(ex.selectionText(), "bar", "exp.word");
+                ex.expandSelection();
+                a.eqStr(ex.selectionText(), "bar, baz", "exp.inner");
+                ex.expandSelection();
+                a.eqStr(ex.selectionText(), "(bar, baz)", "exp.outer");
+                ex.shrinkSelection();
+                a.eqStr(ex.selectionText(), "bar, baz", "exp.shrink-inner");
+                ex.shrinkSelection();
+                a.eqStr(ex.selectionText(), "bar", "exp.shrink-word");
+
+                // --- trim trailing whitespace on save ---
+                Editor trm = new Editor(new TextBuffer() on heap) on heap;
+                trm.document().loadText("a = 1;   \nb = 2;\t\n   \nc");
+                a.eqBool(trm.trimTrailingWhitespace(), true, "trim.changed");
+                a.eqStr(trm.document().line(0), "a = 1;", "trim.l0");
+                a.eqStr(trm.document().line(1), "b = 2;", "trim.l1");
+                a.eqStr(trm.document().line(2), "", "trim.l2-blank");
+                a.eqStr(trm.document().line(3), "c", "trim.l3");
+                a.eqBool(trm.trimTrailingWhitespace(), false, "trim.idempotent");
+
+                // --- cross-file go-to-definition: find a declaration line in raw file lines ---
+                ArrayList<String> srcLines = new ArrayList<String>() on heap;
+                srcLines.add("public namespace app {");
+                srcLines.add("    public class Widget {");
+                srcLines.add("        public method draw() returns void {");
+                srcLines.add("        }");
+                srcLines.add("    }");
+                srcLines.add("}");
+                a.eqInt(Symbols.definitionLineIn(srcLines, "Widget"), 1, "def.class-line");
+                a.eqInt(Symbols.definitionLineIn(srcLines, "draw"), 2, "def.method-line");
+                a.eqInt(Symbols.definitionLineIn(srcLines, "Nope"), 0 - 1, "def.not-found");
+
+                // --- project-wide autocomplete: cross-file symbol names offered while typing ---
+                Completion comp = new Completion() on heap;
+                ArrayList<String>* psym = new ArrayList<String>() on heap;
+                psym.add("Breadcrumbs");
+                psym.add("GpuScreen");
+                comp.setProjectSymbols(psym);
+                Controller cc = new Controller(24, 80) on heap;
+                cc.editor().document().loadText("Bread");
+                cc.placeCaret(0, 5);
+                comp.update(cc);
+                a.eqBool(comp.active, true, "psym.active");
+                mutable boolean hasBread = false;
+                mutable int pk2 = 0;
+                while (pk2 < comp.items.size()) {
+                    if (comp.items.get(pk2).equals("Breadcrumbs")) {
+                        hasBread = true;
+                    }
+                    pk2 = pk2 + 1;
+                }
+                a.eqBool(hasBread, true, "psym.suggests-cross-file");
+
+                // --- code snippets: insert a template at the caret ---
+                Workbench wsnip = new Workbench(24, 80) on heap;
+                a.eqBool(wsnip.insertSnippet("snippet.forLoop"), true, "snippet.for-ok");
+                a.eqStr(wsnip.active().editor().document().line(0),
+                        "for (mutable int i = 0; i < n; i++) {", "snippet.for-l0");
+                a.eqStr(wsnip.active().editor().document().line(1), "}", "snippet.for-l1");
+                a.eqBool(wsnip.insertSnippet("snippet.bogus"), false, "snippet.unknown");
+
+                // --- clipboard: copy/paste, cut, multi-line paste ---
+                Editor ec = new Editor(new TextBuffer() on heap) on heap;
+                ec.document().loadText("abc");
+                ec.selectRight(); ec.selectRight(); ec.selectRight();   // select "abc"
+                ec.copy();
+                a.eqStr(ec.clipboardText(), "abc", "clip.copy");
+                ec.moveRight();                                 // clear selection, caret at end (0,3)
+                ec.paste();                                     // -> "abcabc"
+                a.eqStr(ec.document().line(0), "abcabc", "clip.paste");
+                a.eqInt(ec.cursorCol(), 6, "clip.paste-caret");
+
+                Editor ec2 = new Editor(new TextBuffer() on heap) on heap;
+                ec2.document().loadText("xy");
+                ec2.selectRight();                              // select "x"
+                ec2.cut();
+                a.eqStr(ec2.clipboardText(), "x", "clip.cut-content");
+                a.eqStr(ec2.document().line(0), "y", "clip.cut-removed");
+                a.eqInt(ec2.cursorCol(), 0, "clip.cut-caret");
+
+                Editor ec3 = new Editor(new TextBuffer() on heap) on heap;
+                ec3.document().loadText("ab\ncd");
+                ec3.selectRight(); ec3.selectRight(); ec3.selectDown();   // select "ab\ncd"
+                ec3.copy();
+                a.eqStr(ec3.clipboardText(), "ab\ncd", "clip.ml-copy");
+                ec3.moveRight();                                // clear selection, caret at (1,2)
+                ec3.paste();                                    // insert "ab\ncd" -> 3 lines
+                a.eqInt(ec3.document().lineCount(), 3, "clip.ml-count");
+                a.eqStr(ec3.document().line(1), "cdab", "clip.ml-l1");
+                a.eqStr(ec3.document().line(2), "cd", "clip.ml-l2");
+                a.eqInt(ec3.cursorRow(), 2, "clip.ml-caret-row");
+
+                // --- line operations: duplicate / delete / move / indent ---
+                Editor el = new Editor(new TextBuffer() on heap) on heap;
+                el.document().loadText("one\ntwo\nthree");
+                el.duplicateLine();                             // ["one","one","two","three"], caret row 1
+                a.eqInt(el.document().lineCount(), 4, "line.dup-count");
+                a.eqStr(el.document().line(1), "one", "line.dup-content");
+                a.eqInt(el.cursorRow(), 1, "line.dup-caret");
+                el.deleteLine();                                // remove the dup -> caret on "two"
+                a.eqInt(el.document().lineCount(), 3, "line.del-count");
+                a.eqStr(el.document().line(1), "two", "line.del-content");
+                el.moveLineDown();                              // ["one","three","two"], caret row 2
+                a.eqStr(el.document().line(1), "three", "line.movedown-1");
+                a.eqStr(el.document().line(2), "two", "line.movedown-2");
+                a.eqInt(el.cursorRow(), 2, "line.movedown-caret");
+                el.moveLineUp();                                // back to ["one","two","three"]
+                a.eqStr(el.document().line(1), "two", "line.moveup");
+                el.indent();
+                a.eqStr(el.document().line(1), "    two", "line.indent");
+                el.dedent();
+                a.eqStr(el.document().line(1), "two", "line.dedent");
+
+                // --- find / replace (plain text) ---
+                Editor ef = new Editor(new TextBuffer() on heap) on heap;
+                ef.document().loadText("foo bar foo\nbaz foo\nqux");
+                a.eqInt(ef.matchCount("foo"), 3, "find.count");
+                a.eqInt(ef.matchCount("nope"), 0, "find.count-none");
+                a.eqBool(ef.find("foo"), true, "find.first");     // (0,0) -> caret (0,3), selected
+                a.eqInt(ef.cursorRow(), 0, "find.first-row");
+                a.eqInt(ef.cursorCol(), 3, "find.first-col");
+                a.eqStr(ef.selectionText(), "foo", "find.first-sel");
+                ef.find("foo");                                    // (0,8) -> caret (0,11)
+                a.eqInt(ef.cursorCol(), 11, "find.second-col");
+                ef.find("foo");                                    // (1,4) -> caret (1,7)
+                a.eqInt(ef.cursorRow(), 1, "find.third-row");
+                a.eqInt(ef.cursorCol(), 7, "find.third-col");
+                ef.find("foo");                                    // wraps to (0,0)
+                a.eqInt(ef.cursorRow(), 0, "find.wrap-row");
+                a.eqInt(ef.cursorCol(), 3, "find.wrap-col");
+                a.eqBool(ef.find("zzz"), false, "find.miss");
+
+                Editor er = new Editor(new TextBuffer() on heap) on heap;
+                er.document().loadText("a foo b foo\nfoo end");
+                a.eqInt(er.replaceAll("foo", "X"), 3, "replace.count");
+                a.eqStr(er.document().line(0), "a X b X", "replace.l0");
+                a.eqStr(er.document().line(1), "X end", "replace.l1");
+                er.undo();
+                a.eqStr(er.document().line(0), "a foo b foo", "replace.undo");
+
+                Editor eci = new Editor(new TextBuffer() on heap) on heap;
+                eci.document().loadText("Foo FOO foo");
+                a.eqInt(eci.matchCount("foo"), 1, "find.case-sensitive");
+                eci.setSearchCase(false);
+                a.eqInt(eci.matchCount("foo"), 3, "find.case-insensitive");
+                a.eqInt(eci.replaceAll("foo", "x"), 3, "replace.ci-count");
+                a.eqStr(eci.document().line(0), "x x x", "replace.ci-result");
+
+                // --- find modes: whole-word + regex ---
+                Editor efm = new Editor(new TextBuffer() on heap) on heap;
+                efm.document().loadText("foo food foobar\nafoo foo");
+                a.eqInt(efm.matchCount("foo"), 5, "find.plain-count");
+                efm.setSearchWholeWord(true);
+                a.eqInt(efm.matchCount("foo"), 2, "find.whole-word");
+                efm.setSearchWholeWord(false);
+                efm.setSearchRegex(true);
+                a.eqInt(efm.matchCount("fo+"), 5, "find.regex-plus");
+                a.eqInt(efm.matchCount("f.o"), 5, "find.regex-dot");
+                a.eqInt(efm.matchCount("[a-z]oo"), 5, "find.regex-class");
+                a.eqInt(efm.matchCount("^foo"), 1, "find.regex-anchor");
+                a.eqInt(efm.matchCount("bar$"), 1, "find.regex-anchor-end");
+                efm.setSearchWholeWord(true);
+                a.eqInt(efm.matchCount("fo+"), 2, "find.regex-plus-whole-word");
+
+                // --- word-wise motion / deletion / selection ---
+                Editor ew = new Editor(new TextBuffer() on heap) on heap;
+                ew.document().loadText("foo bar baz");
+                ew.moveWordRight(); a.eqInt(ew.cursorCol(), 3, "word.right1");
+                ew.moveWordRight(); a.eqInt(ew.cursorCol(), 7, "word.right2");
+                ew.moveWordRight(); a.eqInt(ew.cursorCol(), 11, "word.right3");
+                ew.moveWordLeft();  a.eqInt(ew.cursorCol(), 8, "word.left1");
+                ew.moveWordLeft();  a.eqInt(ew.cursorCol(), 4, "word.left2");
+                ew.moveWordLeft();  a.eqInt(ew.cursorCol(), 0, "word.left3");
+
+                Editor ew2 = new Editor(new TextBuffer() on heap) on heap;
+                ew2.document().loadText("hello world");
+                ew2.moveRight(); ew2.moveRight();               // caret inside "hello"
+                ew2.selectWordAtCaret();
+                a.eqStr(ew2.selectionText(), "hello", "word.select");
+
+                Editor ew3 = new Editor(new TextBuffer() on heap) on heap;
+                ew3.document().loadText("alpha beta");
+                ew3.moveWordRight(); ew3.moveWordRight();       // caret at end of "beta"
+                ew3.deleteWordLeft();
+                a.eqStr(ew3.document().line(0), "alpha ", "word.del-left");
+                a.eqInt(ew3.cursorCol(), 6, "word.del-left-caret");
+
+                Editor ew4 = new Editor(new TextBuffer() on heap) on heap;
+                ew4.document().loadText("alpha beta");
+                ew4.deleteWordRight();                          // caret at 0 -> removes "alpha"
+                a.eqStr(ew4.document().line(0), " beta", "word.del-right");
+
+                // --- viewport scrolling model ---
+                Viewport vp = new Viewport(10, 20) on heap;     // 10 rows x 20 cols
+                vp.setTotalLines(100);
+                a.eqInt(vp.firstLine(), 0, "vp.init-top");
+                a.eqBool(vp.scrollToCaret(5, 0, 0), false, "vp.no-scroll");
+                a.eqBool(vp.scrollToCaret(30, 0, 0), true, "vp.scrolled");
+                a.eqInt(vp.firstLine(), 21, "vp.top-after-down");
+                a.eqBool(vp.isLineVisible(30), true, "vp.30-visible");
+                a.eqBool(vp.isLineVisible(20), false, "vp.20-hidden");
+                vp.scrollToCaret(0, 0, 0);
+                a.eqInt(vp.firstLine(), 0, "vp.top-back");
+                vp.scrollToCaret(0, 50, 0);                     // horizontal scroll
+                a.eqInt(vp.firstColumn(), 31, "vp.left-after");
+
+                Viewport vp2 = new Viewport(10, 20) on heap;
+                vp2.setTotalLines(100);
+                vp2.scrollToCaret(8, 0, 2);                     // scrolloff margin at bottom
+                a.eqInt(vp2.firstLine(), 1, "vp.margin-bottom");
+                vp2.pageDown();
+                a.eqInt(vp2.firstLine(), 10, "vp.pagedown");
+
+                // scrollbar drag setters: jump the view directly (clamped), for the draggable scrollbars
+                vp2.scrollToLine(40);
+                a.eqInt(vp2.firstLine(), 40, "vp.scrollToLine");
+                vp2.scrollToLine(9999);                         // past the end -> clamped to last screen
+                a.eqInt(vp2.firstLine(), 90, "vp.scrollToLine-clamped");
+                vp2.scrollToLine(0 - 5);                        // before the start -> clamped to 0
+                a.eqInt(vp2.firstLine(), 0, "vp.scrollToLine-neg");
+                vp2.scrollToColumn(37);
+                a.eqInt(vp2.firstColumn(), 37, "vp.scrollToColumn");
+                vp2.scrollToColumn(0 - 3);
+                a.eqInt(vp2.firstColumn(), 0, "vp.scrollToColumn-neg");
+
+                Viewport vp3 = new Viewport(10, 20) on heap;
+                vp3.setTotalLines(5);                           // fewer lines than the viewport
+                vp3.scrollToCaret(4, 0, 0);
+                a.eqInt(vp3.firstLine(), 0, "vp.clamp-small");
+
+                // --- navigation: smart home/end, doc start/end, delete-forward, select-all ---
+                Editor en = new Editor(new TextBuffer() on heap) on heap;
+                en.document().loadText("    hello\nworld");
+                en.moveLineEnd();   a.eqInt(en.cursorCol(), 9, "nav.end");
+                en.moveLineStart(); a.eqInt(en.cursorCol(), 4, "nav.home-nonblank");
+                en.moveLineStart(); a.eqInt(en.cursorCol(), 0, "nav.home-zero");
+                en.moveDocEnd();
+                a.eqInt(en.cursorRow(), 1, "nav.docend-row");
+                a.eqInt(en.cursorCol(), 5, "nav.docend-col");
+                en.moveDocStart();
+                a.eqInt(en.cursorRow(), 0, "nav.docstart-row");
+                a.eqInt(en.cursorCol(), 0, "nav.docstart-col");
+                en.deleteForward();
+                a.eqStr(en.document().line(0), "   hello", "nav.del-fwd");
+
+                Editor en2 = new Editor(new TextBuffer() on heap) on heap;
+                en2.document().loadText("ab\ncd");
+                en2.moveLineEnd();
+                en2.deleteForward();                            // join next line
+                a.eqStr(en2.document().line(0), "abcd", "nav.del-fwd-join");
+                a.eqInt(en2.document().lineCount(), 1, "nav.del-fwd-join-count");
+
+                Editor en3 = new Editor(new TextBuffer() on heap) on heap;
+                en3.document().loadText("xy\nz");
+                en3.selectAll();
+                a.eqStr(en3.selectionText(), "xy\nz", "nav.select-all");
+
+                // --- Controller: editor + viewport + document + highlighter, driven by commands ---
+                Controller ctrl = new Controller(5, 10) on heap;   // 5 rows x 10 cols
+                ctrl.insertText("line0\nline1\nline2\nline3\nline4\nline5\nline6");
+                a.eqInt(ctrl.editor().cursorRow(), 6, "ctrl.caret-row");
+                a.eqBool(ctrl.viewport().isLineVisible(6), true, "ctrl.caret-visible");
+                a.eqBool(ctrl.document().isModified(), true, "ctrl.modified");
+                a.eqBool(ctrl.caretScreenRow() >= 0 && ctrl.caretScreenRow() < 5, true, "ctrl.caret-in-view");
+                ctrl.moveDocStart(false);
+                a.eqInt(ctrl.firstLine(), 0, "ctrl.docstart-scroll");
+                a.eqStr(ctrl.renderLine(0), "line0", "ctrl.render0");
+                a.eqInt(ctrl.caretScreenRow(), 0, "ctrl.caret-top");
+                a.eqInt(ctrl.lineNumberAt(2), 2, "ctrl.line-number");
+                ctrl.moveRight(true); ctrl.moveRight(true);
+                a.eqStr(ctrl.editor().selectionText(), "li", "ctrl.shift-select");
+                ArrayList<Span> rs = ctrl.renderSpans(0);
+                a.eqBool(rs.size() >= 1, true, "ctrl.spans");
+                ctrl.moveDocEnd(false);
+                a.eqBool(ctrl.firstLine() > 0, true, "ctrl.docend-scrolled");
+                a.eqBool(ctrl.viewport().isLineVisible(6), true, "ctrl.docend-caret-visible");
+
+                // --- input: KeyMap dispatch (typing, editing, navigation, shortcuts) ---
+                Controller kc = new Controller(10, 40) on heap;
+                KeyMap km = new KeyMap() on heap;
+                km.dispatch(kc, Key.ch('h'));
+                km.dispatch(kc, Key.ch('i'));
+                a.eqStr(kc.editor().document().line(0), "hi", "key.type");
+                km.dispatch(kc, Key.key(KeyCode.ENTER));
+                km.dispatch(kc, Key.ch('y'));
+                a.eqInt(kc.editor().document().lineCount(), 2, "key.enter-count");
+                a.eqStr(kc.editor().document().line(1), "y", "key.enter-line");
+                km.dispatch(kc, Key.key(KeyCode.LEFT));
+                a.eqInt(kc.editor().cursorCol(), 0, "key.left");
+                km.dispatch(kc, Key.key(KeyCode.END));
+                a.eqInt(kc.editor().cursorCol(), 1, "key.end");
+                km.dispatch(kc, Key.key(KeyCode.BACKSPACE));
+                a.eqStr(kc.editor().document().line(1), "", "key.backspace");
+                a.eqBool(km.dispatch(kc, Key.ctrlCh('Z')), true, "key.ctrl-handled");  // undo (case-fold)
+
+                // shift+arrow builds a selection; a following typed char replaces it
+                Controller kc2 = new Controller(10, 40) on heap;
+                km.dispatch(kc2, Key.ch('a'));
+                km.dispatch(kc2, Key.ch('b'));
+                km.dispatch(kc2, Key.ch('c'));
+                km.dispatch(kc2, Key.key(KeyCode.HOME));
+                km.dispatch(kc2, Key.shiftKey(KeyCode.END));
+                a.eqStr(kc2.editor().selectionText(), "abc", "key.shift-select");
+                km.dispatch(kc2, Key.ch('Q'));
+                a.eqStr(kc2.editor().document().line(0), "Q", "key.replace-selection");
+
+                // Ctrl+word navigation and Alt+Up line move
+                Controller kc3 = new Controller(10, 40) on heap;
+                km.dispatch(kc3, Key.key(KeyCode.TAB));               // indent -> 4 spaces
+                a.eqStr(kc3.editor().document().line(0), "    ", "key.tab-indent");
+                a.eqBool(km.dispatch(kc3, Key.ctrlKey(KeyCode.HOME)), true, "key.ctrl-home");
+                a.eqInt(kc3.editor().cursorCol(), 0, "key.ctrl-home-col");
+                a.eqBool(km.dispatch(kc3, Key.ch('~')), true, "key.printable");
+
+                // --- rendering: gutter, clipping, status bar, ANSI ---
+                Controller rc = new Controller(4, 20) on heap;   // 4 rows x 20 cols
+                rc.insertText("alpha\nbeta\ngamma");
+                rc.moveDocStart(false);
+                TextRenderer tr = new TextRenderer() on heap;
+                ArrayList<String> frame = tr.renderPlain(rc);
+                a.eqInt(frame.size(), 3, "render.rows");
+                a.eqStr(frame.get(0), "  1 | alpha", "render.row0");
+                a.eqStr(frame.get(1), "  2 | beta", "render.row1");
+                a.eqStr(frame.get(2), "  3 | gamma", "render.row2");
+                String status = tr.statusBar(rc);
+                a.eqBool(status.contains("Ln 1, Col 1"), true, "render.status-caret");
+                a.eqBool(status.contains("3 lines"), true, "render.status-lines");
+                a.eqBool(status.contains("*"), true, "render.status-dirty");
+                a.eqBool(tr.renderAnsi(rc).get(0).contains("alpha"), true, "render.ansi-text");
+
+                Controller rc2 = new Controller(2, 5) on heap;   // width 5 -> horizontal clip
+                rc2.insertText("abcdefghij");
+                rc2.moveDocStart(false);
+                a.eqStr(tr.renderPlain(rc2).get(0), "  1 | abcde", "render.clip-left");
+                rc2.moveDocEnd(false);                            // scroll right to follow the caret
+                a.eqBool(tr.renderPlain(rc2).get(0).contains("ghij"), true, "render.clip-scrolled");
+
+                // --- auto-indent on Enter ---
+                Editor ai = new Editor(new TextBuffer() on heap) on heap;
+                ai.type(' '); ai.type(' '); ai.type(' '); ai.type(' ');
+                ai.type('x'); ai.type(' '); ai.type('{');          // line "    x {"
+                ai.enter();
+                a.eqStr(ai.document().line(1), "        ", "autoindent.brace");   // 4 inherited + 4 for '{'
+                a.eqInt(ai.cursorCol(), 8, "autoindent.brace-caret");
+
+                Editor ai2 = new Editor(new TextBuffer() on heap) on heap;
+                ai2.type(' '); ai2.type(' '); ai2.type('a'); ai2.type('b');       // "  ab"
+                ai2.enter();
+                a.eqStr(ai2.document().line(1), "  ", "autoindent.inherit");
+                a.eqInt(ai2.cursorCol(), 2, "autoindent.inherit-caret");
+
+                // --- block indent / dedent over a multi-line selection ---
+                Editor bi = new Editor(new TextBuffer() on heap) on heap;
+                bi.document().loadText("a\nb\nc");
+                bi.selectDown(); bi.selectDown();                  // select lines 0..2
+                bi.indentSelection();
+                a.eqStr(bi.document().line(0), "    a", "blockindent.0");
+                a.eqStr(bi.document().line(1), "    b", "blockindent.1");
+                a.eqStr(bi.document().line(2), "    c", "blockindent.2");
+                bi.dedentSelection();
+                a.eqStr(bi.document().line(0), "a", "blockdedent.0");
+                a.eqStr(bi.document().line(2), "c", "blockdedent.2");
+
+                // Tab with a selection block-indents through the Controller
+                Controller tc = new Controller(10, 40) on heap;
+                tc.insertText("x\ny");
+                tc.moveDocStart(false);
+                tc.moveDown(true);                                 // extend selection to line 1
+                tc.indent();
+                a.eqStr(tc.editor().document().line(0), "    x", "ctrl.block-indent-0");
+                a.eqStr(tc.editor().document().line(1), "    y", "ctrl.block-indent-1");
+
+                // --- document manager: tabs, switching, close, titles ---
+                DocumentManager dm = new DocumentManager(20, 80) on heap;
+                a.eqInt(dm.count(), 0, "dm.empty");
+                a.eqBool(dm.hasActive(), false, "dm.no-active");
+                Controller* d1 = dm.openNew();
+                d1.insertText("hello");
+                a.eqInt(dm.count(), 1, "dm.opened1");
+                a.eqInt(dm.activeIndex(), 0, "dm.active0");
+                dm.openNew();                                      // second tab, now active
+                a.eqInt(dm.count(), 2, "dm.opened2");
+                a.eqInt(dm.activeIndex(), 1, "dm.active1");
+                a.eqStr(dm.active().editor().document().line(0), "", "dm.active-empty");
+                dm.setActive(0);
+                a.eqStr(dm.active().editor().document().line(0), "hello", "dm.switch-back");
+                a.eqStr(dm.title(0), "untitled *", "dm.title-modified");
+                a.eqStr(dm.title(1), "untitled", "dm.title-clean");
+                dm.close(0);
+                a.eqInt(dm.count(), 1, "dm.closed");
+                a.eqStr(dm.active().editor().document().line(0), "", "dm.after-close");
+
+                // --- Ctrl+Tab: toggle between the two most-recently-used tabs ---
+                DocumentManager mru = new DocumentManager(20, 80) on heap;
+                mru.openNew();
+                mru.openNew();
+                a.eqInt(mru.activeIndex(), 1, "mru.active1");
+                mru.setActive(0);
+                a.eqInt(mru.activeIndex(), 0, "mru.active0");
+                mru.switchToPrevious();
+                a.eqInt(mru.activeIndex(), 1, "mru.back-to-1");
+                mru.switchToPrevious();
+                a.eqInt(mru.activeIndex(), 0, "mru.toggle-0");
+
+                // --- right-click context menu: items depend on what was clicked ---
+                ContextMenu cmenu = new ContextMenu() on heap;
+                a.eqBool(cmenu.isActive(), false, "ctx.starts-closed");
+                cmenu.openForEditor(100, 200, true, false);          // on a word, no selection
+                a.eqBool(cmenu.isActive(), true, "ctx.open");
+                a.eqStr(cmenu.idAt(0), "ctx.gotoDef", "ctx.first-is-goto-def");
+                a.eqInt(cmenu.count(), 12, "ctx.editor-word-count");
+                cmenu.openForEditor(100, 200, false, false);         // not on a word: no navigation group
+                a.eqStr(cmenu.idAt(0), "ctx.paste", "ctx.no-word-starts-at-paste");
+                cmenu.openForEditor(100, 200, true, true);           // with a selection: cut/copy appear
+                a.eqInt(cmenu.count(), 16, "ctx.editor-sel-count");
+                cmenu.openForTree(10, 20, "src/app/X.pol", false);
+                a.eqStr(cmenu.idAt(0), "ctx.treeOpen", "ctx.tree-file-open");
+                a.eqStr(cmenu.targetPath, "src/app/X.pol", "ctx.tree-target");
+                cmenu.openForTree(10, 20, "src/app", true);          // a directory has no "Open"
+                a.eqStr(cmenu.idAt(0), "ctx.treeNewFile", "ctx.tree-dir-first");
+                cmenu.openForTab(10, 20, "a.pol");
+                a.eqStr(cmenu.idAt(0), "ctx.tabClose", "ctx.tab-first");
+                cmenu.close();
+                a.eqBool(cmenu.isActive(), false, "ctx.closed");
+
+                // --- file tree over a real temp directory (dirs first, lazy expand) ---
+                File.mkdir("ft_tree.tmp");
+                File.mkdir("ft_tree.tmp/sub");
+                File.writeAll("ft_tree.tmp/a.txt", "1");
+                File.writeAll("ft_tree.tmp/b.txt", "2");
+                File.writeAll("ft_tree.tmp/sub/c.txt", "3");
+                FileTree* tree = new FileTree("ft_tree.tmp") on heap;
+                FileNode* troot = tree.root();
+                a.eqInt(troot.children.size(), 3, "tree.child-count");
+                a.eqStr(troot.children.get(0).name, "sub", "tree.dir-first");
+                a.eqBool(troot.children.get(0).isDir, true, "tree.dir-flag");
+                a.eqStr(troot.children.get(1).name, "a.txt", "tree.file1");
+                a.eqStr(troot.children.get(2).name, "b.txt", "tree.file2");
+                a.eqBool(troot.children.get(0).expanded, false, "tree.collapsed");
+                a.eqInt(tree.visible().size(), 4, "tree.visible-collapsed");   // root + 3
+                tree.toggle(troot.children.get(0));                            // expand "sub"
+                a.eqBool(troot.children.get(0).expanded, true, "tree.expanded");
+                a.eqInt(troot.children.get(0).children.size(), 1, "tree.sub-loaded");
+                a.eqStr(troot.children.get(0).children.get(0).name, "c.txt", "tree.sub-child");
+                a.eqInt(tree.visible().size(), 5, "tree.visible-expanded");    // root, sub, c.txt, a, b
+                a.eqStr(tree.rowLabel(troot.children.get(0)), "  v sub", "tree.row-label");
+                File.remove("ft_tree.tmp/sub/c.txt");
+                File.remove("ft_tree.tmp/a.txt");
+                File.remove("ft_tree.tmp/b.txt");
+
+                // --- auto-close pairs + bracket matching ---
+                Editor bp = new Editor(new TextBuffer() on heap) on heap;
+                bp.typeWithPairs('(');
+                a.eqStr(bp.document().line(0), "()", "pair.insert");
+                a.eqInt(bp.cursorCol(), 1, "pair.caret-inside");
+                bp.typeWithPairs(')');                          // step over the auto-inserted ')'
+                a.eqStr(bp.document().line(0), "()", "pair.typeover");
+                a.eqInt(bp.cursorCol(), 2, "pair.typeover-caret");
+
+                Editor bp2 = new Editor(new TextBuffer() on heap) on heap;
+                bp2.document().loadText("foo(bar(x))");
+                bp2.moveRight(); bp2.moveRight(); bp2.moveRight();   // caret on the first '('
+                Match* mm = bp2.matchingBracket();
+                a.eqBool(mm.valid(), true, "match.open-valid");
+                a.eqInt(mm.col, 10, "match.open-close");
+
+                Editor bp3 = new Editor(new TextBuffer() on heap) on heap;
+                bp3.document().loadText("(a(b)c)");
+                bp3.moveDocEnd();                               // caret just past the closing ')'
+                Match* mm3 = bp3.matchingBracket();
+                a.eqBool(mm3.valid(), true, "match.close-valid");
+                a.eqInt(mm3.col, 0, "match.close-open");
+
+                // --- command palette: registry + fuzzy filter ---
+                CommandRegistry cr = new CommandRegistry() on heap;
+                a.eqInt(cr.all().size(), 78, "cmd.count");
+                a.eqInt(cr.filter("").size(), 78, "cmd.filter-empty");
+                a.eqInt(cr.filter("zzq").size(), 0, "cmd.filter-none");
+                a.eqInt(cr.filter("undo").size(), 2, "cmd.filter-undo-count");  // + "Set Breakpoint Condition" (u-n-d-o subseq)
+                a.eqStr(cr.filter("undo").get(0).id, "edit.undo", "cmd.filter-undo");
+                a.eqInt(cr.filter("file").size(), 12, "cmd.filter-file");   // incl. git blame/stage/unstage "... File"
+                a.eqStr(cr.filter("save file").get(0).id, "file.save", "cmd.filter-rank");
+                a.eqStr(cr.filter("dupl").get(0).id, "edit.duplicateLine", "cmd.fuzzy-subseq");
+                a.eqStr(cr.filter("spe").get(0).id, "view.split", "cmd.fuzzy-gap");
+
+                // --- workbench: application root (keys + palette commands over tabs) ---
+                Workbench wb = new Workbench(24, 80) on heap;
+                a.eqInt(wb.documents().count(), 1, "wb.starts-with-one");
+                a.eqBool(wb.documents().hasActive(), true, "wb.has-active");
+                wb.handleKey(Key.ch('h'));
+                wb.handleKey(Key.ch('i'));
+                a.eqStr(wb.active().editor().document().line(0), "hi", "wb.type");
+                wb.runCommand("edit.duplicateLine");
+                a.eqInt(wb.active().editor().document().lineCount(), 2, "wb.dupline-count");
+                a.eqStr(wb.active().editor().document().line(1), "hi", "wb.dupline-content");
+                wb.runCommand("file.new");
+                a.eqInt(wb.documents().count(), 2, "wb.new-tab");
+                wb.handleKey(Key.ch('x'));
+                a.eqStr(wb.active().editor().document().line(0), "x", "wb.type-new-tab");
+                wb.runCommand("edit.undo");
+                a.eqStr(wb.active().editor().document().line(0), "", "wb.undo-cmd");
+                a.eqBool(wb.runCommand("edit.selectAll"), true, "wb.selectall-cmd");
+
+                // --- split editors: two panes, and a file open in both is ONE document ---
+                Workbench* sw = new Workbench(24, 80) on heap;
+                a.eqBool(sw.isSplit(), false, "split.starts-unsplit");
+                sw.active().editor().document().loadText("shared\n");
+                sw.runCommand("view.split");
+                a.eqBool(sw.isSplit(), true, "split.opened");
+                a.eqInt(sw.activePane(), 1, "split.focus-moves-right");
+                a.eqBool(sw.documentsOf(1).active().document() == sw.documentsOf(0).active().document(),
+                         true, "split.same-document-in-both");
+                sw.active().placeCaret(0, 6);
+                sw.active().insertChar('!');                        // edit through the RIGHT pane
+                sw.focusPane(0);
+                sw.active().sync();
+                a.eqStr(sw.active().editor().document().line(0), "shared!", "split.left-sees-right-edit");
+                a.eqInt(sw.active().editor().cursorCol(), 0, "split.left-caret-untouched");
+                sw.runCommand("view.split");
+                a.eqBool(sw.isSplit(), false, "split.toggles-closed");
+                a.eqInt(sw.activePane(), 0, "split.focus-returns-left");
+
+                // --- live type-check: reading what the compiler actually says ---
+                // The compiler labels a diagnostic by the phase that caught it, and all three phases are
+                // errors to the person typing. A Windows path starts with a drive colon, which must not be
+                // read as the line separator -- the bug that would put every error on a line named "C".
+                // A semantic error now carries a stable code -- "error[Polaron-0102]:" -- while lex/parse
+                // errors and warnings keep the plain label; the parser must read all of them.
+                ArrayList<Diagnostic>* ds = Checker.parse(
+                    "C:\\proj\\src\\gfx\\Theme.pol:1:1: parse error: expected 'program' but found 'ZZZ'\n"
+                    + "C:\\proj\\src\\app\\Workbench.pol:299:28: error[Polaron-0102]: class 'Workbench' has no field 'wrapp'\n"
+                    + "src/io/Document.pol:7:3: warning: unused import\n"
+                    + "src/io/Document.pol:9:9: lex error: unterminated string literal\n"
+                    + "OK: entry point forge.app.Main.main\n"
+                    + "ldp3: building path dependency 'ldp3-opengl'...\n");
+                a.eqInt(ds.size(), 4, "check.four-diagnostics");
+                a.eqStr(ds.get(0).file, "Theme.pol", "check.file-is-the-basename");
+                a.eqInt(ds.get(0).line, 1, "check.line-is-one-based");
+                a.eqInt(ds.get(0).col, 1, "check.col-is-one-based");
+                a.eqInt(ds.get(0).severity, 0, "check.parse-error-is-an-error");
+                a.eqStr(ds.get(0).message, "expected 'program' but found 'ZZZ'",
+                        "check.message-drops-the-label");
+                a.eqInt(ds.get(1).line, 299, "check.semantic-error-line");
+                a.eqInt(ds.get(1).severity, 0, "check.coded-error-is-an-error");
+                a.eqStr(ds.get(1).message, "class 'Workbench' has no field 'wrapp'",
+                        "check.coded-message-drops-the-code");
+                a.eqInt(ds.get(2).severity, 1, "check.warning-is-a-warning");
+                a.eqInt(ds.get(3).severity, 0, "check.lex-error-is-an-error");
+                a.eqInt(Checker.parse("OK: entry point forge.app.Main.main\n").size(), 0,
+                        "check.clean-project-has-no-diagnostics");
+
+                // --- quick fix: reading the compiler's "did you mean?" back out of a diagnostic ---
+                // The suggestion is the name to change TO, the flagged name is the name to change FROM; the
+                // editor then swaps one for the other on the line (Editor.replaceWordOn, exercised by the
+                // serve `quickfix` command end to end). A diagnostic with no suggestion is not fixable.
+                String fieldMsg = "class 'Point' has no field 'heigth'; did you mean 'height'?";
+                a.eqStr(QuickFix.suggestion(fieldMsg), "height", "quickfix.reads-the-suggestion");
+                a.eqStr(QuickFix.flaggedName(fieldMsg), "heigth", "quickfix.reads-the-flagged-name");
+                a.eqBool(QuickFix.isFixable(fieldMsg), true, "quickfix.field-typo-is-fixable");
+                String localMsg = "use of undeclared variable 'totl'; did you mean 'total'?";
+                a.eqStr(QuickFix.suggestion(localMsg), "total", "quickfix.local-suggestion");
+                a.eqStr(QuickFix.flaggedName(localMsg), "totl", "quickfix.local-flagged");
+                String plainMsg = "use of undeclared variable 'xyzzy'";
+                a.eqBool(QuickFix.isFixable(plainMsg), false, "quickfix.no-suggestion-not-fixable");
+                a.eqStr(QuickFix.suggestion(plainMsg), "", "quickfix.no-suggestion-empty");
+
+                // --- a coded diagnostic carries its Polaron-NNNN code (drives Ctrl+F1 explain) ---
+                ArrayList<Diagnostic>* cd = Checker.parse(
+                    "src/gfx/Theme.pol:6:7: error[Polaron-0401]: cannot assign to immutable variable 'x'\n"
+                    + "src/gfx/Theme.pol:9:9: error: some uncoded error\n");
+                a.eqStr(cd.get(0).code, "Polaron-0401", "diag.code-parsed");
+                a.eqBool(cd.get(0).hasCode(), true, "diag.has-code");
+                a.eqStr(cd.get(0).message, "cannot assign to immutable variable 'x'", "diag.coded-message");
+                a.eqBool(cd.get(1).hasCode(), false, "diag.uncoded-has-no-code");
+                a.eqStr(cd.get(1).code, "", "diag.uncoded-code-empty");
+
+                // --- two views of ONE document: the shared buffer that split editors is built on ---
+                // Each view has its own caret, scroll and folds; the text, the undo history and the dirty
+                // flag belong to the document. An edit in one view is visible in the other, and either view
+                // can undo it -- which is the whole point, and the thing that would corrupt a file if the
+                // history were per view.
+                Controller* left = new Controller(24, 80) on heap;
+                left.editor().document().loadText("alpha\nbeta\n");
+                Controller* right = new Controller(24, 80) on heap;
+                right.attachDocument(left.document());
+                a.eqStr(right.editor().document().line(0), "alpha", "split.same-text");
+
+                left.placeCaret(0, 5);
+                left.insertChar('!');                              // edit through the LEFT view
+                a.eqStr(left.editor().document().line(0), "alpha!", "split.left-edited");
+                right.sync();
+                a.eqStr(right.editor().document().line(0), "alpha!", "split.right-sees-it");
+                a.eqBool(right.document().isModified(), true, "split.dirty-is-shared");
+
+                right.placeCaret(1, 0);
+                a.eqInt(left.editor().cursorRow(), 0, "split.carets-are-independent");
+
+                right.undo();                                      // undo the LEFT view's edit, from the RIGHT
+                a.eqStr(right.editor().document().line(0), "alpha", "split.undo-across-views");
+                left.sync();
+                a.eqStr(left.editor().document().line(0), "alpha", "split.left-sees-the-undo");
+
+                // A view whose caret sat past the end of a line the other view shortened is pulled back in.
+                left.placeCaret(0, 5);
+                right.placeCaret(0, 0);
+                right.insertChar('x');
+                right.editor().document().loadText("ab\n");        // the buffer shrank under the left view
+                left.sync();
+                a.eqBool(left.editor().cursorCol() <= 2, true, "split.caret-clamped");
+
+                // --- word wrap: a view concept, so the document is untouched and only the mapping changes ---
+                Controller* wc = wb.active();
+                wc.editor().document().loadText("0123456789ABCDEFGHIJ\nshort\n");
+                wc.setWrap(true);
+                wc.setWrapCols(10);
+                a.eqInt(wc.rowsForLine(0), 2, "wrap.rows-long");        // 20 chars in a 10-column pane
+                a.eqInt(wc.rowsForLine(1), 1, "wrap.rows-short");
+                a.eqInt(wc.screenRowForDocLine(1), 2, "wrap.line-below-a-wrapped-one");
+                a.eqInt(wc.screenRowFor(0, 12), 1, "wrap.col-on-second-row");
+                a.eqStr(wc.renderLine(1), "ABCDEFGHIJ", "wrap.continuation-text");
+                a.eqInt(wc.segStartAt(1), 10, "wrap.continuation-offset");
+                a.eqInt(wc.docColAt(1, 3), 13, "wrap.click-on-continuation");
+                a.eqStr(wc.renderLine(2), "short", "wrap.next-line");
+                wc.setWrap(false);
+                a.eqInt(wc.rowsForLine(0), 1, "wrap.off-rows");
+                a.eqStr(wc.renderLine(0), "0123456789ABCDEFGHIJ", "wrap.off-full-line");
+                a.eqInt(wc.docColAt(0, 3), 3, "wrap.off-click");
+
+                // --- structure panel: the file's declarations, and the one holding the caret ---
+                a.eqBool(wb.outlineOpen(), false, "wb.outline-closed");
+                wb.runCommand("view.outline");
+                a.eqBool(wb.outlineOpen(), true, "wb.outline-open");
+                wb.active().editor().document().loadText("public class Dog {\n    public method bark() returns void {\n    }\n}\n");
+                ArrayList<Symbol>* osyms = wb.outlineSymbols();
+                a.eqBool(osyms.size() >= 2, true, "wb.outline-symbols");
+                wb.active().placeCaret(1, 0);
+                a.eqInt(wb.outlineCurrent(), 1, "wb.outline-current-method");
+                wb.active().placeCaret(0, 0);
+                a.eqInt(wb.outlineCurrent(), 0, "wb.outline-current-class");
+                delete osyms;
+                wb.runCommand("view.outline");
+                a.eqBool(wb.outlineOpen(), false, "wb.outline-toggled-back");
+
+                // --- tasks: markers are only found in comments, never in strings ---
+                String tfile = "forge_todo_test.tmp.pol";
+                ArrayList<String> tsrc = new ArrayList<String>() on heap;
+                tsrc.add("    // TODO: wire this up");
+                tsrc.add("    String s = \"TODO: not a task, it is data\";");
+                tsrc.add("    x = 1;   // FIXME later");
+                Files.writeLines(tfile, tsrc);
+                ArrayList<String>* tfiles = new ArrayList<String>() on heap;
+                tfiles.add(tfile);
+                a.eqInt(wb.showTodos(tfiles), 2, "wb.todos-comments-only");
+                a.eqBool(wb.runCommand("view.todos"), true, "wb.todos-cmd");
+
+                // --- git: the branch is empty until a refresh reads it (and this test has no repo) ---
+                a.eqStr(wb.currentBranch(), "", "wb.branch-unknown");
+                a.eqBool(wb.runCommand("git.branch"), true, "wb.branch-cmd");
+
+                // --- problems panel: every diagnostic of the last build, navigable ---
+                a.eqInt(wb.showProblems(), 0, "wb.problems-empty");           // nothing built yet
+                a.eqBool(wb.output().line(0).indexOf("no problems") >= 0, true, "wb.problems-clean");
+                a.eqBool(wb.runCommand("view.problems"), true, "wb.problems-cmd");
+
+                // --- replace in files: rewrite on disk, count what changed ---
+                String tmp = "forge_replace_test.tmp.pol";   // written next to the working dir
+                ArrayList<String> src = new ArrayList<String>() on heap;
+                src.add("alpha beta alpha");
+                src.add("gamma");
+                Files.writeLines(tmp, src);
+                ArrayList<String>* targets = new ArrayList<String>() on heap;
+                targets.add(tmp);
+                a.eqInt(wb.replaceInFiles(targets, "alpha", "omega"), 2, "wb.replace-count");
+                ArrayList<String> back = Files.readLines(tmp);
+                a.eqStr(back.get(0), "omega beta omega", "wb.replace-content");
+                a.eqStr(back.get(1), "gamma", "wb.replace-untouched");
+                a.eqInt(wb.replaceInFiles(targets, "", "x"), 0, "wb.replace-empty-needle");
+                a.eqBool(wb.runCommand("bogus.cmd"), false, "wb.unknown-cmd");
+
+                // --- full IDE screen composition (tab bar + tree + editor + status) ---
+                Workbench wbs = new Workbench(4, 24) on heap;
+                wbs.active().insertText("hi\nyo");
+                wbs.active().moveDocStart(false);
+                ScreenRenderer sr = new ScreenRenderer() on heap;
+                ArrayList<String> screen = sr.render(wbs, tree);  // reuse the temp-dir tree above
+                a.eqBool(screen.get(0).contains("untitled"), true, "screen.tabbar");
+                a.eqBool(screen.size() >= 3, true, "screen.row-count");
+                a.eqBool(screen.get(1).contains("hi"), true, "screen.editor-text");
+                a.eqBool(screen.get(1).contains("ft_tree.tmp"), true, "screen.tree-col");
+                a.eqBool(screen.get(screen.size() - 1).contains("Ln 1"), true, "screen.status");
+
+                // --- line-comment toggle (single line + multi-line selection) ---
+                Editor cm = new Editor(new TextBuffer() on heap) on heap;
+                cm.document().loadText("    int x = 1;");
+                cm.toggleComment();
+                a.eqStr(cm.document().line(0), "    // int x = 1;", "comment.add");
+                cm.toggleComment();
+                a.eqStr(cm.document().line(0), "    int x = 1;", "comment.remove");
+
+                Editor cm2 = new Editor(new TextBuffer() on heap) on heap;
+                cm2.document().loadText("a\nb\nc");
+                cm2.selectDown(); cm2.selectDown();            // select all three lines
+                cm2.toggleComment();
+                a.eqStr(cm2.document().line(0), "// a", "comment.multi-0");
+                a.eqStr(cm2.document().line(2), "// c", "comment.multi-2");
+                cm2.toggleComment();
+                a.eqStr(cm2.document().line(0), "a", "comment.multi-uncomment");
+
+                // --- configurable tab width ---
+                Editor tw = new Editor(new TextBuffer() on heap) on heap;
+                tw.document().loadText("x");
+                tw.setTabWidth(2);
+                a.eqInt(tw.tabSize(), 2, "tab.size");
+                tw.indent();
+                a.eqStr(tw.document().line(0), "  x", "tab.indent-2");
+                tw.dedent();
+                a.eqStr(tw.document().line(0), "x", "tab.dedent-2");
+
+                // --- word-wrap helper for the multi-line hover card ---
+                ArrayList<String>* w1 = TextWrap.wrap("hello world", 58);
+                a.eqInt(w1.size(), 1, "wrap.fits-one-line");
+                a.eqStr(w1.get(0), "hello world", "wrap.fits-content");
+                ArrayList<String>* w2 = TextWrap.wrap("abcd efgh", 4);   // breaks on the space
+                a.eqInt(w2.size(), 2, "wrap.space-count");
+                a.eqStr(w2.get(0), "abcd", "wrap.space-0");
+                a.eqStr(w2.get(1), "efgh", "wrap.space-1");
+                ArrayList<String>* w3 = TextWrap.wrap("abcdefghij", 4);   // no space: hard split
+                a.eqInt(w3.size(), 3, "wrap.hard-count");
+                a.eqStr(w3.get(0), "abcd", "wrap.hard-0");
+                a.eqStr(w3.get(2), "ij", "wrap.hard-2");
+                ArrayList<String>* w4 = TextWrap.wrap("", 10);
+                a.eqInt(w4.size(), 1, "wrap.empty-one");
+                a.eqStr(w4.get(0), "", "wrap.empty-content");
+
+                // --- terminal: the ANSI/VT parser driving the cell grid ---
+                // Driven through absorb() with synthetic bytes rather than a live shell: spawning a
+                // pseudo-console needs a real console, which a headless test run does not have.
+                Terminal* trmText = new Terminal() on heap;
+                trmText.absorb("hello");
+                a.eqStr(trmText.screen().lineAt(0).plainText(), "hello", "term.text");
+                trmText.absorb("\r\nworld");
+                a.eqStr(trmText.screen().lineAt(1).plainText(), "world", "term.newline");
+                a.eqInt(trmText.screen().cursorRow(), 1, "term.cursor-row");
+
+                // SGR: colour, reset, bold and the 256-colour form all land in the cell attribute.
+                Terminal* trmSgr = new Terminal() on heap;
+                trmSgr.absorb(CoreTests.esc("[31m") + "R" + CoreTests.esc("[0m") + "N");
+                TermGrid* trmSgrG = trmSgr.screen();
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(0)), 1, "term.sgr-red");
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(1)), 7, "term.sgr-reset");
+                trmSgr.absorb(CoreTests.esc("[1;32m") + "G");
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(2)), 2, "term.sgr-green");
+                a.eqBool(TermLine.attrBold(trmSgrG.lineAt(0).attrAtCol(2)), true, "term.sgr-bold");
+                trmSgr.absorb(CoreTests.esc("[0m") + CoreTests.esc("[38;5;200m") + "X");
+                a.eqInt(TermLine.attrFg(trmSgrG.lineAt(0).attrAtCol(3)), 200, "term.sgr-256");
+                trmSgr.absorb(CoreTests.esc("[0m") + CoreTests.esc("[44m") + "B");
+                a.eqInt(TermLine.attrBg(trmSgrG.lineAt(0).attrAtCol(4)), 4, "term.sgr-bg");
+
+                // Cursor addressing overwrites in place; CSI K erases to end of line.
+                Terminal* trmCur = new Terminal() on heap;
+                trmCur.absorb("abc" + CoreTests.esc("[1;1H") + "Z");
+                a.eqStr(trmCur.screen().lineAt(0).plainText(), "Zbc", "term.cursor-home");
+                Terminal* trmEr = new Terminal() on heap;
+                trmEr.absorb("hello" + CoreTests.esc("[1;3H") + CoreTests.esc("[K"));
+                a.eqStr(trmEr.screen().lineAt(0).plainText(), "he", "term.erase-eol");
+
+                // Backspace moves the cursor without erasing; the next write overwrites.
+                Terminal* trmBs = new Terminal() on heap;
+                trmBs.absorb("abc" + CoreTests.chr(8) + "X");
+                a.eqStr(trmBs.screen().lineAt(0).plainText(), "abX", "term.backspace");
+
+                // A window-title OSC string is consumed whole, never printed.
+                Terminal* trmOsc = new Terminal() on heap;
+                trmOsc.absorb(CoreTests.esc("]0;My Title") + CoreTests.chr(7) + "ok");
+                a.eqStr(trmOsc.screen().lineAt(0).plainText(), "ok", "term.osc-dropped");
+
+                // Auto-wrap at the right margin continues on the next row.
+                Terminal* trmWrap = new Terminal() on heap;
+                trmWrap.resize(4, 3);
+                trmWrap.absorb("abcdef");
+                a.eqStr(trmWrap.screen().lineAt(0).plainText(), "abcd", "term.wrap-0");
+                a.eqStr(trmWrap.screen().lineAt(1).plainText(), "ef", "term.wrap-1");
+
+                // Runs collapse same-attribute spans so the renderer draws few quads per line.
+                Terminal* trmRun = new Terminal() on heap;
+                trmRun.absorb("ab" + CoreTests.esc("[31m") + "cd");
+                TermLine* trmRunLine = trmRun.screen().lineAt(0);
+                trmRunLine.buildRuns();
+                a.eqInt(trmRunLine.runCount(), 2, "term.runs-count");
+                a.eqStr(trmRunLine.runTextAt(0), "ab", "term.runs-0");
+                a.eqStr(trmRunLine.runTextAt(1), "cd", "term.runs-1");
+
+                // Scrollback trimming: past the bound the oldest rows are dropped, and the cursor's
+                // absolute index must follow them down or writes would land on the wrong row.
+                Terminal* trmTrim = new Terminal() on heap;
+                mutable int trmFeed = 0;
+                while (trmFeed < 5200) {
+                    trmTrim.absorb("L\r\n");
+                    trmFeed = trmFeed + 1;
+                }
+                TermGrid* trmTrimG = trmTrim.screen();
+                a.eqBool(trmTrimG.lineCount() <= 5000, true, "term.scrollback-bounded");
+                trmTrim.absorb("TAIL");
+                a.eqStr(trmTrimG.lineAt(trmTrimG.cursorRow()).plainText(), "TAIL", "term.trim-cursor-follows");
+
+                // --- language server client: the Content-Length framing and the fenced-markdown
+                // hover text, both of which sit between the server and the UI ---
+                a.eqInt(LspClient.contentLength("Content-Length: 42"), 42, "lsp.len");
+                a.eqInt(LspClient.contentLength("Content-Type: x" + CoreTests.chr(13) + CoreTests.chr(10)
+                                                + "Content-Length: 7"), 7, "lsp.len-second-header");
+                a.eqInt(LspClient.contentLength("Content-Length:9"), 9, "lsp.len-no-space");
+                a.eqInt(LspClient.contentLength("nothing here"), 0 - 1, "lsp.len-absent");
+                a.eqStr(LspClient.stripFence("```ldp3" + CoreTests.chr(10) + "public method f() returns int"
+                                             + CoreTests.chr(10) + "```"),
+                        "public method f() returns int", "lsp.hover-unfenced");
+
+                // --- language server round-trip: start the real polaron-lsp, open a buffer, and hover a
+                // call, exercising start/syncDocument/askHover/pump/hoverInfo end to end. Needs the LSP
+                // binary; build.ps1 points FORGE_LSP at it. When it is absent (a checkout without the
+                // toolchain), the round-trip is skipped rather than failed -- the framing above still runs.
+                CoreTests.checkLiveHover(a);
+
+                // --- render preview: PPM header scanning, which has to skip comments and whitespace
+                // between fields (a header read wrong shows a garbled or empty image) ---
+                a.eqInt(ImagePreview.nextInt("P3 1084 681", 2), 1084, "ppm.width");
+                a.eqInt(ImagePreview.nextInt("P3 1084 681", ImagePreview.afterInt("P3 1084 681", 2)),
+                        681, "ppm.height");
+                a.eqInt(ImagePreview.nextInt("P3" + CoreTests.chr(10) + "# a comment" + CoreTests.chr(10) + "64 48", 2),
+                        64, "ppm.skips-comment");
+                a.eqInt(ImagePreview.nextInt("P3   " + CoreTests.chr(9) + "32", 2), 32, "ppm.skips-blanks");
+                a.eqInt(ImagePreview.nextInt("P3 abc", 2), 0 - 1, "ppm.no-number");
+
+                // --- AI chat: the request body is hand-built JSON, so escaping and the reply parse are
+                // where a quote or a newline in a prompt would otherwise corrupt the request ---
+                a.eqStr(AiChat.jsonEscape("plain"), "plain", "chat.escape-plain");
+                a.eqStr(AiChat.jsonEscape("say \"hi\""), "say \\\"hi\\\"", "chat.escape-quote");
+                a.eqStr(AiChat.replyFrom("{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}"),
+                        "hello", "chat.reply-plain");
+                // A \n inside the JSON string has to come back as a real newline.
+                a.eqStr(AiChat.replyFrom("{\"text\":\"two\\nlines\"}"),
+                        "two" + CoreTests.chr(10) + "lines", "chat.reply-newline");
+                a.eqStr(AiChat.replyFrom("{\"nothing\":1}"), "", "chat.reply-absent");
+                a.eqStr(AiChat.errorFrom("{\"error\":{\"message\":\"bad key\"}}"), "bad key", "chat.error-api");
+
+                // --- plugins: install accepts `owner/repo` or a URL, and the directory it clones into is
+                // what identifies the plugin everywhere afterwards ---
+                a.eqStr(PluginStore.nameFromUrl("https://github.com/jvpts11/forge-hello"),
+                        "forge-hello", "plugin.name-url");
+                a.eqStr(PluginStore.nameFromUrl("https://github.com/jvpts11/forge-hello.git"),
+                        "forge-hello", "plugin.name-dotgit");
+                a.eqStr(PluginStore.nameFromUrl("jvpts11/forge-hello"), "forge-hello", "plugin.name-short");
+                a.eqStr(PluginStore.nameFromUrl("git@github.com:jvpts11/forge-hello.git"),
+                        "forge-hello", "plugin.name-ssh");
+                a.eqStr(PluginStore.nameFromUrl("https://github.com/jvpts11/forge-hello/"),
+                        "forge-hello", "plugin.name-trailing-slash");
+
+                // --- installable themes: a theme file is `key = RRGGBB`, so the hex parse is the part
+                // that must reject junk rather than paint garbage ---
+                a.eqBool(ThemeStore.hexValid("1d2021"), true, "theme.hex-plain");
+                a.eqBool(ThemeStore.hexValid("#1d2021"), true, "theme.hex-hash");
+                a.eqBool(ThemeStore.hexValid("12345"), false, "theme.hex-short");
+                a.eqBool(ThemeStore.hexValid("zzzzzz"), false, "theme.hex-nondigit");
+                Color* themeCol = ThemeStore.parseHex("#ff8000");
+                a.eqInt(cast<int>(themeCol.r * 255.0 + 0.5), 255, "theme.hex-r");
+                a.eqInt(cast<int>(themeCol.g * 255.0 + 0.5), 128, "theme.hex-g");
+                a.eqInt(cast<int>(themeCol.b * 255.0 + 0.5), 0, "theme.hex-b");
+                delete themeCol;
+                ArrayList<String>* themeNames = ThemeStore.available();
+                a.eqBool(themeNames.size() >= 2, true, "theme.builtins-present");
+                a.eqStr(themeNames.get(0), "Dark", "theme.builtin-dark");
+                a.eqStr(themeNames.get(1), "Light", "theme.builtin-light");
+                delete themeNames;
+
+                // --- settings panel rows: the renderer, the hit-test and the key handler all read these,
+                // so a row added to one of them without the others shows up here as a mismatch ---
+                a.eqInt(Overlay.settingsRowCount(), 8, "settings.row-count");
+                a.eqStr(Overlay.settingsRowLabel(0), "Theme", "settings.row-first");
+                a.eqStr(Overlay.settingsRowLabel(3), "Tab width", "settings.row-value");
+                a.eqStr(Overlay.settingsRowLabel(Overlay.settingsRowCount() - 1),
+                        "Edit settings file...", "settings.row-last-is-file");
+
+                // --- test explorer: pulling the method name out of a declaration line ---
+                a.eqStr(Workbench.testNameOf("public static method doubling() returns boolean {"),
+                        "doubling", "tests.name-static");
+                a.eqStr(Workbench.testNameOf("    public method checks_it() returns void {"),
+                        "checks_it", "tests.name-instance");
+                a.eqStr(Workbench.testNameOf("private int counter;"), "", "tests.name-not-a-method");
+                a.eqStr(Workbench.testNameOf("@Test"), "", "tests.name-annotation");
+
+                a.summary("editor tests");
+                int failures = a.failCount();
+                delete a;
+                return failures;
+            }
+
+            // ESC followed by `rest` -- the escape byte cannot be written as a literal in source.
+            private static method esc(String rest) returns String {
+                return CoreTests.chr(27) + rest;
+            }
+
+            // Drive the real language server through the LspClient the window uses: start it, sync a
+            // small buffer, hover the call to addTwo, and read the answer back. This is the one check
+            // that proves the whole client path -- framing, id correlation, and reply routing -- against
+            // a live server, not just the pure helpers above. Skipped (no checks emitted) when the LSP
+            // binary is not on hand, so a source-only checkout stays green.
+            private static method checkLiveHover(Asserts* a) returns void {
+                String lsp = Env.get("FORGE_LSP");
+                if (lsp.length() == 0) {
+                    return;
+                }
+                String nl = CoreTests.chr(10);
+                String src = "program P;" + nl
+                    + "public bundle main {" + nl
+                    + "    public namespace app {" + nl
+                    + "        public class C {" + nl
+                    + "            public method addTwo(int a, int b) returns int {" + nl
+                    + "                return a + b;" + nl
+                    + "            }" + nl
+                    + "            public method use() returns int {" + nl
+                    + "                return this.addTwo(1, 2);" + nl
+                    + "            }" + nl
+                    + "        }" + nl
+                    + "    }" + nl
+                    + "}" + nl;
+                LspClient* client = new LspClient() on heap;
+                boolean up = client.start("\"" + lsp + "\"", "");
+                if (up) {
+                    String uri = "file:///probe.pol";
+                    client.syncDocument(uri, src);
+                    // Line 8 (0-based) is `                return this.addTwo(1, 2);`; column 30 sits
+                    // inside addTwo, whose declaration is line 4 in the same buffer.
+                    client.askHover(uri, 8, 30);
+                    Stopwatch* sw = Stopwatch.startNew();
+                    while (sw.elapsedMillis() < 5000 && !client.hoverIsReady()) {
+                        client.pump();
+                    }
+                    delete sw;
+                    a.eqBool(client.hoverIsReady(), true, "lsp.live-hover-answered");
+                    a.eqBool(client.hoverInfo().indexOf("addTwo") >= 0, true, "lsp.live-hover-names-method");
+                    a.eqBool(client.hoverInfo().indexOf("returns int") >= 0, true, "lsp.live-hover-has-return");
+
+                    // Same buffer, same call site: definition must resolve to addTwo's declaration on
+                    // line 4 (0-based) and name the file it lives in -- the fields F12 reads back.
+                    client.askDefinition(uri, 8, 30);
+                    Stopwatch* dsw = Stopwatch.startNew();
+                    while (dsw.elapsedMillis() < 5000 && !client.definitionIsReady()) {
+                        client.pump();
+                    }
+                    delete dsw;
+                    a.eqBool(client.definitionIsReady(), true, "lsp.live-def-answered");
+                    a.eqInt(client.definitionLine(), 4, "lsp.live-def-line");
+                    a.eqBool(client.definitionUri().indexOf("probe.pol") >= 0, true, "lsp.live-def-uri");
+                    client.stop();
+                }
+                delete client;
+                return;
+            }
+            private static method chr(int code) returns String {
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.appendChar(cast<char>(code));
+                String out = sb.toString();
+                delete sb;
+                return out;
+            }
+        }
+    }
+}

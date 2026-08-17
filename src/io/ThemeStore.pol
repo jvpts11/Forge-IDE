@@ -1,0 +1,267 @@
+import System.IO.File;
+import System.IO.Files;
+import System.IO.Paths;
+import System.OS.Env;
+import System.Text.Strings;
+import System.Text.StringBuilder;
+import System.Collections.ArrayList;
+import forge.gfx.Theme;
+import forge.gfx.Color;
+import forge.io.PluginStore;
+
+program Forge;
+
+public bundle forge {
+    public namespace io {
+
+        // Installed themes. A theme is a plain `key = RRGGBB` file in ~/.forge/themes; dropping one in
+        // that directory is the whole install step. A file starts from a built-in preset (`base = dark`
+        // or `light`) and overrides only the keys it names, so a two-line theme is valid and a theme
+        // written against an older Forge still loads -- unknown keys are ignored and missing ones keep
+        // the base value. The built-in Dark and Light are always listed first and cannot be removed, so
+        // a broken theme file can never leave the IDE without a usable one.
+        public class ThemeStore {
+
+            public static method themesDir() returns String {
+                return Env.get("USERPROFILE") + "/.forge/themes";
+            }
+            public static method ensureThemesDir() returns void {
+                String d = ThemeStore.themesDir();
+                if (!File.isDir(d)) {
+                    File.mkdir(d);
+                }
+                return;
+            }
+
+            // Every theme that can be selected: the two built-ins, then one per *.theme file found.
+            public static method available() returns ArrayList<String>* {
+                ArrayList<String>* names = new ArrayList<String>() on heap;
+                names.add("Dark");
+                names.add("Light");
+                String dir = ThemeStore.themesDir();
+                if (!File.isDir(dir)) {
+                    return names;
+                }
+                ArrayList<String> entries = Files.listDir(dir);
+                mutable int i = 0;
+                while (i < entries.size()) {
+                    String e = entries.get(i);
+                    i = i + 1;
+                    if (!e.endsWith(".theme")) {
+                        continue;
+                    }
+                    String base = Paths.basename(e);
+                    names.add(base.substring(0, base.length() - 6));   // drop ".theme"
+                }
+                // Themes shipped by enabled plugins are selectable the same way the user's own are.
+                ArrayList<String>* fromPlugins = PluginStore.themeFiles();
+                mutable int k = 0;
+                while (k < fromPlugins.size()) {
+                    String base = Paths.basename(fromPlugins.get(k));
+                    k = k + 1;
+                    names.add(base.substring(0, base.length() - 6));
+                }
+                delete fromPlugins;
+                return names;
+            }
+
+            // The file backing an installed theme (empty for the built-ins). The user's own themes win
+            // over a plugin's when both use a name, so a local edit is never shadowed by an update.
+            public static method fileFor(String name) returns String {
+                if (name.equals("Dark") || name.equals("Light")) {
+                    return "";
+                }
+                String own = ThemeStore.themesDir() + "/" + name + ".theme";
+                if (File.exists(own)) {
+                    return own;
+                }
+                ArrayList<String>* fromPlugins = PluginStore.themeFiles();
+                mutable String found = "";
+                mutable int i = 0;
+                while (i < fromPlugins.size()) {
+                    String f = fromPlugins.get(i);
+                    i = i + 1;
+                    String base = Paths.basename(f);
+                    if (base.substring(0, base.length() - 6).equals(name)) {
+                        found = f;
+                    }
+                }
+                delete fromPlugins;
+                if (found.length() > 0) {
+                    return found;
+                }
+                return own;
+            }
+
+            // Build the theme called `name`. Unknown names and unreadable files fall back to Dark rather
+            // than failing, because the theme is chosen before there is any UI to report an error in.
+            public static method build(String name) returns Theme* {
+                if (name.equals("Light")) {
+                    return Theme.makeLight();
+                }
+                String path = ThemeStore.fileFor(name);
+                if (path.length() == 0 || !File.exists(path)) {
+                    return Theme.makeDark();
+                }
+                ArrayList<String> lines = Strings.split(File.readAll(path), "\n");
+                mutable boolean light = false;
+                mutable int i = 0;
+                while (i < lines.size()) {          // the base preset has to be known before overriding
+                    String ln = lines.get(i).trim();
+                    i = i + 1;
+                    if (ln.length() == 0 || ln.charAt(0) == '#') {
+                        continue;
+                    }
+                    if (ThemeStore.keyOf(ln).equals("base")) {
+                        light = ThemeStore.valueOf(ln).equals("light");
+                    }
+                }
+                mutable Theme* t = light ? Theme.makeLight() : Theme.makeDark();
+                t.name = name;
+                t.dark = !light;
+                mutable int k = 0;
+                while (k < lines.size()) {
+                    String ln = lines.get(k).trim();
+                    k = k + 1;
+                    if (ln.length() == 0 || ln.charAt(0) == '#') {
+                        continue;
+                    }
+                    String key = ThemeStore.keyOf(ln);
+                    String val = ThemeStore.valueOf(ln);
+                    if (key.equals("base") || key.equals("name") || val.length() < 6) {
+                        continue;
+                    }
+                    ThemeStore.applyColour(t, key, val);
+                }
+                return t;
+            }
+
+            // Overwrite one theme slot from a hex value. Only the colours worth theming are exposed; the
+            // rest of the palette follows the base preset.
+            private static method applyColour(Theme* t, String key, String hex) returns void {
+                if (!ThemeStore.hexValid(hex)) {
+                    return;      // a typo leaves this one slot at its base value
+                }
+                // The theme takes it, or nothing does. Which slot a name means, and what freeing the
+                // colour it replaces costs, are the theme's own business -- see `Theme.setColour`.
+                Color* c = ThemeStore.parseHex(hex);
+                if (!t.setColour(key, c)) {
+                    delete c;      // unknown key: nothing took ownership of the colour
+                }
+                return;
+            }
+
+            // Strip an optional leading '#'.
+            private static method hexBody(String hex) returns String {
+                String h = hex.trim();
+                if (h.length() > 0 && h.charAt(0) == '#') {
+                    return h.substring(1, h.length());
+                }
+                return h;
+            }
+            // Is this a well-formed "RRGGBB" (with or without '#')? Checked before parsing rather than
+            // signalled by a null result, because a nullable return would need narrowing to use.
+            public static method hexValid(String hex) returns boolean {
+                String h = ThemeStore.hexBody(hex);
+                if (h.length() < 6) {
+                    return false;
+                }
+                mutable int i = 0;
+                while (i < 6) {
+                    if (ThemeStore.hexDigit(h.charAt(i)) < 0) {
+                        return false;
+                    }
+                    i = i + 1;
+                }
+                return true;
+            }
+            // "RRGGBB" (or "#RRGGBB") to a Color. Call hexValid first; malformed input yields black.
+            public static method parseHex(String hex) returns Color* {
+                String h = ThemeStore.hexBody(hex);
+                if (!ThemeStore.hexValid(h)) {
+                    return new Color(0.0, 0.0, 0.0, 1.0) on heap;
+                }
+                int r = ThemeStore.hexPair(h, 0);
+                int g = ThemeStore.hexPair(h, 2);
+                int b = ThemeStore.hexPair(h, 4);
+                return new Color(cast<float>(r) / 255.0, cast<float>(g) / 255.0,
+                                 cast<float>(b) / 255.0, 1.0) on heap;
+            }
+            private static method hexPair(String h, int at) returns int {
+                int hi = ThemeStore.hexDigit(h.charAt(at));
+                int lo = ThemeStore.hexDigit(h.charAt(at + 1));
+                if (hi < 0 || lo < 0) {
+                    return 0 - 1;
+                }
+                return hi * 16 + lo;
+            }
+            private static method hexDigit(char c) returns int {
+                if (c >= '0' && c <= '9') {
+                    return cast<int>(c) - cast<int>('0');
+                }
+                if (c >= 'a' && c <= 'f') {
+                    return 10 + cast<int>(c) - cast<int>('a');
+                }
+                if (c >= 'A' && c <= 'F') {
+                    return 10 + cast<int>(c) - cast<int>('A');
+                }
+                return 0 - 1;
+            }
+
+            private static method keyOf(String line) returns String {
+                int eq = line.indexOf("=");
+                if (eq < 0) {
+                    return "";
+                }
+                return line.substring(0, eq).trim();
+            }
+            private static method valueOf(String line) returns String {
+                int eq = line.indexOf("=");
+                if (eq < 0) {
+                    return "";
+                }
+                return line.substring(eq + 1, line.length()).trim();
+            }
+
+            // Write a commented example theme so the format is discoverable: someone who wants to make a
+            // theme copies this file, renames it, and edits the colours.
+            public static method ensureExampleTheme() returns void {
+                ThemeStore.ensureThemesDir();
+                String path = ThemeStore.themesDir() + "/Example.theme";
+                if (File.exists(path)) {
+                    return;
+                }
+                StringBuilder sb = new StringBuilder() on heap;
+                sb.append("# A Forge theme. Copy this file, rename it, and edit the colours -- the file\n");
+                sb.append("# name (without .theme) is what appears in Settings.\n");
+                sb.append("# Start from a built-in preset and override only what you want to change.\n");
+                sb.append("base = dark\n");
+                sb.append("\n");
+                sb.append("# surfaces\n");
+                sb.append("bg = 1d2021\n");
+                sb.append("chrome = 141819\n");
+                sb.append("panel = 22282a\n");
+                sb.append("gutter = 1a1e1f\n");
+                sb.append("divider = 3c4446\n");
+                sb.append("\n");
+                sb.append("# text and accent\n");
+                sb.append("text = d5c4a1\n");
+                sb.append("textDim = 928374\n");
+                sb.append("accent = fe8019\n");
+                sb.append("\n");
+                sb.append("# syntax\n");
+                sb.append("keyword = fb4934\n");
+                sb.append("type = 8ec07c\n");
+                sb.append("string = b8bb26\n");
+                sb.append("number = d3869b\n");
+                sb.append("comment = 7c6f64\n");
+                sb.append("declaration = fabd2f\n");
+                sb.append("modifier = 83a598\n");
+                sb.append("function = fabd2f\n");
+                File.writeAll(path, sb.toString());
+                delete sb;
+                return;
+            }
+        }
+    }
+}
